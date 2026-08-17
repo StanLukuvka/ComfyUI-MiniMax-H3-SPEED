@@ -85,7 +85,14 @@ H3-SPEED/
 │   └── helper_nodes/
 │       ├── sigma_harvest.py   — SigmaHarvest (calibration pass)
 │       ├── harvest_to_config.py — parse harvest JSON → report
-│       └── schedule.py        — SpeedConfig planner
+│       ├── schedule.py        — SpeedConfig planner
+│       ├── inspect.py         — debug: inspect latent geometry
+│       ├── power_spectrum.py  — debug: radial power spectrum
+│       ├── dct_lowpass.py     — debug: DCT lowpass filter
+│       ├── transition_math.py — debug: compute transition from A/β
+│       ├── spectral_expand.py — debug: visualize spectral expansion
+│       ├── x0_fidelity_probe.py — debug: X0 fidelity probe
+│       └── av_reentry_oracle.py — debug: AV reentry schedule
 └── workflows/
     ├── video_minimax_h3_t2v_speed.json     — standard SPEED pipeline
     ├── sigma_harvest.json                  — calibration-only workflow
@@ -95,16 +102,31 @@ H3-SPEED/
 ## Test suite
 
 ```bash
-PYTHONPATH=minimax_h3_speed python -m pytest minimax_h3_speed/tests/ -q
+uv run pytest minimax_h3_speed/tests/ -q
 ```
+
+**Current:** 74 tests passing across 5 test files:
+- `test_dct.py` — DCT transform correctness
+- `test_flow.py` — sigma alignment, audio handling
+- `test_harvest.py` — power spectrum, fitting, callback
+- `test_integration.py` — end-to-end harvest→schedule→sample pipeline
+- `test_spectral.py` — spectral expansion
 
 ### Helper Nodes
 
-Three companion nodes handle calibration and scheduling:
-
+**Calibration pipeline** (3 nodes):
 - `MiniMaxH3SigmaHarvest` (diagnostics) — takes noise, guider, sigmas, latent; returns JSON string
 - `MiniMaxH3HarvestToConfig` (diagnostics) — parses harvest JSON into a readable calibration report
 - `MiniMaxH3SPEEDSchedule` (schedule) — computes a SpeedConfig from sigmas + preset + mode
+
+**Debug utilities** (7 nodes):
+- `MiniMaxH3Inspect` — prints latent shape, device, dtype for troubleshooting
+- `MiniMaxH3PowerSpectrum` — computes radial power spectrum of a latent
+- `MiniMaxH3DCTLowpass` — applies DCT lowpass filter for ablation studies
+- `MiniMaxH3TransitionMath` — computes transition steps from A, β, delta
+- `MiniMaxH3SpectralExpand` — visualizes spectral expansion effect on noise
+- `MiniMaxH3XFidelityProbe` — measures X0 fidelity during sampling
+- `MiniMaxH3AVReentryOracle` — computes when audio should re-enter
 
 Calibration workflow: Run `SigmaHarvest` on a clean noise pass → parse with `HarvestToConfig` → feed calibrated `power_A`/`power_beta` into the sampler in `delta_custom` mode.
 
