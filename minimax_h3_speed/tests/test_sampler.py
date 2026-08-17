@@ -100,11 +100,11 @@ def test_input_schema_widgets_and_required_inputs():
     for key in ("noise", "guider", "sigmas", "latent_image",
                 "preset", "transition_mode"):
         assert key in required, f"missing required input: {key}"
-    # delta_custom path is disabled until H3 power spectrum is calibrated (Phase 5)
-    assert "delta" not in required
-    assert "power_A" not in required
-    assert "power_beta" not in required
-    assert "seed_offset" not in required
+    # delta_custom path is enabled with sigma-harvest calibration
+    assert "delta" in required
+    assert "power_A" in required
+    assert "power_beta" in required
+    assert "seed_offset" in required
     assert required["preset"][0][0] == "half_then_full"
 
 
