@@ -46,7 +46,7 @@ class MiniMaxH3DCTLowpass:
                 )
                 dist = torch.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
                 max_dist = max(H, W) / 2.0
-                mask[dist > cutoff_frequency * max_dist] = 0.0
+                mask[..., dist > cutoff_frequency * max_dist] = 0.0
                 filtered = coeffs * mask
                 # Inverse DCT
                 result = idct2(filtered)

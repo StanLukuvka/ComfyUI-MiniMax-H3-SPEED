@@ -40,7 +40,7 @@ class MiniMaxH3SpectralExpand:
         # Expand to double resolution
         new_H, new_W = video.shape[-2] * 2, video.shape[-1] * 2
         try:
-            expanded = spectral_expand_dct(video, sigma, new_H, new_W)
+            expanded = spectral_expand_dct(video, (new_H, new_W), sigma, seed=1000)
         except Exception as e:
             return (noise, f"Expansion failed: {e}")
 

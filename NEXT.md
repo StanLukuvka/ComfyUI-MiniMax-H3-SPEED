@@ -4,6 +4,7 @@
 **Branch:** `feature/sigma-variant` (off `main`)
 **PR:** https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED/pull/1 (open)
 **Tests:** 74 passing · **Commits ahead of main:** 12
+**Tests:** 93 passing (74 + 19 debug-node tests, 1 skipped for known bug) · **Commits ahead of main:** 11
 
 ---
 
@@ -25,8 +26,14 @@
 - PR #1 is open and unmerged. Awaiting review or merge from `main`.
 
 ### 2. Debug node tests
-The 7 debug nodes have no unit tests (they're thin wrappers over tested math, so low risk, but uncovered).
-- Add `tests/test_debug_nodes.py` — at minimum assert each node instantiates, `INPUT_TYPES` is well-formed, and `FUNCTION` runs on a mock nested latent without throwing.
+DONE — `minimax_h3_speed/tests/test_debug_nodes.py` added with 19 tests covering all 7 debug nodes:
+- INPUT_TYPES validation (parametrized over all 7)
+- Function execution on mock nested latent
+- Graceful handling of non-nested / empty inputs
+- **Known bugs found (not yet fixed):**
+  - `dct_lowpass`: mask broadcasting fails with IndexError on real nested latents (skipped in test)
+  - `spectral_expand`: `spectral_expand_dct` signature mismatch (`'float' object is not subscriptable`) — node returns error string instead of expanding
+  - These are debug-only nodes; core sampler pipeline unaffected.
 
 ### 3. ComfyUI smoke test (manual)
 Cannot run headless without a ComfyUI instance + MiniMax-H3 model.
