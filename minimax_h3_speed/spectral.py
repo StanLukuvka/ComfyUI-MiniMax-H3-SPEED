@@ -62,6 +62,25 @@ def lowpass_dct(value: torch.Tensor, target_hw: tuple[int, int]) -> torch.Tensor
     return idct2(dct2(value)[..., :target_h, :target_w]).to(dtype=original_dtype)
 
 
+def lowpass_filter_dct(value: torch.Tensor, cutoff: float) -> torch.Tensor:
+    """Shape-preserving lowpass filter in the DCT domain.
+
+    Zeroes out coefficients whose frequency index exceeds ``cutoff * full_dim``.
+    Returns a tensor with the same shape and dtype as ``value``.
+    """
+    if not 0.0 <= cutoff <= 1.0:
+        raise ValueError("cutoff must be in [0, 1]")
+    original_dtype = value.dtype
+    coeffs = dct2(value.float())
+    *leading, H, W = coeffs.shape
+    keep_h = max(1, round(H * cutoff))
+    keep_w = max(1, round(W * cutoff))
+    mask = torch.ones_like(coeffs)
+    mask[..., keep_h:, :] = 0.0
+    mask[..., :, keep_w:] = 0.0
+    return idct2(coeffs * mask).to(dtype=original_dtype)
+
+
 def spectral_expand_dct_coupled(
     value: torch.Tensor,
     full_resolution_noise: torch.Tensor,
@@ -111,4 +130,5 @@ def spectral_expand_dct(
     return idct2(expanded).to(dtype=value.dtype)
 
 
-__all__ = ["dct2", "idct2", "lowpass_dct", "spectral_expand_dct", "spectral_expand_dct_coupled"]
+__all__ = ["dct2", "idct2", "lowpass_dct", "lowpass_filter_dct",
+           "spectral_expand_dct", "spectral_expand_dct_coupled"]

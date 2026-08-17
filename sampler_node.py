@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import comfy.samplers
 from minimax_h3_speed.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS, SpeedConfig
-from minimax_h3_speed.h3_runtime import run_progressive_stages, _unpack_tensor
+from minimax_h3_speed.h3_runtime import run_repeated_stage_calls, _unpack_tensor
 
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
@@ -91,7 +91,7 @@ class MiniMaxH3SPEEDSampler:
         )
         
 
-        return run_progressive_stages(
+        return run_repeated_stage_calls(
             noise,
             guider,
             sigmas,

@@ -86,12 +86,12 @@ def _install_comfy_stubs():
 _install_comfy_stubs()
 
 from minimax_h3_speed.flow import aligned_speed_sigma, reentry_noise
+from minimax_h3_speed.flow import time_shift_sigma as _original_time_shift_sigma
 from minimax_h3_speed.oracle import (
     NestedTensor,
     StraightFlowModel,
     run_euler_pack,
     time_shift_slope,
-    time_shift_sigma,
 )
 
 
@@ -192,10 +192,10 @@ def test_time_shift_slope_matches_native_convention():
 def test_time_shift_sigma_boundary_values():
     """time_shift_sigma(0) = 0; time_shift_sigma(1) = from_shift * to_shift / (from_shift + to_shift - from_shift*to_shift)."""
     # At sigma=0 the output is 0 (no time shift applied at t=0).
-    assert abs(time_shift_sigma(0.0, 12.0, 3.0) - 0.0) < 1e-9
+    assert abs(_original_time_shift_sigma(0.0, 12.0, 3.0) - 0.0) < 1e-9
     # At sigma=1.0: base=1/(12+1*(−11))=1/1, result=3*1/(1+2*1)=1.0
     expected_at_1 = 3.0 * 1.0 / (1.0 + 2.0 * 1.0)
-    assert abs(time_shift_sigma(1.0, 12.0, 3.0) - expected_at_1) < 1e-9
+    assert abs(_original_time_shift_sigma(1.0, 12.0, 3.0) - expected_at_1) < 1e-9
 
 
 # ---------------------------------------------------------------------------

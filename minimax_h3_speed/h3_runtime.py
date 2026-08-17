@@ -359,8 +359,3 @@ def run_repeated_stage_calls(
             x0.cpu() if hasattr(x0, "cpu") else x0
         )
     return out, denoised
-
-
-# Alias retained for the sampler node's import.
-run_progressive_stages = run_repeated_stage_calls
-

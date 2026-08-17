@@ -69,8 +69,8 @@ except Exception:  # pragma: no cover — standalone fallback
 
 def time_shift_sigma(sigma: float, from_shift: float, to_shift: float) -> float:
     """Mirror comfy.ldm.minimax.model.time_shift_sigma."""
-    base = sigma / (from_shift + sigma * (1.0 - from_shift))
-    return to_shift * base / (1.0 + (to_shift - 1.0) * base)
+    from .flow import time_shift_sigma as _flow_time_shift_sigma
+    return _flow_time_shift_sigma(sigma, from_shift, to_shift)
 
 
 def time_shift_slope(sigma: float, from_shift: float, to_shift: float) -> float:

@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
 
 from minimax_h3_speed.config import SCALE_PRESETS, preset_config, SpeedConfig
-from minimax_h3_speed.h3_runtime import (
-    _find_first_step_below,
-    power_spectrum,
-    activation_time,
-)
+from minimax_h3_speed.flow import aligned_speed_sigma
+from minimax_h3_speed.h3_runtime import resolve_transition_steps
 
 
 class MiniMaxH3SPEEDSchedule:
@@ -50,38 +45,54 @@ class MiniMaxH3SPEEDSchedule:
         scales = SCALE_PRESETS[explicit_preset]
         n_transitions = len(scales) - 1
 
-        # Start from the calibrated default transition steps for this preset.
         base = preset_config(explicit_preset, noise=noise_policy)
-        transition_steps = list(base.transition_steps)
 
         if transition_mode == "manual_sigma":
+            # Find sigma boundaries and convert to step indices.
+            steps = []
             for idx in range(n_transitions):
-                candidates = [i for i, value in enumerate(values[:-1]) if value <= manual_sigma]
+                # Each transition uses the same manual_sigma boundary.
+                candidates = [i for i, v in enumerate(values[:-1]) if v <= manual_sigma]
                 if not candidates:
                     raise ValueError("manual sigma is not reached by the schedule")
-                transition_steps[idx] = candidates[0]
+                steps.append(candidates[0])
+            cfg = base.with_overrides(transition_steps=tuple(steps))
         elif transition_mode == "delta_custom":
-            for idx in range(n_transitions):
-                scale = scales[idx]
-                omega = scale * min(full_latent_h, full_latent_w) / 2.0
-                power = power_A * abs(omega) ** (-power_beta)
-                threshold = 1.0 / (1.0 + math.sqrt(delta / (power * (1.0 + power - delta))))
-                candidates = [i for i, value in enumerate(values[:-1]) if value <= threshold]
-                if not candidates:
-                    raise ValueError("custom delta threshold is not reached by the schedule")
-                transition_steps[idx] = candidates[0]
-        # manual_step uses the base default steps unchanged.
+            # Delegate to the shared resolution logic.
+            config = SpeedConfig(
+                scales=tuple(scales),
+                transition_steps=base.transition_steps,
+                transition_mode="delta_custom",
+                noise_policy=noise_policy,
+                delta=float(delta),
+                power_A=float(power_A),
+                power_beta=float(power_beta),
+                transition_seed_offset=10_000,
+                full_latent_h=int(full_latent_h),
+                full_latent_w=int(full_latent_w),
+            )
+            transition_steps = resolve_transition_steps(config, sigmas)
+            cfg = base.with_overrides(
+                transition_mode="delta_custom",
+                delta=float(delta),
+                power_A=float(power_A),
+                power_beta=float(power_beta),
+                transition_steps=transition_steps,
+            )
+        else:
+            # manual_step: use the preset's default steps unchanged.
+            cfg = base
 
-        cfg = base.with_overrides(transition_steps=tuple(transition_steps))
+        # Build the human-readable report.
         segs = []
         for idx in range(n_transitions):
-            q = values[int(transition_steps[idx])]
+            step = int(cfg.transition_steps[idx])
+            q = values[step]
             ratio = scales[idx + 1] / scales[idx]
-            from minimax_h3_speed.flow import aligned_speed_sigma
             _, aligned = aligned_speed_sigma(q, ratio)
-            segs.append(f"[{scales[idx]}]{int(transition_steps[idx])}:{q:.9g}->{aligned:.9g}")
+            segs.append(f"[{scales[idx]}]{step}:{q:.9g}->{aligned:.9g}")
         report = (
-            f"preset={explicit_preset} scales={list(scales)} steps={list(transition_steps)} "
+            f"preset={explicit_preset} scales={list(scales)} steps={list(cfg.transition_steps)} "
             f"mode={transition_mode} " + " ".join(segs)
         )
         return (cfg, report)

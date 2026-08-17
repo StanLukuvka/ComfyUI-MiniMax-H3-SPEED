@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 
 from minimax_h3_speed.spectral import spectral_expand_dct
+from nodes.common import MockNested
 
 
 class MiniMaxH3SpectralExpand:
@@ -27,7 +28,6 @@ class MiniMaxH3SpectralExpand:
 
     def expand(self, noise, sigma, direction):
         """Return expanded noise and a description string."""
-        # noise is a dict with 'samples' key containing nested tensor
         samples = noise.get("samples")
         if not hasattr(samples, "is_nested") or not samples.is_nested:
             return (noise, "Not an H3 nested latent")
@@ -44,14 +44,7 @@ class MiniMaxH3SpectralExpand:
         except Exception as e:
             return (noise, f"Expansion failed: {e}")
 
-        class _MockNested:
-            is_nested = True
-            def __init__(self, s):
-                self._streams = s
-            def unbind(self):
-                return self._streams
-
-        new_samples = _MockNested([expanded] + list(streams[1:]))
+        new_samples = MockNested([expanded] + list(streams[1:]))
         new_noise = {"samples": new_samples}
         report = (
             f"Expanded {direction} from {video.shape[-2]}x{video.shape[-1]} "

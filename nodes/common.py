@@ -1,9 +1,15 @@
-"""Shared plumbing for the MiniMax H3 SPEED sampler nodes."""
+"""Shared helpers for MiniMax-H3 SPEED nodes."""
 
 from __future__ import annotations
 
-import comfy.nested_tensor
 
+class MockNested:
+    """Lightweight mock nested tensor for helper nodes that need a return value."""
 
-def _nested(video, audio):
-    return comfy.nested_tensor.NestedTensor([video, audio])
+    is_nested = True
+
+    def __init__(self, streams):
+        self._streams = list(streams)
+
+    def unbind(self):
+        return self._streams
