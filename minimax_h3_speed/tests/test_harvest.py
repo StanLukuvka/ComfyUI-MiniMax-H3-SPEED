@@ -56,7 +56,7 @@ from minimax_h3_speed.harvest import (
     radial_power_spectrum,
     recommend_configs,
 )
-from minimax_h3_speed.config import SCALE_PRESETS
+from minimax_h3_speed.config import SCALE_PRESETS, SpeedConfig
 
 
 class TestRadialPowerSpectrum:
@@ -261,3 +261,35 @@ class TestRecommendConfigs:
         for name, data in rec.items():
             for step in data["transition_steps"]:
                 assert 0 <= step < n_sigmas, f"step {step} out of range"
+
+    def test_recommended_steps_monotonic_non_decreasing(self):
+        """For monotonically decreasing power spectrum (Eq. 4), earlier scales
+        (lower resolution) should activate later in denoising (higher step index).
+        """
+        sigmas = torch.linspace(1.0, 0.0, 51)  # 50 steps
+        rec = recommend_configs(219.48, 2.42, sigmas, latent_h=45, latent_w=80)
+        for name, data in rec.items():
+            steps = data["transition_steps"]
+            if len(steps) >= 2:
+                assert steps[0] <= steps[1], \
+                    f"{name}: steps {steps} not non-decreasing"
+
+    def test_resolve_transition_steps_delta_custom_matches_recommend(self):
+        """Given config with transition_mode='delta_custom', the resolved steps
+        must equal recommend_configs output for the same parameters."""
+        from minimax_h3_speed.h3_runtime import resolve_transition_steps
+        sigmas = torch.linspace(1.0, 0.0, 21)  # 20 steps
+        config = SpeedConfig(
+            scales=(0.5, 1.0),
+            transition_steps=(5,),
+            transition_mode="delta_custom",
+            delta=0.01,
+            power_A=219.48,
+            power_beta=2.42,
+            full_latent_h=45,
+            full_latent_w=80,
+        )
+        resolved = resolve_transition_steps(config, sigmas, H_full=45, W_full=80)
+        rec = recommend_configs(219.48, 2.42, sigmas, latent_h=45, latent_w=80)
+        expected = rec["half_then_full"]["transition_steps"]
+        assert resolved == tuple(expected)

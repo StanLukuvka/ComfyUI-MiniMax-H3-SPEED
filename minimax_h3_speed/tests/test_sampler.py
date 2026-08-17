@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 import torch
 from minimax_h3_speed.config import SpeedConfig
 
@@ -339,3 +340,80 @@ def test_flow_aligned_speed_sigma():
     # aligned_speed_sigma returns plain floats (kappa, t_tilde).
     assert mvp_kappa == lab_kappa
     assert mvp_t == lab_t
+
+
+def test_resolve_transition_steps_delta_custom_matches_recommend():
+    """Given config with transition_mode='delta_custom', the resolved steps
+    must equal recommend_configs output for the same parameters."""
+    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    from minimax_h3_speed.harvest import recommend_configs
+    sigmas = torch.linspace(1.0, 0.0, 21)  # 20 steps
+    config = SpeedConfig(
+        scales=(0.5, 1.0),
+        transition_steps=(5,),  # explicit value — overridden by delta_custom
+        transition_mode="delta_custom",
+        delta=0.01,
+        power_A=219.48,
+        power_beta=2.42,
+        full_latent_h=45,
+        full_latent_w=80,
+    )
+    resolved = resolve_transition_steps(config, sigmas, H_full=45, W_full=80)
+    # Compare against recommend_configs for the same params
+    rec = recommend_configs(219.48, 2.42, sigmas, latent_h=45, latent_w=80)
+    expected = rec["half_then_full"]["transition_steps"]
+    assert resolved == tuple(expected), f"resolved={resolved}, expected={tuple(expected)}"
+
+
+def test_resolve_transition_steps_explicit_ignores_delta():
+    """For 'explicit' mode, resolved steps must equal config.transition_steps,
+    regardless of delta/power_A/power_beta values."""
+    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    sigmas = torch.linspace(1.0, 0.0, 21)
+    config = SpeedConfig(
+        scales=(0.5, 1.0),
+        transition_steps=(7,),
+        transition_mode="explicit",
+        delta=0.5,  # irrelevant in explicit mode
+        power_A=999.0,
+        power_beta=9.0,
+        full_latent_h=45,
+        full_latent_w=80,
+    )
+    resolved = resolve_transition_steps(config, sigmas)
+    assert resolved == (7,)
+
+
+def test_resolve_transition_steps_validation():
+    """Transition steps must be in (0, len(sigmas)-1)."""
+    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    sigmas = torch.tensor([1.0, 0.5, 0.0])
+    # Use explicit mode with a step that's valid for config creation
+    # but test that resolve_transition_steps returns it as-is (no validation).
+    # The actual validation happens in run_repeated_stage_calls.
+    config = SpeedConfig(
+        scales=(0.5, 1.0),
+        transition_steps=(1,),  # valid for config (>= 1)
+        transition_mode="explicit",
+        delta=0.01,
+        power_A=219.48,
+        power_beta=2.42,
+        full_latent_h=45,
+        full_latent_w=80,
+    )
+    resolved = resolve_transition_steps(config, sigmas)
+    assert resolved == (1,)
+
+
+def test_activation_time_matches_canonical_formula():
+    """Verify activation_time against hand-computed values from Eq. 9."""
+    from minimax_h3_speed.h3_runtime import activation_time
+    # P = 100, delta = 0.01:
+    #   t* = 1 / (1 + sqrt(0.01 / (100 * (101 - 0.01))))
+    #      = 1 / (1 + sqrt(0.01 / 10099))
+    #      = 1 / (1 + sqrt(9.90e-7))
+    #      ≈ 1 / (1 + 0.000995) ≈ 0.999005
+    import math
+    result = activation_time(100.0, 0.01)
+    expected = 1.0 / (1.0 + math.sqrt(0.01 / (100.0 * (101.0 - 0.01))))
+    assert abs(result - expected) < 1e-10
