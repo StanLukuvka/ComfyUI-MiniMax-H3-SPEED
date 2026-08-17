@@ -39,6 +39,18 @@ After cloning, load one of these workflows via ComfyUI's workflow browser (Workf
 Options:
 - `preset` — see table below
 - `transition_mode` — `explicit` (default) or `delta_custom` (uses calibrated A/β)
+- `noise_policy` — `direct_coarse` (default) or `coupled_full_grid`
+
+### Noise policies
+
+SPEED reduces VRAM by running early denoising at lower resolution. The `noise_policy` controls how noise is generated across stages:
+
+| Policy | Behavior | When to use |
+|--------|----------|-------------|
+| `direct_coarse` | Fresh noise per stage, standard SPEED | Default. Lower VRAM, standard quality. |
+| `coupled_full_grid` | Shared full-grid noise across all scales | Higher quality (better high-frequency coherence) at the cost of more VRAM. |
+
+Use `video_minimax_h3_t2v_speed.json` (direct_coarse) for the default path, or `video_minimax_h3_t2v_coupled.json` (coupled_full_grid) when quality matters more than memory.
 
 ### Presets (default 20-step schedule)
 
