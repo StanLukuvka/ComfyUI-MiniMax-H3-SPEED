@@ -33,6 +33,7 @@ class MiniMaxH3SPEEDSchedule:
                 "sigmas": ("SIGMAS",),
                 "preset": (list(SCALE_PRESETS.keys()),),
                 "transition_mode": (["manual_step", "manual_sigma", "delta_custom"],),
+                "noise_policy": (["direct_coarse", "coupled_full_grid"],),
                 "manual_sigma": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 0.000001, "max": 0.999999, "step": 0.001}),
                 "power_A": ("FLOAT", {"default": 219.48, "min": 0.000001, "max": 1000000.0}),
@@ -42,7 +43,7 @@ class MiniMaxH3SPEEDSchedule:
             },
         }
 
-    def plan(self, sigmas, preset, transition_mode,
+    def plan(self, sigmas, preset, transition_mode, noise_policy="direct_coarse",
              manual_sigma=0.6, delta=0.01, power_A=219.48, power_beta=2.42,
              full_latent_h=45, full_latent_w=80):
         values = [float(s) for s in sigmas]
@@ -50,7 +51,7 @@ class MiniMaxH3SPEEDSchedule:
         n_transitions = len(scales) - 1
 
         # Start from the calibrated default transition steps for this preset.
-        base = preset_config(preset)
+        base = preset_config(preset, noise=noise_policy)
         transition_steps = list(base.transition_steps)
 
         if transition_mode == "manual_sigma":

@@ -44,6 +44,7 @@ class MiniMaxH3SPEEDSampler:
                 "latent_image": ("LATENT",),
                 "preset": (list(SCALE_PRESETS.keys()),),
                 "transition_mode": (["explicit", "delta_custom"],),
+                "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
                 "power_A": ("FLOAT", {"default": 219.48, "min": 0.0, "max": 1e6}),
                 "power_beta": ("FLOAT", {"default": 2.42, "min": 0.0, "max": 10.0}),
@@ -52,7 +53,8 @@ class MiniMaxH3SPEEDSampler:
         }
 
     def sample(self, noise, guider, sigmas, latent_image, preset,
-               transition_mode, delta=0.01, power_A=219.48, power_beta=2.42,
+               transition_mode, noise_policy="direct_coarse",
+               delta=0.01, power_A=219.48, power_beta=2.42,
                seed_offset=10000):
         # Use the calibrated transition steps from the preset config.
         # These are tuned per-preset (e.g. 2_stage_half transitions at step 5
@@ -79,6 +81,7 @@ class MiniMaxH3SPEEDSampler:
             scales=scales,
             transition_steps=transition_steps,
             transition_mode=transition_mode,
+            noise_policy=noise_policy,
             delta=float(delta),
             power_A=float(power_A),
             power_beta=float(power_beta),
