@@ -27,7 +27,6 @@ try:
         spectral_expand,
         x0_fidelity_probe,
         av_reentry_oracle,
-        sampler_speed,
     )
 except Exception as exc:
     print(f"[MiniMaxH3SPEED] Warning: could not load helper nodes: {exc}")
@@ -43,12 +42,10 @@ else:
         "MiniMaxH3SpectralExpand": spectral_expand.MiniMaxH3SpectralExpand,
         "MiniMaxH3XFidelityProbe": x0_fidelity_probe.MiniMaxH3XFidelityProbe,
         "MiniMaxH3AVReentryOracle": av_reentry_oracle.MiniMaxH3AVReentryOracle,
-        "MiniMaxH3SPEEDSampler": sampler_speed.MiniMaxH3SPEEDSampler,
     })
     for module in (sigma_harvest, harvest_to_config, schedule, inspect,
                    power_spectrum, dct_lowpass, transition_math,
-                   spectral_expand, x0_fidelity_probe, av_reentry_oracle,
-                   sampler_speed):
+                   spectral_expand, x0_fidelity_probe, av_reentry_oracle):
         NODE_DISPLAY_NAME_MAPPINGS.update({
             k: v.__name__
             for k, v in module.NODE_CLASS_MAPPINGS.items()

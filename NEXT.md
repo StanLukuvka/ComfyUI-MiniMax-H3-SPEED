@@ -1,8 +1,8 @@
 # SPEED-Sampler — State & Next Steps
 
 **Repo:** `/agent/projects/minimax-quickfile/ComfyUI-MiniMaxH3-SPEED-Sampler`
-**Branch:** `feature/sigma-variant` (off `main`)
-**PR:** https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED/pull/1 (open)
+**Branch:** `dev` (off `main`)
+**PR:** none open — working directly on `dev`; merge to `main` when feature is ready
 **Tests:** 109 passing · **Commits ahead of main:** 14
 
 ---
@@ -13,7 +13,6 @@
 - `noise_policy` wired through Schedule + Sampler nodes (direct_coarse / coupled_full_grid)
 - `coupled_full_grid` workflow variant created
 - 7 debug/utility helper nodes (inspect, power_spectrum, dct_lowpass, transition_math, spectral_expand, x0_fidelity_probe, av_reentry_oracle)
-- **Canonical SAMPLER node** — `MiniMaxH3SPEEDSampler` returning SAMPLER type for SamplerCustomAdvanced
 - **Oracle straight-flow proof** — `StraightFlowModel`, `run_euler_pack`, 15 CPU-only tests
 - End-to-end integration test (`test_integration.py`)
 - README + node docs updated
@@ -24,7 +23,7 @@
 ## 🚧 Remaining
 
 ### 1. PR review / merge
-PR #1 is open and unmerged. Awaiting review or merge from `main`.
+Working on `dev` branch directly. Merge to `main` when feature is complete.
 
 ### 2. ComfyUI smoke test (manual, requires GPU)
 - Load `video_minimax_h3_t2v_speed.json` and `video_minimax_h3_t2v_coupled.json` in a real ComfyUI
