@@ -398,16 +398,6 @@ def test_time_shift_sigma_identity_at_full_res():
     assert abs(result - 0.5) < 1e-10
 
 
-def test_flow_time_shift_sigma():
-    """time_shift_sigma bridges video→audio sigma space correctly."""
-    from minimax_h3_speed.flow import time_shift_sigma
-    # With video_shift=2.0, audio_shift=1.0, q_video=0.5:
-    #   base = 0.5 / (2 + 0.5 * (1-2)) = 0.5 / 1.5 = 1/3
-    #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3
-    q_audio = time_shift_sigma(0.5, 2.0, 1.0)
-    assert abs(q_audio - (1.0/3.0)) < 1e-6
-
-
 def test_resolve_transition_steps_delta_custom_matches_recommend():
     """Given config with transition_mode='delta_custom', the resolved steps
     must equal recommend_configs output for the same parameters."""
@@ -484,3 +474,19 @@ def test_flow_time_shift_sigma():
     #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3
     q_audio = time_shift_sigma(0.5, 2.0, 1.0)
     assert abs(q_audio - (1.0/3.0)) < 1e-6
+
+
+def test_activation_time_boundary_delta():
+    """Very small delta pushes t* toward 1 (noise dominates longer)."""
+    from minimax_h3_speed.h3_runtime import activation_time
+    result = activation_time(100.0, 1e-10)
+    assert result > 0.99
+
+
+def test_activation_time_raises_on_delta_ge_1():
+    """delta >= 1 must raise ValueError."""
+    from minimax_h3_speed.h3_runtime import activation_time
+    with pytest.raises(ValueError, match="delta must be < 1.0"):
+        activation_time(100.0, 1.0)
+    with pytest.raises(ValueError, match="delta must be < 1.0"):
+        activation_time(100.0, 2.0)
