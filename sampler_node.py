@@ -42,7 +42,7 @@ class MiniMaxH3SPEEDSampler:
                 "guider": ("GUIDER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "preset": (list(SCALE_PRESETS.keys()),),
+                "explicit_preset": (list(SCALE_PRESETS.keys()),),
                 "transition_mode": (["explicit", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
@@ -52,15 +52,15 @@ class MiniMaxH3SPEEDSampler:
             },
         }
 
-    def sample(self, noise, guider, sigmas, latent_image, preset,
+    def sample(self, noise, guider, sigmas, latent_image, explicit_preset,
                transition_mode, noise_policy="direct_coarse",
                delta=0.01, power_A=219.48, power_beta=2.42,
                seed_offset=10000):
         # Use the calibrated transition steps from the preset config.
         # These are tuned per-preset (e.g. 2_stage_half transitions at step 5
         # out of 20, leaving 15 steps for full-res detail refinement).
-        scales = SCALE_PRESETS[preset]
-        transition_steps = DEFAULT_TRANSITION_STEPS[preset]
+        scales = SCALE_PRESETS[explicit_preset]
+        transition_steps = DEFAULT_TRANSITION_STEPS[explicit_preset]
         n_stages = len(scales)
         n_sigmas = len(sigmas)
         # Need at least 2 sigmas per stage, plus enough room for transition steps.
@@ -70,7 +70,7 @@ class MiniMaxH3SPEEDSampler:
         if n_sigmas < min_required:
             raise ValueError(
                 f"sigma schedule too short: got {n_sigmas} sigmas, need "
-                f"at least {min_required} for preset '{preset}' with "
+                f"at least {min_required} for preset '{explicit_preset}' with "
                 f"transition steps {transition_steps}. "
                 f"Increase steps to >= {min_required - 1}."
             )

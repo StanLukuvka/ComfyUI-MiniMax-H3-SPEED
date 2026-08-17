@@ -31,7 +31,7 @@ class MiniMaxH3SPEEDSchedule:
         return {
             "required": {
                 "sigmas": ("SIGMAS",),
-                "preset": (list(SCALE_PRESETS.keys()),),
+                "explicit_preset": (list(SCALE_PRESETS.keys()),),
                 "transition_mode": (["manual_step", "manual_sigma", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"],),
                 "manual_sigma": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.001}),
@@ -43,15 +43,15 @@ class MiniMaxH3SPEEDSchedule:
             },
         }
 
-    def plan(self, sigmas, preset, transition_mode, noise_policy="direct_coarse",
+    def plan(self, sigmas, explicit_preset, transition_mode, noise_policy="direct_coarse",
              manual_sigma=0.6, delta=0.01, power_A=219.48, power_beta=2.42,
              full_latent_h=45, full_latent_w=80):
         values = [float(s) for s in sigmas]
-        scales = SCALE_PRESETS[preset]
+        scales = SCALE_PRESETS[explicit_preset]
         n_transitions = len(scales) - 1
 
         # Start from the calibrated default transition steps for this preset.
-        base = preset_config(preset, noise=noise_policy)
+        base = preset_config(explicit_preset, noise=noise_policy)
         transition_steps = list(base.transition_steps)
 
         if transition_mode == "manual_sigma":
@@ -81,7 +81,7 @@ class MiniMaxH3SPEEDSchedule:
             _, aligned = aligned_speed_sigma(q, ratio)
             segs.append(f"[{scales[idx]}]{int(transition_steps[idx])}:{q:.9g}->{aligned:.9g}")
         report = (
-            f"preset={preset} scales={list(scales)} steps={list(transition_steps)} "
+            f"preset={explicit_preset} scales={list(scales)} steps={list(transition_steps)} "
             f"mode={transition_mode} " + " ".join(segs)
         )
         return (cfg, report)

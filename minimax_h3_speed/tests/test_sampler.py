@@ -99,14 +99,14 @@ def test_input_schema_widgets_and_required_inputs():
     inputs = mod.MiniMaxH3SPEEDSampler.INPUT_TYPES()
     required = inputs["required"]
     for key in ("noise", "guider", "sigmas", "latent_image",
-                "preset", "transition_mode"):
+                "explicit_preset", "transition_mode"):
         assert key in required, f"missing required input: {key}"
     # delta_custom path is enabled with sigma-harvest calibration
     assert "delta" in required
     assert "power_A" in required
     assert "power_beta" in required
     assert "seed_offset" in required
-    assert required["preset"][0][0] == "half_then_full"
+    assert required["explicit_preset"][0][0] == "half_then_full"
 
 
 def test_sample_runs_multi_stage():
