@@ -30,12 +30,27 @@ git clone https://github.com/StanLukuvka/H3-SPEED.git ComfyUI/custom_nodes/H3-SP
 
 ## Usage
 
-After cloning, the workflow is at `ComfyUI/custom_nodes/H3-SPEED/workflows/video_minimax_h3_t2v_speed.json`. Load it via ComfyUI's workflow browser (Workflow → Open).
+After cloning, load one of these workflows via ComfyUI's workflow browser (Workflow → Open):
 
-The default `half_then_full` preset works out of the box. No changes needed.
+- `video_minimax_h3_t2v_speed.json` — standard SPEED pipeline (sampler → decode → save)
+- `sigma_harvest.json` — calibration pass: harvest residual spectrum from clean noise
+- `sigma_harvest_calibrated.json` — full pipeline: harvest → report → schedule node
 
 Options:
 - `preset` — see table below
+- `transition_mode` — `explicit` (default) or `delta_custom` (uses calibrated A/β)
+- `noise_policy` — `direct_coarse` (default) or `coupled_full_grid`
+
+### Noise policies
+
+SPEED reduces VRAM by running early denoising at lower resolution. The `noise_policy` controls how noise is generated across stages:
+
+| Policy | Behavior | When to use |
+|--------|----------|-------------|
+| `direct_coarse` | Fresh noise per stage, standard SPEED | Default. Lower VRAM, standard quality. |
+| `coupled_full_grid` | Shared full-grid noise across all scales | Higher quality (better high-frequency coherence) at the cost of more VRAM. |
+
+Use `video_minimax_h3_t2v_speed.json` (direct_coarse) for the default path, or `video_minimax_h3_t2v_coupled.json` (coupled_full_grid) when quality matters more than memory.
 
 ### Presets (default 20-step schedule)
 
@@ -63,19 +78,57 @@ H3-SPEED/
 │   ├── h3_runtime.py          — multi-stage diffusion loop
 │   ├── spectral.py            — resolution expansion math
 │   ├── flow.py                — sigma alignment, audio handling
-│   └── tests/                 — 22 passing tests
-├── sampler_node.py            — ComfyUI node definition
+│   ├── harvest.py             — radial power spectrum + fitting
+│   └── tests/                 — 61 passing tests
+├── nodes/
+│   ├── sampler_node.py        — MiniMaxH3SPEEDSampler (main)
+│   └── helper_nodes/
+│       ├── sigma_harvest.py   — SigmaHarvest (calibration pass)
+│       ├── harvest_to_config.py — parse harvest JSON → report
+│       ├── schedule.py        — SpeedConfig planner
+│       ├── inspect.py         — debug: inspect latent geometry
+│       ├── power_spectrum.py  — debug: radial power spectrum
+│       ├── dct_lowpass.py     — debug: DCT lowpass filter
+│       ├── transition_math.py — debug: compute transition from A/β
+│       ├── spectral_expand.py — debug: visualize spectral expansion
+│       ├── x0_fidelity_probe.py — debug: X0 fidelity probe
+│       └── av_reentry_oracle.py — debug: AV reentry schedule
 └── workflows/
-    └── video_minimax_h3_t2v_speed.json
+    ├── video_minimax_h3_t2v_speed.json     — standard SPEED pipeline
+    ├── sigma_harvest.json                  — calibration-only workflow
+    └── sigma_harvest_calibrated.json       — harvest → report → schedule
 ```
 
 ## Test suite
 
 ```bash
-PYTHONPATH=minimax_h3_speed python -m pytest minimax_h3_speed/tests/ -q
+uv run pytest minimax_h3_speed/tests/ -q
 ```
 
-## License
+**Current:** 74 tests passing across 5 test files:
+- `test_dct.py` — DCT transform correctness
+- `test_flow.py` — sigma alignment, audio handling
+- `test_harvest.py` — power spectrum, fitting, callback
+- `test_integration.py` — end-to-end harvest→schedule→sample pipeline
+- `test_spectral.py` — spectral expansion
+
+### Helper Nodes
+
+**Calibration pipeline** (3 nodes):
+- `MiniMaxH3SigmaHarvest` (diagnostics) — takes noise, guider, sigmas, latent; returns JSON string
+- `MiniMaxH3HarvestToConfig` (diagnostics) — parses harvest JSON into a readable calibration report
+- `MiniMaxH3SPEEDSchedule` (schedule) — computes a SpeedConfig from sigmas + preset + mode
+
+**Debug utilities** (7 nodes):
+- `MiniMaxH3Inspect` — prints latent shape, device, dtype for troubleshooting
+- `MiniMaxH3PowerSpectrum` — computes radial power spectrum of a latent
+- `MiniMaxH3DCTLowpass` — applies DCT lowpass filter for ablation studies
+- `MiniMaxH3TransitionMath` — computes transition steps from A, β, delta
+- `MiniMaxH3SpectralExpand` — visualizes spectral expansion effect on noise
+- `MiniMaxH3XFidelityProbe` — measures X0 fidelity during sampling
+- `MiniMaxH3AVReentryOracle` — computes when audio should re-enter
+
+Calibration workflow: Run `SigmaHarvest` on a clean noise pass → parse with `HarvestToConfig` → feed calibrated `power_A`/`power_beta` into the sampler in `delta_custom` mode.
 
 PolyForm Noncommercial 1.0.0 — see [LICENSE.md](LICENSE.md).
 

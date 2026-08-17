@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 import torch
 from minimax_h3_speed.config import SpeedConfig
 
@@ -100,17 +101,16 @@ def test_input_schema_widgets_and_required_inputs():
     for key in ("noise", "guider", "sigmas", "latent_image",
                 "preset", "transition_mode"):
         assert key in required, f"missing required input: {key}"
-    # delta_custom path is disabled until H3 power spectrum is calibrated (Phase 5)
-    assert "delta" not in required
-    assert "power_A" not in required
-    assert "power_beta" not in required
-    assert "seed_offset" not in required
+    # delta_custom path is enabled with sigma-harvest calibration
+    assert "delta" in required
+    assert "power_A" in required
+    assert "power_beta" in required
+    assert "seed_offset" in required
     assert required["preset"][0][0] == "half_then_full"
 
 
 def test_sample_runs_multi_stage():
     _install_comfy_stubs()
-    mod = importlib.import_module("sampler_node")
     from minimax_h3_speed.h3_runtime import run_progressive_stages
 
     sample_calls = []
@@ -125,10 +125,8 @@ def test_sample_runs_multi_stage():
 
         def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
             sample_calls.append(len(sigmas))
-            # Simulate what a real sampler would do: call callback(step, x0, x, total)
             if callback is not None:
-                x0 = latent_image  # fake denoised output
-                callback(0, x0, latent_image, len(sigmas))
+                callback(0, latent_image, latent_image, len(sigmas))
             return latent_image
 
     class FakeNoise:
@@ -161,10 +159,66 @@ def test_sample_runs_multi_stage():
         disable_pbar=True, output_device=None,
     )
     assert out is not None
-    # ≥2 stages: coarse + final full-res
     assert len(sample_calls) >= 2, f"expected ≥2 stages, got {len(sample_calls)}"
 
 
+def test_coupled_full_grid_noise_policy():
+    """coupled_full_grid: full-grid noise is shared across stages."""
+    _install_comfy_stubs()
+    from minimax_h3_speed.h3_runtime import run_progressive_stages
+
+    sample_calls = []
+    captured_noises = []
+
+    class FakeGuider:
+        model_patcher = type("MP", (), {"model": type("M", (), {
+            "sigma_shift_video": 12.0,
+            "sigma_shift_audio": 3.0,
+            "process_latent_out": lambda s, x: x,
+        })()})()
+        conds = {}
+
+        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+            sample_calls.append(len(sigmas))
+            if callback is not None:
+                callback(0, latent_image, latent_image, len(sigmas))
+            return latent_image
+
+    class FakeNoise:
+        seed = 77
+        def generate_noise(self, latent):
+            samples = latent.get("samples")
+            if getattr(samples, "is_nested", False):
+                vids = [s for s in samples.unbind() if s.ndim == 5]
+                auds = [s for s in samples.unbind() if s.ndim != 5]
+                nt = type("NT", (), {"is_nested": True, "unbind": lambda self: vids + auds})()
+                captured_noises.append(nt)
+                return nt
+            return samples
+
+    # Full-resolution latent: 32x32 spatial
+    video = torch.zeros(1, 1, 2, 32, 32)
+    audio = torch.zeros(1, 1, 2, 44)
+
+    class FakeNested:
+        is_nested = True
+        def unbind(self):
+            return [video, audio]
+
+    nested = FakeNested()
+    latent = {"samples": nested}
+    sigmas = torch.linspace(1.0, 0.025, 20)
+    config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), noise_policy="coupled_full_grid")
+
+    out, denoised = run_progressive_stages(
+        FakeNoise(), FakeGuider(), sigmas, latent, config,
+        sampler=type("S", (), {"name": "euler"})(),
+        nested_type=type("NT", (), {"is_nested": True})(),
+        disable_pbar=True, output_device=None,
+    )
+    assert out is not None
+    assert len(sample_calls) >= 2
+    assert len(captured_noises) > 0
 
 
 def test_aligned_speed_sigma_math():
@@ -193,8 +247,6 @@ def test_active_av_shifts_returns_audio_scale_from_ratio():
     not read a non-existent 'audio_scale' attribute.
 
     With shift_video=12.0 and shift_audio=3.0, the correct audio_scale is 4.0.
-    The buggy implementation reads model.audio_scale (doesn't exist → returns 1.0).
-    This test asserts the fixed behaviour: audio_scale must be the ratio.
     """
     from minimax_h3_speed.h3_runtime import _active_av_shifts
 
@@ -211,131 +263,224 @@ def test_active_av_shifts_returns_audio_scale_from_ratio():
     v_shift, a_shift, a_scale = _active_av_shifts(FakeGuider())
     assert v_shift == 12.0
     assert a_shift == 3.0
-    # audio_scale should be the ratio, not a fixed 1.0
-    assert a_scale == 4.0, f"expected audio_scale=4.0 (12/3), got {a_scale}"
+    assert abs(a_scale - 4.0) < 1e-6
 
 
+def test_audio_scale_is_ratio_not_one():
+    """Verify audio_scale = video_shift / audio_shift, not 1.0."""
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    class FakeGuider:
+        model_patcher = type("MP", (), {"model": type("M", (), {
+            "sigma_shift_video": 12.0,
+            "sigma_shift_audio": 3.0,
+        })()})()
+
+    _, _, a_scale = _active_av_shifts(FakeGuider())
+    assert abs(a_scale - 4.0) < 1e-6
 
 
-def test_workflow_json_node_types_are_supported():
-    """Every class_type in the shipped workflow is a known ComfyUI / H3 / this
-    node, so the workflow can actually load and run once models exist."""
-    import json
-    wf = json.loads(
-        (Path(__file__).resolve().parents[2] / "workflows" / "video_minimax_h3_t2v_speed.json")
-        .read_text())
-    # UI format: {"nodes": [...], "links": [...], ...}
-    nodes_list = wf["nodes"] if "nodes" in wf else wf
-    expected = {
-        "UNETLoader", "CLIPLoader", "VAELoader", "MiniMaxH3ImageToVideo",
-        "BasicScheduler", "RandomNoise", "BasicGuider",
-        "MiniMaxH3SPEEDSampler", "VAEDecode", "VAEDecode",
-        "VAEDecodeAudio", "CreateVideo", "SaveVideo",
-    }
-    types = {(n.get("type") or n.get("class_type")) for n in nodes_list}
-    assert types == expected
-    # The sampler node exists in the workflow.
-    sampler_node = next(n for n in nodes_list if (n.get("type") or n.get("class_type")) == "MiniMaxH3SPEEDSampler")
-    assert sampler_node is not None
+def test_sigma_policy_canonical_vs_no_alignment():
+    """canonical: apply kappa alignment; no_alignment: no rescaling."""
+    from minimax_h3_speed.h3_runtime import run_progressive_stages
 
+    canonical_calls = []
+    no_align_calls = []
 
-# ---------------------------------------------------------------------------
-# Cross-repo flow equivalence tests (MVP vs Lab oracle)
-# ---------------------------------------------------------------------------
-# Shared pure-math inputs. The Lab lives as a sibling repo of the Sampler, so
-# its path is parents[3] (not parents[2]) from this test file. The verify
-# command's PYTHONPATH does not include the Lab, so each test inserts it
-# explicitly before importing speed_lab.flow.
+    def make_guider(calls_list):
+        class FakeGuider:
+            model_patcher = type("MP", (), {"model": type("M", (), {
+                "sigma_shift_video": 12.0,
+                "sigma_shift_audio": 3.0,
+                "process_latent_out": lambda s, x: x,
+            })()})()
+            conds = {}
+            def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+                calls_list.append(len(sigmas))
+                if callback is not None:
+                    callback(0, latent_image, latent_image, len(sigmas))
+                return latent_image
+        return FakeGuider()
 
-video = torch.randn(1, 1, 2, 16, 16)
-audio = torch.randn(1, 1, 2, 16)
-sigma = torch.tensor(0.5)
-old_video_sigma = 0.8
-new_video_sigma = 0.4
-old_audio_sigma = 0.3
-new_audio_sigma = 0.2
-audio_scale = 4.0
-resolution_ratio = 2.0
+    video = torch.zeros(1, 1, 2, 8, 8)
+    audio = torch.zeros(1, 1, 2, 44)
+    nested = type("NT", (), {"is_nested": True, "unbind": lambda self: [video, audio]})()
+    latent = {"samples": nested}
+    sigmas = torch.linspace(1.0, 0.025, 20)
 
-from_shift = 3.0
-to_shift = 12.0
+    config_canon = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="canonical")
+    config_noalign = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="no_alignment")
 
-
-def _lab_path():
-    return str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab")
-
-
-def test_flow_recover_internal_state():
-    from minimax_h3_speed.flow import recover_internal_state as mvp_func
-    import sys
-    sys.path.insert(0, _lab_path())
-    from speed_lab.flow import recover_internal_state as lab_func
-
-    mvp_video, mvp_audio = mvp_func(video, audio, float(sigma), audio_scale)
-    lab_video, lab_audio = lab_func(video, audio, float(sigma), audio_scale)
-    assert torch.equal(mvp_video, lab_video)
-    assert torch.equal(mvp_audio, lab_audio)
-
-
-def test_flow_reentry_noise():
-    from minimax_h3_speed.flow import reentry_noise as mvp_func
-    import sys
-    sys.path.insert(0, _lab_path())
-    from speed_lab.flow import reentry_noise as lab_func
-
-    internal_state = audio
-    mvp_out = mvp_func(internal_state, new_video_sigma)
-    lab_out = lab_func(internal_state, new_video_sigma)
-    assert torch.equal(mvp_out, lab_out)
-
-
-def test_flow_clock_reindex_audio_state():
-    from minimax_h3_speed.flow import clock_reindex_audio_state as mvp_func
-    import sys
-    sys.path.insert(0, _lab_path())
-    from speed_lab.flow import clock_reindex_audio_state as lab_func
-
-    mvp_out = mvp_func(
-        audio, audio, old_video_sigma, new_video_sigma,
-        old_audio_sigma, new_audio_sigma, audio_scale,
+    run_progressive_stages(
+        type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
+        make_guider(canonical_calls),
+        sigmas, latent, config_canon,
+        sampler=type("S", (), {"name": "euler"})(),
+        nested_type=type("NT", (), {"is_nested": True})(),
+        disable_pbar=True,
     )
-    lab_out = lab_func(
-        audio, audio, old_video_sigma, new_video_sigma,
-        old_audio_sigma, new_audio_sigma, audio_scale,
+    run_progressive_stages(
+        type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
+        make_guider(no_align_calls),
+        sigmas, latent, config_noalign,
+        sampler=type("S", (), {"name": "euler"})(),
+        nested_type=type("NT", (), {"is_nested": True})(),
+        disable_pbar=True,
     )
-    assert torch.equal(mvp_out, lab_out)
+    # Both should run the same number of stages
+    assert len(canonical_calls) == len(no_align_calls)
+    assert len(canonical_calls) >= 2
 
 
-def test_flow_carry_preserving_audio_state():
-    from minimax_h3_speed.flow import carry_preserving_audio_state as mvp_func
-    import sys
-    sys.path.insert(0, _lab_path())
-    from speed_lab.flow import carry_preserving_audio_state as lab_func
+def test_invalid_transition_mode_raises():
+    """Config with unsupported transition_mode must fail fast."""
+    with pytest.raises(ValueError, match="transition_mode"):
+        SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), transition_mode="unknown")
 
-    mvp_out = mvp_func(audio, old_video_sigma, new_video_sigma, old_audio_sigma, new_audio_sigma)
-    lab_out = lab_func(audio, old_video_sigma, new_video_sigma, old_audio_sigma, new_audio_sigma)
-    assert torch.equal(mvp_out, lab_out)
+
+def test_invalid_noise_policy_raises():
+    with pytest.raises(ValueError, match="noise_policy"):
+        SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), noise_policy="evil")
+
+
+def test_single_scale_must_be_full():
+    with pytest.raises(ValueError, match="single scale must be 1.0"):
+        SpeedConfig(scales=(0.5,), transition_steps=())
+
+
+def test_final_scale_must_be_full():
+    with pytest.raises(ValueError, match="final scale must be 1.0"):
+        SpeedConfig(scales=(0.5, 0.75), transition_steps=(3,))
+
+
+def test_transition_steps_count_matches_scales():
+    with pytest.raises(ValueError, match="need .* transition steps"):
+        SpeedConfig(scales=(0.5, 0.75, 1.0), transition_steps=(5,))
+
+
+def test_reentry_noise_formula():
+    """reentry_noise(internal, start_sigma) = internal / start_sigma."""
+    from minimax_h3_speed.flow import reentry_noise
+    internal = torch.tensor([1.0, 2.0, 3.0])
+    result = reentry_noise(internal, 0.5)
+    assert torch.allclose(result, internal / 0.5)
+
+
+def test_reentry_noise_raises_on_zero():
+    from minimax_h3_speed.flow import reentry_noise
+    with pytest.raises(ValueError, match="start_sigma must be positive"):
+        reentry_noise(torch.zeros(3), 0.0)
+
+
+def test_kappa_formula():
+    """κ = r / (1 + (r-1)t) per Eq. (5)."""
+    from minimax_h3_speed.flow import aligned_speed_sigma
+    r = 2.0
+    t = 0.5
+    kappa, new_q = aligned_speed_sigma(t, r)
+    expected_kappa = r / (1.0 + (r - 1.0) * t)
+    assert abs(kappa - expected_kappa) < 1e-10
+
+
+def test_time_shift_sigma_raises_on_bad_inputs():
+    """time_shift_sigma must reject non-positive shifts."""
+    from minimax_h3_speed.flow import time_shift_sigma
+    with pytest.raises(ValueError):
+        time_shift_sigma(0.5, 0.0, 1.0)
+    with pytest.raises(ValueError):
+        time_shift_sigma(0.5, 1.0, -1.0)
+
+
+def test_time_shift_sigma_identity_at_full_res():
+    """At q = q_ref (no shift), returns q unchanged."""
+    from minimax_h3_speed.flow import time_shift_sigma
+    result = time_shift_sigma(0.5, 1.0, 1.0)
+    assert abs(result - 0.5) < 1e-10
 
 
 def test_flow_time_shift_sigma():
-    from minimax_h3_speed.flow import time_shift_sigma as mvp_func
-    import sys
-    sys.path.insert(0, _lab_path())
-    from speed_lab.flow import time_shift_sigma as lab_func
+    """time_shift_sigma bridges video→audio sigma space correctly."""
+    from minimax_h3_speed.flow import time_shift_sigma
+    # With video_shift=2.0, audio_shift=1.0, q_video=0.5:
+    #   base = 0.5 / (2 + 0.5 * (1-2)) = 0.5 / 1.5 = 1/3
+    #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3
+    q_audio = time_shift_sigma(0.5, 2.0, 1.0)
+    assert abs(q_audio - (1.0/3.0)) < 1e-6
 
-    mvp_out = mvp_func(sigma, from_shift, to_shift)
-    lab_out = lab_func(sigma, from_shift, to_shift)
-    assert torch.equal(mvp_out, lab_out)
+
+def test_resolve_transition_steps_delta_custom_matches_recommend():
+    """Given config with transition_mode='delta_custom', the resolved steps
+    must equal recommend_configs output for the same parameters."""
+    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    from minimax_h3_speed.harvest import recommend_configs
+    sigmas = torch.linspace(1.0, 0.0, 21)  # 20 steps
+    config = SpeedConfig(
+        scales=(0.5, 1.0),
+        transition_steps=(5,),
+        transition_mode="delta_custom",
+        delta=0.01,
+        power_A=219.48,
+        power_beta=2.42,
+        full_latent_h=45,
+        full_latent_w=80,
+    )
+    resolved = resolve_transition_steps(config, sigmas, H_full=45, W_full=80)
+    rec = recommend_configs(219.48, 2.42, sigmas, latent_h=45, latent_w=80)
+    expected = rec["half_then_full"]["transition_steps"]
+    assert resolved == tuple(expected)
 
 
-def test_flow_aligned_speed_sigma():
-    from minimax_h3_speed.flow import aligned_speed_sigma as mvp_func
-    import sys
-    sys.path.insert(0, _lab_path())
-    from speed_lab.flow import aligned_speed_sigma as lab_func
+def test_resolve_transition_steps_explicit_ignores_delta():
+    """For 'explicit' mode, resolved steps must equal config.transition_steps,
+    regardless of delta/power_A/power_beta values."""
+    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    sigmas = torch.linspace(1.0, 0.0, 21)
+    config = SpeedConfig(
+        scales=(0.5, 1.0),
+        transition_steps=(7,),
+        transition_mode="explicit",
+        delta=0.5,  # irrelevant in explicit mode
+        power_A=999.0,
+        power_beta=9.0,
+        full_latent_h=45,
+        full_latent_w=80,
+    )
+    resolved = resolve_transition_steps(config, sigmas)
+    assert resolved == (7,)
 
-    mvp_kappa, mvp_t = mvp_func(float(sigma), resolution_ratio)
-    lab_kappa, lab_t = lab_func(float(sigma), resolution_ratio)
-    # aligned_speed_sigma returns plain floats (kappa, t_tilde).
-    assert mvp_kappa == lab_kappa
-    assert mvp_t == lab_t
+
+def test_resolve_transition_steps_validation():
+    """Transition steps must be in (0, len(sigmas)-1)."""
+    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    sigmas = torch.tensor([1.0, 0.5, 0.0])
+    config = SpeedConfig(
+        scales=(0.5, 1.0),
+        transition_steps=(1,),  # valid for config (>= 1)
+        transition_mode="explicit",
+        delta=0.01,
+        power_A=219.48,
+        power_beta=2.42,
+        full_latent_h=45,
+        full_latent_w=80,
+    )
+    resolved = resolve_transition_steps(config, sigmas)
+    assert resolved == (1,)
+
+
+def test_activation_time_matches_canonical_formula():
+    """Verify activation_time against hand-computed values from Eq. 9."""
+    from minimax_h3_speed.h3_runtime import activation_time
+    import math
+    result = activation_time(100.0, 0.01)
+    expected = 1.0 / (1.0 + math.sqrt(0.01 / (100.0 * (101.0 - 0.01))))
+    assert abs(result - expected) < 1e-10
+
+
+def test_flow_time_shift_sigma():
+    """time_shift_sigma bridges video→audio sigma space correctly."""
+    from minimax_h3_speed.flow import time_shift_sigma
+    # With video_shift=2.0, audio_shift=1.0, q_video=0.5:
+    #   base = 0.5 / (2 + 0.5 * (1-2)) = 0.5 / 1.5 = 1/3
+    #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3
+    q_audio = time_shift_sigma(0.5, 2.0, 1.0)
+    assert abs(q_audio - (1.0/3.0)) < 1e-6

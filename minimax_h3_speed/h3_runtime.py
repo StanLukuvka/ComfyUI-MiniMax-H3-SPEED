@@ -11,10 +11,8 @@ import math
 
 import torch
 
-from comfy import nested_tensor as default_comfy_nested_tensor
-
-from minimax_h3_speed.config import SpeedConfig
-from minimax_h3_speed.flow import (
+from .config import SpeedConfig
+from .flow import (
     aligned_speed_sigma,
     carry_preserving_audio_state,
     clock_reindex_audio_state,
@@ -22,17 +20,30 @@ from minimax_h3_speed.flow import (
     reentry_noise,
     time_shift_sigma,
 )
-from minimax_h3_speed.spectral import (
-    dct2,
-    lowpass_dct,
-    spectral_expand_dct,
-    spectral_expand_dct_coupled,
-)
+from .spectral import dct2, lowpass_dct, spectral_expand_dct, spectral_expand_dct_coupled
+
+
+# ---------------------------------------------------------------------------
+# Physics helpers
+# ---------------------------------------------------------------------------
+
+
+def power_spectrum(omega: float, A: float, beta: float) -> float:
+    """Radial power-law spectrum P(omega) = A * |omega|^(-beta). Matches paper Eq. 8."""
+    return A * abs(omega) ** (-beta)
+
+
+def activation_time(P_omega: float, delta: float) -> float:
+    """Activation time for one radial frequency. Matches paper Eq. 9."""
+    if delta >= 1.0:
+        raise ValueError("delta must be < 1.0")
+    return 1.0 / (1.0 + math.sqrt(delta / (P_omega * (1.0 + P_omega - delta))))
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _unpack_tensor(samples):
     """Unpack a NestedTensor into (video, audio) with H3 geometry validation."""
@@ -52,88 +63,41 @@ def _unpack_tensor(samples):
 
 
 def _pack_tensor(video, audio):
+    """Pack (video, audio) into a NestedTensor."""
+    from comfy import nested_tensor as default_comfy_nested_tensor
     return default_comfy_nested_tensor.NestedTensor([video, audio])
-
 
 
 def _active_av_shifts(guider):
     """Return (video_shift, audio_shift, audio_scale) from the guider's model.
 
-    Reads `sigma_shift_video` and `sigma_shift_audio` from the live H3 model
-    (defaults: 12.0 and 3.0 respectively), then derives `audio_scale` as the
-    ratio `video_shift / audio_shift`. This ratio is used by the audio time-
-    shift rescale during stage transitions.
-
-    Note: previously this function read `audio_scale` from the model — that
-    attribute does not exist on MiniMax-H3, so it silently defaulted to 1.0,
-    which is the wrong-by-4x bug that produced beige-wall artifacts on live
-    weights. Fixed in this commit; see `tests/test_active_av_shifts_returns_
-    audio_scale_from_ratio` for the regression test.
+    The shifts live on the MiniMaxH3Model's sigma shift attributes.
+    audio_scale is the constant bridge ratio used by flow.recover_internal_state.
     """
     model = getattr(getattr(guider, "model_patcher", None), "model", None)
     if model is None:
-        raise ValueError("guider has no model_patcher.model — cannot read H3 sigma shifts")
-    shifts = getattr(model, "diffusion_model", model)
-    video_shift = getattr(shifts, "sigma_shift_video", None)
-    audio_shift = getattr(shifts, "sigma_shift_audio", None)
+        raise ValueError("no model_patcher.model on guider")
+    video_shift = getattr(model, "sigma_shift_video", None)
+    audio_shift = getattr(model, "sigma_shift_audio", None)
     if not (isinstance(video_shift, (int, float)) and isinstance(audio_shift, (int, float))):
-        raise ValueError(
-            f"active MiniMax-H3 sigma shifts are unavailable "
-            f"(video={video_shift!r}, audio={audio_shift!r})"
-        )
+        raise ValueError("active MiniMax-H3 sigma shifts are unavailable")
     video_shift = float(video_shift)
     audio_shift = float(audio_shift)
     if video_shift <= 0.0 or audio_shift <= 0.0:
-        raise ValueError(
-            f"active MiniMax-H3 shifts must be positive "
-            f"(video={video_shift}, audio={audio_shift})"
-        )
+        raise ValueError("active MiniMax-H3 shifts must be positive")
     return video_shift, audio_shift, video_shift / audio_shift
 
 
-class _StageCapture:
-    """Mutable container for stage-callback x0 output."""
-    __slots__ = ("x0", "step")
-
-    def __init__(self):
-        self.x0 = None
-        self.step = None
-
-    def populated(self):
-        return self.x0 is not None
-
-
-def _audio_x0_continuation():
-    """Create a callback that records x0 from a sampler stage run.
-
-    Used by `clock_reindex` audio mode: the sampler callback gives us x0
-    (the denoised output at this sigma), which is the "clean" audio we
-    need to clock-reindex across stage boundaries. Without this callback
-    we'd lose the denoised state between stages and audio would drift.
-    """
-    record = _StageCapture()
+def _capture():
+    state = {}
 
     def callback(step, x0, x, total_steps):
-        record.x0 = x0
-        record.step = step
+        state["x0"] = x0
+        state["x"] = x
+        state["step"] = step
+        state["total_steps"] = total_steps
 
-    return record, callback
-
-
-# ---------------------------------------------------------------------------
-# Power spectrum helpers (for delta_custom mode — deferred in MVP)
-# ---------------------------------------------------------------------------
-
-def power_spectrum(omega: float, A: float, beta: float) -> float:
-    """Radial power-law spectrum P(omega) = A * |omega|^(-beta). Paper Eq. 8."""
-    return A * abs(omega) ** (-beta)
-
-
-def activation_time(P_omega: float, delta: float) -> float:
-    """Activation time for one radial frequency. Paper Eq. 9."""
-    if delta >= 1.0:
-        raise ValueError("delta must be < 1.0")
-    return 1.0 / (1.0 + math.sqrt(delta / (P_omega * (1.0 + P_omega - delta))))
+    return state, callback
 
 
 def _find_first_step_below(sigmas, threshold: float) -> int:
@@ -146,37 +110,31 @@ def _find_first_step_below(sigmas, threshold: float) -> int:
     return n
 
 
-def resolve_transition_steps(config, sigmas, H_full, W_full):
-    """Resolve per-stage transition sigma-step indices.
+def resolve_transition_steps(
+    config: SpeedConfig, sigmas, H_full: int | None = None, W_full: int | None = None,
+) -> tuple[int, ...]:
+    """Resolve per-stage transition steps.
 
-    When ``transition_mode == "delta_custom"``, uses the paper's proper
-    spectral-energy math (compare sigma against the activation time of each
-    radial frequency). When ``explicit``, uses the user-supplied step list.
+    Uses delta-optimal power-spectrum thresholds when the config requests it;
+    otherwise falls back to the explicit transition_steps in the config.
     """
-    if not isinstance(config, SpeedConfig):
-        return list(config.transition_steps)
-
-    scales = list(config.scales)
+    scales = config.scales
     if config.transition_mode == "delta_custom":
         tolerance = config.delta
         A, beta = config.power_A, config.power_beta
-        # omega_max derives from min(H, W) at full resolution.
-        omega_max = min(H_full, W_full) / 2.0
+        if H_full is None or W_full is None:
+            H_full, W_full = config.full_latent_h, config.full_latent_w
         steps = []
         for i in range(len(scales) - 1):
-            omega_i = scales[i] * omega_max
+            omega_i = scales[i] * min(H_full, W_full) / 2.0
             p = power_spectrum(omega_i, A, beta)
             thr = activation_time(p, tolerance)
             steps.append(_find_first_step_below(sigmas, thr))
-        return steps
-    return list(config.transition_steps)
+        return tuple(steps)
+    return tuple(int(s) for s in config.transition_steps)
 
 
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
-
-def run_progressive_stages(
+def run_repeated_stage_calls(
     noise,
     guider,
     sigmas: torch.Tensor,
@@ -188,30 +146,23 @@ def run_progressive_stages(
     disable_pbar: bool = True,
     output_device=None,
 ):
-    """Run N-stage progressive-resolution Euler chain for MiniMax-H3.
+    """Run an N-stage progressive-resolution Euler chain (multi-stage SPEED).
 
-    Each stage gets its own `guider.sample()` call, so `latent_shapes` is
-    re-baked from the current buffer geometry and the model never sees a
-    size mismatch.
+    This is intentionally the slow correctness oracle: each public guider call
+    performs its own prepare/pre-run/cleanup lifecycle and naturally rebuilds
+    H3's shape-dependent conditions.
+
+    Mirrors canonical SPEED ``generate``: it computes transition steps from
+    delta-optimal thresholds, runs each scale stage, and DCT-expands + kappa-aligns
+    at each boundary.
     """
     if "noise_mask" in latent:
         raise ValueError("T2V oracle does not support noise masks")
-
     samples = latent.get("samples")
-    if samples is None:
-        raise ValueError("latent has no 'samples' key")
-
-    # Unpack into video + audio streams.
-    if getattr(samples, "is_nested", False):
-        full_video, full_audio = _unpack_tensor(samples)
-    else:
-        raise ValueError("MiniMax-H3 requires a nested video/audio latent")
-
+    full_video, full_audio = _unpack_tensor(samples)
     video_shift, audio_shift, audio_scale = _active_av_shifts(guider)
-
     if torch.count_nonzero(full_video) or torch.count_nonzero(full_audio):
         raise ValueError("T2V oracle currently requires an empty H3 latent")
-
     if sigmas.ndim != 1 or len(sigmas) < 3:
         raise ValueError("sigmas must be a one-dimensional schedule")
 
@@ -221,169 +172,192 @@ def run_progressive_stages(
         raise ValueError("need at least two stages (scales ending at 1.0)")
 
     full_h, full_w = full_video.shape[-2:]
-    scale_hw = [
-        (max(1, round(full_h * s)), max(1, round(full_w * s)))
-        for s in scales
+    stage_hw = [
+        (max(1, round(full_h * s)), max(1, round(full_w * s))) for s in scales
     ]
 
-    # Resolve transition steps (delta-optimal or explicit).
+    # Resolve transition steps (delta-optimal or explicit), using the LIVE full
+    # resolution latent dims (matches canonical SPEED x.shape[-2:]) rather than
+    # the planner's config defaults.
     transition_steps = resolve_transition_steps(config, sigmas, full_h, full_w)
     if len(transition_steps) != n_stages - 1:
         raise ValueError("transition steps count must be n_scales - 1")
     for ts in transition_steps:
-        if not 0 < int(ts) < len(sigmas) - 1:
+        if not 0 < ts < len(sigmas) - 1:
             raise ValueError("transition step must be inside the sigma schedule")
 
-    # Stage 1: initialize coarse latent.
-    coarse_h, coarse_w = scale_hw[0]
+    # Stage 1: initialize coarse latent + noise at scale[0].
+    s0_h, s0_w = stage_hw[0]
     coarse_samples = _pack_tensor(
-        full_video.new_zeros(full_video.shape[:-2] + (coarse_h, coarse_w)),
+        full_video.new_zeros(full_video.shape[:-2] + (s0_h, s0_w)),
         torch.zeros_like(full_audio),
     )
     cur_latent = latent.copy()
     cur_latent["samples"] = coarse_samples
 
-    # Generate noise (coarse noise for coupled policy, fresh for direct).
     full_noise = None
     if config.noise_policy == "coupled_full_grid":
         full_noise = noise.generate_noise(latent)
-        _, full_noise_audio = _unpack_tensor(full_noise)
+        full_noise_video, full_noise_audio = _unpack_tensor(full_noise)
         coarse_noise = _pack_tensor(
-            lowpass_dct(full_noise[0], (coarse_h, coarse_w)),
+            lowpass_dct(full_noise_video, (s0_h, s0_w)),
             full_noise_audio,
         )
     else:
         coarse_noise = noise.generate_noise(cur_latent)
 
-    # Run each stage.
+    # Canonical generate structure: each scale stage runs a sigma slice, and at
+    # every boundary we DCT-expand + kappa-align, then re-enter with the aligned
+    # boundary sigma (new_q) prepended to the remaining tail. `transition_steps`
+    # (already resolved above, delta-optimal when transition_mode == delta_custom)
+    # names the per-stage boundary index into the current schedule.
+
+    # current_sigmas is the live schedule for the CURRENT stage: it starts as the
+    # full input sigmas, and after each boundary is spliced to [new_q] + tail.
     current_sigmas = sigmas
-    scale_pub = coarse_noise
-    scale_latent = cur_latent["samples"]
-    latest_public = None
-    latest_capture = None
+    stage_start_pub = coarse_noise
+    stage_start_latent = cur_latent["samples"]
+    last_public = None
+    last_capture = None
 
-    for scale_idx in range(n_stages - 1):
-        boundary = int(transition_steps[scale_idx])
-        if boundary < 1 or boundary >= len(current_sigmas) - 1:
-            raise ValueError(
-                f"transition step {boundary} out of bounds "
-                f"(schedule has {len(current_sigmas)} entries, valid: 1..{len(current_sigmas) - 2})"
-            )
+    for stage_idx in range(n_stages - 1):
+        # Boundary for this stage: transition_steps[stage_idx] is an index into
+        # current_sigmas identifying where the NEXT scale begins.
+        boundary = int(transition_steps[stage_idx])
+        # Guard against running past the schedule; clamp to interior.
+        n_avail = len(current_sigmas) - 1
+        boundary = min(boundary, n_avail - 1)
+        if boundary < 1:
+            raise ValueError("transition step must be inside the sigma schedule")
 
-        capture, callback = _audio_x0_continuation()
-        scale_sigmas = current_sigmas[: boundary + 1]
+        # Run the current stage over current_sigmas[:boundary+1].
+        capture, callback = _capture()
+        stage_sigmas = current_sigmas[: boundary + 1]
         public = guider.sample(
-            scale_pub,
-            scale_latent,
+            stage_start_pub,
+            stage_start_latent,
             sampler,
-            scale_sigmas,
+            stage_sigmas,
             callback=callback,
             disable_pbar=disable_pbar,
             seed=noise.seed,
         )
-        latest_public = public
-        latest_capture = capture
+        last_public = public
+        last_capture = capture
 
         public_video, public_audio = _unpack_tensor(public)
-        boundary_sigma = float(current_sigmas[boundary])
+        q = float(current_sigmas[boundary])
 
-        # Recover internal state.
+        # Recover internal state (public -> carry-representation).
         internal_video, internal_audio = recover_internal_state(
-            public_video, public_audio, boundary_sigma, audio_scale
+            public_video, public_audio, q, audio_scale
         )
 
-        # Align (scale_ratio) for this transition.
-        ratio = scales[scale_idx + 1] / scales[scale_idx]
+        # Align (kappa) for this transition: r = next_scale / current_scale.
+        ratio = scales[stage_idx + 1] / scales[stage_idx]
         if config.sigma_policy == "canonical":
-            scale_ratio, next_q = aligned_speed_sigma(boundary_sigma, ratio)
+            kappa, new_q = aligned_speed_sigma(q, ratio)
         else:
-            scale_ratio, next_q = 1.0, boundary_sigma
+            kappa, new_q = 1.0, q
 
         # DCT-expand the video (coupled or fresh band) and rescale by kappa.
-        next_hw = scale_hw[scale_idx + 1]
+        next_hw = stage_hw[stage_idx + 1]
         if config.noise_policy == "coupled_full_grid":
-            assert full_noise is not None
             full_noise_video, _ = _unpack_tensor(full_noise)
             expanded_video = spectral_expand_dct_coupled(
                 internal_video,
                 full_noise_video.to(device=internal_video.device, dtype=internal_video.dtype),
-                boundary_sigma,
+                q,
             )
         else:
             expanded_video = spectral_expand_dct(
                 internal_video,
                 next_hw,
-                boundary_sigma,
-                int(noise.seed) + int(config.transition_seed_offset) + scale_idx,
+                q,
+                int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
             )
-        transitioned_video = expanded_video * scale_ratio
+        transitioned_video = expanded_video * kappa
 
-        # Audio handling.
-        old_audio_sigma = time_shift_sigma(boundary_sigma, video_shift, audio_shift)
-        new_audio_sigma = time_shift_sigma(next_q, video_shift, audio_shift)
+        # Audio handling at this boundary.
+        old_audio_sigma = time_shift_sigma(q, video_shift, audio_shift)
+        new_audio_sigma = time_shift_sigma(new_q, video_shift, audio_shift)
         if config.audio_policy == "carry_preserve":
             transitioned_audio = carry_preserving_audio_state(
-                internal_audio, boundary_sigma, next_q, old_audio_sigma, new_audio_sigma
+                internal_audio, q, new_q, old_audio_sigma, new_audio_sigma
             )
         elif config.audio_policy == "clock_reindex":
-            if not capture.populated():
-                raise RuntimeError("clock_reindex requires an x0 callback")
-            _, clean_audio = _unpack_tensor(capture.x0)
+            if "x0" not in capture:
+                raise RuntimeError("clock_reindex requires an x0 callback from this stage")
+            _, clean_audio = _unpack_tensor(capture["x0"])
             transitioned_audio = clock_reindex_audio_state(
-                internal_audio, clean_audio,
-                boundary_sigma, next_q,
-                old_audio_sigma, new_audio_sigma,
+                internal_audio,
+                clean_audio,
+                q,
+                new_q,
+                old_audio_sigma,
+                new_audio_sigma,
                 audio_scale,
             )
-        else:  # untouched
+        else:
             transitioned_audio = internal_audio
 
-        # Build next-scale schedule and latent.
+        # Build the next-stage schedule: aligned boundary + remaining tail.
         next_sigmas = torch.cat(
-            [current_sigmas.new_tensor([next_q]), current_sigmas[boundary + 1:]],
-            dim=0,
+            [current_sigmas.new_tensor([new_q]), current_sigmas[boundary + 1:]], dim=0
         )
 
+        # Set up re-entry with the aligned boundary + zero latent for the next stage.
         next_noise = _pack_tensor(
-            reentry_noise(transitioned_video, next_q),
-            reentry_noise(transitioned_audio, next_q),
+            reentry_noise(transitioned_video, new_q),
+            reentry_noise(transitioned_audio, new_q),
         )
         next_zero = _pack_tensor(
             torch.zeros_like(transitioned_video),
             torch.zeros_like(transitioned_audio),
         )
 
-        scale_pub = next_noise
-        scale_latent = next_zero
+        # Advance to the next stage.
+        stage_start_pub = next_noise
+        stage_start_latent = next_zero
         current_sigmas = next_sigmas
 
-    # Final full-res stage.
-    final_capture, final_callback = _audio_x0_continuation()
+    # After the final transition, run the last full-res stage over the spliced tail.
+    final_capture, final_callback = _capture()
     final_public = guider.sample(
-        scale_pub,
-        scale_latent,
+        stage_start_pub,
+        stage_start_latent,
         sampler,
         current_sigmas,
         callback=final_callback,
         disable_pbar=disable_pbar,
         seed=noise.seed,
     )
-    latest_public = final_public
-    latest_capture = final_capture
+    last_public = final_public
+    last_capture = final_capture
 
-    if output_device is not None and latest_public is not None:
-        latest_public = latest_public.to(output_device)
-
+    if output_device is not None and last_public is not None:
+        last_public = last_public.to(output_device)
     out = latent.copy()
     out.pop("downscale_ratio_spacial", None)
     out.pop("downscale_ratio_temporal", None)
-    out["samples"] = latest_public
+    out["samples"] = last_public
 
     denoised = out
-    if latest_capture is not None and latest_capture.populated():
+    if last_capture is not None and "x0" in last_capture:
+        x0 = last_capture["x0"]
+        # x0 may be a NestedTensor — extract video stream
+        if getattr(x0, "is_nested", False):
+            x0_streams = list(x0.unbind())
+            x0_video = next((s for s in x0_streams if s.ndim == 5), None)
+            if x0_video is not None:
+                x0 = x0_video
         denoised = latent.copy()
-        x0 = latest_capture.x0
-        if hasattr(x0, "cpu"):
-            x0 = x0.cpu()
-        denoised["samples"] = guider.model_patcher.model.process_latent_out(x0)
+        denoised["samples"] = guider.model_patcher.model.process_latent_out(
+            x0.cpu() if hasattr(x0, "cpu") else x0
+        )
     return out, denoised
+
+
+# Alias retained for the sampler node's import.
+run_progressive_stages = run_repeated_stage_calls
+

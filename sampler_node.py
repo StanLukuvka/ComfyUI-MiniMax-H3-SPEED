@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import comfy.samplers
 from minimax_h3_speed.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS, SpeedConfig
-from minimax_h3_speed.h3_runtime import run_progressive_stages
+from minimax_h3_speed.h3_runtime import run_progressive_stages, _unpack_tensor
 
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
@@ -43,17 +43,19 @@ class MiniMaxH3SPEEDSampler:
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
                 "preset": (list(SCALE_PRESETS.keys()),),
-                "transition_mode": (["explicit"],),
-                # "transition_mode": (["explicit", "delta_custom"],),
-                # "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                # "power_A": ("FLOAT", {"default": 219.48, "min": 0.0, "max": 1e6}),
-                # "power_beta": ("FLOAT", {"default": 2.42, "min": 0.0, "max": 10.0}),
-                # "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
+                "transition_mode": (["explicit", "delta_custom"],),
+                "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
+                "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "power_A": ("FLOAT", {"default": 219.48, "min": 0.0, "max": 1e6}),
+                "power_beta": ("FLOAT", {"default": 2.42, "min": 0.0, "max": 10.0}),
+                "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
             },
         }
 
     def sample(self, noise, guider, sigmas, latent_image, preset,
-               transition_mode):
+               transition_mode, noise_policy="direct_coarse",
+               delta=0.01, power_A=219.48, power_beta=2.42,
+               seed_offset=10000):
         # Use the calibrated transition steps from the preset config.
         # These are tuned per-preset (e.g. 2_stage_half transitions at step 5
         # out of 20, leaving 15 steps for full-res detail refinement).
@@ -72,12 +74,20 @@ class MiniMaxH3SPEEDSampler:
                 f"transition steps {transition_steps}. "
                 f"Increase steps to >= {min_required - 1}."
             )
-        # Explicit mode only for now — delta_custom requires H3-specific
-        # power spectrum calibration which is deferred to Phase 5.
+        # Delta-custom mode gets (A, β) from a prior SigmaHarvest run; explicit
+        # mode uses the manually tuned transition_steps in the config.
+        full_video, _ = _unpack_tensor(latent_image.get("samples"))
         config = SpeedConfig(
             scales=scales,
             transition_steps=transition_steps,
             transition_mode=transition_mode,
+            noise_policy=noise_policy,
+            delta=float(delta),
+            power_A=float(power_A),
+            power_beta=float(power_beta),
+            transition_seed_offset=int(seed_offset),
+            full_latent_h=int(full_video.shape[-2]),
+            full_latent_w=int(full_video.shape[-1]),
         )
         
 
