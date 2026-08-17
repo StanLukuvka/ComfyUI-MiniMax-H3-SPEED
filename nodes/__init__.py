@@ -15,22 +15,40 @@ if _NODE_DIR not in sys.path:
 from sampler_node import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
 # Import helper nodes to register them in the global namespace.
-# These are loaded by ComfyUI's node discovery but don't need explicit
-# registration here since each module defines its own NODE_CLASS_MAPPINGS.
 try:
-    from nodes.helper_nodes import sigma_harvest, harvest_to_config, schedule
-except Exception as exc:  # helper nodes need comfy available at runtime
+    from nodes.helper_nodes import (
+        sigma_harvest,
+        harvest_to_config,
+        schedule,
+        inspect,
+        power_spectrum,
+        dct_lowpass,
+        transition_math,
+        spectral_expand,
+        x0_fidelity_probe,
+        av_reentry_oracle,
+    )
+except Exception as exc:
     print(f"[MiniMaxH3SPEED] Warning: could not load helper nodes: {exc}")
-
-NODE_CLASS_MAPPINGS.update({
-    "MiniMaxH3SigmaHarvest": sigma_harvest.MiniMaxH3SigmaHarvest,
-    "MiniMaxH3HarvestToConfig": harvest_to_config.MiniMaxH3HarvestToConfig,
-    "MiniMaxH3SPEEDSchedule": schedule.MiniMaxH3SPEEDSchedule,
-})
-NODE_DISPLAY_NAME_MAPPINGS.update({
-    "MiniMaxH3SigmaHarvest": sigma_harvest.NODE_DISPLAY_NAME_MAPPINGS["MiniMaxH3SigmaHarvest"],
-    "MiniMaxH3HarvestToConfig": harvest_to_config.NODE_DISPLAY_NAME_MAPPINGS["MiniMaxH3HarvestToConfig"],
-    "MiniMaxH3SPEEDSchedule": schedule.NODE_DISPLAY_NAME_MAPPINGS["MiniMaxH3SPEEDSchedule"],
-})
+else:
+    NODE_CLASS_MAPPINGS.update({
+        "MiniMaxH3SigmaHarvest": sigma_harvest.MiniMaxH3SigmaHarvest,
+        "MiniMaxH3HarvestToConfig": harvest_to_config.MiniMaxH3HarvestToConfig,
+        "MiniMaxH3SPEEDSchedule": schedule.MiniMaxH3SPEEDSchedule,
+        "MiniMaxH3Inspect": inspect.MiniMaxH3Inspect,
+        "MiniMaxH3PowerSpectrum": power_spectrum.MiniMaxH3PowerSpectrum,
+        "MiniMaxH3DCTLowpass": dct_lowpass.MiniMaxH3DCTLowpass,
+        "MiniMaxH3TransitionMath": transition_math.MiniMaxH3TransitionMath,
+        "MiniMaxH3SpectralExpand": spectral_expand.MiniMaxH3SpectralExpand,
+        "MiniMaxH3XFidelityProbe": x0_fidelity_probe.MiniMaxH3XFidelityProbe,
+        "MiniMaxH3AVReentryOracle": av_reentry_oracle.MiniMaxH3AVReentryOracle,
+    })
+    for module in (sigma_harvest, harvest_to_config, schedule, inspect,
+                   power_spectrum, dct_lowpass, transition_math,
+                   spectral_expand, x0_fidelity_probe, av_reentry_oracle):
+        NODE_DISPLAY_NAME_MAPPINGS.update({
+            k: v.__name__
+            for k, v in module.NODE_CLASS_MAPPINGS.items()
+        })
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
