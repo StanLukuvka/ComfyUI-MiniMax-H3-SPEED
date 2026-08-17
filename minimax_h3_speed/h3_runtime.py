@@ -77,8 +77,11 @@ def _active_av_shifts(guider):
     model = getattr(getattr(guider, "model_patcher", None), "model", None)
     if model is None:
         raise ValueError("no model_patcher.model on guider")
-    video_shift = getattr(model, "sigma_shift_video", None)
-    audio_shift = getattr(model, "sigma_shift_audio", None)
+    # The wrapper itself may not carry the shifts; probe diffusion_model (the
+    # inner network) first, falling back to the wrapper for robustness.
+    inner = getattr(model, "diffusion_model", None) or model
+    video_shift = getattr(inner, "sigma_shift_video", None)
+    audio_shift = getattr(inner, "sigma_shift_audio", None)
     if not (isinstance(video_shift, (int, float)) and isinstance(audio_shift, (int, float))):
         raise ValueError("active MiniMax-H3 sigma shifts are unavailable")
     video_shift = float(video_shift)
