@@ -30,12 +30,15 @@ git clone https://github.com/StanLukuvka/H3-SPEED.git ComfyUI/custom_nodes/H3-SP
 
 ## Usage
 
-After cloning, the workflow is at `ComfyUI/custom_nodes/H3-SPEED/workflows/video_minimax_h3_t2v_speed.json`. Load it via ComfyUI's workflow browser (Workflow → Open).
+After cloning, load one of these workflows via ComfyUI's workflow browser (Workflow → Open):
 
-The default `half_then_full` preset works out of the box. No changes needed.
+- `video_minimax_h3_t2v_speed.json` — standard SPEED pipeline (sampler → decode → save)
+- `sigma_harvest.json` — calibration pass: harvest residual spectrum from clean noise
+- `sigma_harvest_calibrated.json` — full pipeline: harvest → report → schedule node
 
 Options:
 - `preset` — see table below
+- `transition_mode` — `explicit` (default) or `delta_custom` (uses calibrated A/β)
 
 ### Presets (default 20-step schedule)
 
@@ -63,10 +66,18 @@ H3-SPEED/
 │   ├── h3_runtime.py          — multi-stage diffusion loop
 │   ├── spectral.py            — resolution expansion math
 │   ├── flow.py                — sigma alignment, audio handling
-│   └── tests/                 — 22 passing tests
-├── sampler_node.py            — ComfyUI node definition
+│   ├── harvest.py             — radial power spectrum + fitting
+│   └── tests/                 — 61 passing tests
+├── nodes/
+│   ├── sampler_node.py        — MiniMaxH3SPEEDSampler (main)
+│   └── helper_nodes/
+│       ├── sigma_harvest.py   — SigmaHarvest (calibration pass)
+│       ├── harvest_to_config.py — parse harvest JSON → report
+│       └── schedule.py        — SpeedConfig planner
 └── workflows/
-    └── video_minimax_h3_t2v_speed.json
+    ├── video_minimax_h3_t2v_speed.json     — standard SPEED pipeline
+    ├── sigma_harvest.json                  — calibration-only workflow
+    └── sigma_harvest_calibrated.json       — harvest → report → schedule
 ```
 
 ## Test suite
@@ -75,7 +86,15 @@ H3-SPEED/
 PYTHONPATH=minimax_h3_speed python -m pytest minimax_h3_speed/tests/ -q
 ```
 
-## License
+### Helper Nodes
+
+Three companion nodes handle calibration and scheduling:
+
+- `MiniMaxH3SigmaHarvest` (diagnostics) — takes noise, guider, sigmas, latent; returns JSON string
+- `MiniMaxH3HarvestToConfig` (diagnostics) — parses harvest JSON into a readable calibration report
+- `MiniMaxH3SPEEDSchedule` (schedule) — computes a SpeedConfig from sigmas + preset + mode
+
+Calibration workflow: Run `SigmaHarvest` on a clean noise pass → parse with `HarvestToConfig` → feed calibrated `power_A`/`power_beta` into the sampler in `delta_custom` mode.
 
 PolyForm Noncommercial 1.0.0 — see [LICENSE.md](LICENSE.md).
 
