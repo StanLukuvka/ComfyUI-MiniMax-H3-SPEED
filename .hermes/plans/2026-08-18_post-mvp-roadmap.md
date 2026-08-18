@@ -280,11 +280,12 @@ stage_t = [
 **Verify:** `python -m pytest minimax_h3_speed/tests/ -q --tb=short`
 **Status:** Committed in f0eb729.
 
-### P5-003: [TODO] Temporal DCT expansion (GAP-1)
-**What:** Add `dct_temporal`, `idct_temporal`, `spectral_expand_dct_3d` to `spectral.py`. Wire into `h3_runtime.py` runtime for 3D spectral expansion at boundaries.
-**Files:** `minimax_h3_speed/spectral.py`, `minimax_h3_speed/h3_runtime.py`
+### ✅ P5-003: [DONE] Temporal DCT expansion (GAP-1)
+**What:** Added `dct_temporal`, `idct_temporal`, `spectral_expand_dct_3d` to `spectral.py`. Not yet wired into `h3_runtime.py` (that's part of P5-004).
+**Files:** `minimax_h3_speed/spectral.py`, `minimax_h3_speed/tests/test_spectral.py`
 **Authority:** Paper Sec 4.1, Discussion
 **Verify:** `python -m pytest minimax_h3_speed/tests/test_spectral.py -q --tb=short`
+**Status:** Committed in 7438026. 4 new tests. 127 total passing.
 
 ### P5-004: [TODO] Coupled-noise audio spectral expansion (GAP-2)
 **What:** In the `coupled_full_grid` branch of `h3_runtime.py`, DCT-expand audio noise temporally alongside video. Add `spectral_expand_audio_temporal` to `spectral.py`.
@@ -292,11 +293,12 @@ stage_t = [
 **Authority:** Paper Sec 4.1
 **Verify:** `python -m pytest minimax_h3_speed/tests/test_integration.py -q --tb=short -k coupled`
 
-### P5-005: [TODO] Remove MockNested from helper nodes (GAP-5)
-**What:** Replace MockNested construction with pass-through NestedTensor usage in all 7 helper nodes. Test with duck-typed NestedTensor.
-**Files:** `nodes/helper_nodes/dct_lowpass.py`, `nodes/helper_nodes/spectral_expand.py`, `nodes/helper_nodes/x0_fidelity_probe.py`, `nodes/helper_nodes/av_reentry_oracle.py`, `nodes/helper_nodes/power_spectrum.py`, `nodes/helper_nodes/transition_math.py`, `nodes/helper_nodes/inspect.py`
+### ✅ P5-005: [DONE] Remove MockNested from helper nodes (GAP-5)
+**What:** Only 2 of 7 helper nodes actually imported MockNested (dct_lowpass, spectral_expand). Replaced with `reconstruct_nested()` helper in `common.py` that preserves the upstream NestedTensor subclass. 3 new duck-typed pass-through tests.
+**Files:** `nodes/common.py`, `nodes/helper_nodes/dct_lowpass.py`, `nodes/helper_nodes/spectral_expand.py`, `minimax_h3_speed/tests/test_debug_nodes.py`
 **Authority:** ComfyUI NestedTensor API
 **Verify:** `python -m pytest minimax_h3_speed/tests/test_debug_nodes.py -q --tb=short`
+**Status:** Committed in ce7ca72. 23 debug-node tests passing.
 
 ### P5-006: [TODO] Temporal scale scheduling (GAP-6)
 **What:** Add `temporal_scales` to SpeedConfig, thread through runtime, expose in sampler/schedule nodes.
