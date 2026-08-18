@@ -14,4 +14,15 @@ if _NODE_DIR not in sys.path:
 
 from sampler_node import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
+# Import helper nodes to register them in the global namespace.
+try:
+    from nodes import (
+        NODE_CLASS_MAPPINGS as _HELPER_MAPPINGS,
+        NODE_DISPLAY_NAME_MAPPINGS as _HELPER_DISPLAY,
+    )
+    NODE_CLASS_MAPPINGS.update(_HELPER_MAPPINGS)
+    NODE_DISPLAY_NAME_MAPPINGS.update(_HELPER_DISPLAY)
+except Exception as exc:
+    print(f"[MiniMaxH3SPEED] Warning: could not load helper nodes: {exc}")
+
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
