@@ -287,11 +287,13 @@ stage_t = [
 **Verify:** `python -m pytest minimax_h3_speed/tests/test_spectral.py -q --tb=short`
 **Status:** Committed in 7438026. 4 new tests. 127 total passing.
 
-### P5-004: [TODO] Coupled-noise audio spectral expansion (GAP-2)
-**What:** In the `coupled_full_grid` branch of `h3_runtime.py`, DCT-expand audio noise temporally alongside video. Add `spectral_expand_audio_temporal` to `spectral.py`.
+### ⚠️ P5-004: [DEFERRED] Coupled-noise audio spectral expansion (GAP-2)
+**What:** DCT-expand audio noise temporally alongside video in the `coupled_full_grid` branch.
+**Why deferred:** The cited paper authority (arXiv:2605.18736) covers image/video spectral expansion only. Audio spectral structure is not discussed. H3 is a joint video+audio model, but the SPEED paper's spectral machinery is defined for spatial (H,W) and temporal (T) axes — not for audio's [B,C,2,T] geometry. Implementing audio DCT expansion without paper backing would be speculation, not implementation.
 **Files:** `minimax_h3_speed/h3_runtime.py`, `minimax_h3_speed/spectral.py`
-**Authority:** Paper Sec 4.1
+**Authority:** Paper Sec 4.1 (spatial only) — audio extrapolation unsupported
 **Verify:** `python -m pytest minimax_h3_speed/tests/test_integration.py -q --tb=short -k coupled`
+**Status:** Deferred until paper authority exists or empirical testing shows audio spectral coupling is needed.
 
 ### ✅ P5-005: [DONE] Remove MockNested from helper nodes (GAP-5)
 **What:** Only 2 of 7 helper nodes actually imported MockNested (dct_lowpass, spectral_expand). Replaced with `reconstruct_nested()` helper in `common.py` that preserves the upstream NestedTensor subclass. 3 new duck-typed pass-through tests.
