@@ -41,7 +41,7 @@ class SpeedConfig:
     audio_policy: str = "clock_reindex"
     sigma_policy: str = "canonical"
     transition_seed_offset: int = 10_000
-    transition_mode: str = "explicit"  # "explicit" only for MVP; delta_custom deferred to Phase 5
+    transition_mode: str = "explicit"  # "explicit" uses transition_steps; "delta_custom" computes from power spectrum
     delta: float = 0.01
     # Initial estimates for MiniMax-H3 (not WAN 2.1). Replace after running
     # harvest calibration on a real H3 model — see harvest.py / SigmaHarvest node.
