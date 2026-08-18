@@ -31,15 +31,15 @@ class MiniMaxH3SPEEDSchedule:
                 "noise_policy": (["direct_coarse", "coupled_full_grid"],),
                 "manual_sigma": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.001}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 0.000001, "max": 0.999999, "step": 0.001}),
-                "power_A": ("FLOAT", {"default": 219.48, "min": 0.000001, "max": 1000000.0}),
-                "power_beta": ("FLOAT", {"default": 2.42, "min": 0.000001, "max": 10.0}),
+                "power_A": ("FLOAT", {"default": 150.0, "min": 0.000001, "max": 1000000.0}),
+                "power_beta": ("FLOAT", {"default": 2.0, "min": 0.000001, "max": 10.0}),
                 "full_latent_h": ("INT", {"default": 45, "min": 1, "max": 4096}),
                 "full_latent_w": ("INT", {"default": 80, "min": 1, "max": 4096}),
             },
         }
 
     def plan(self, sigmas, explicit_preset, transition_mode, noise_policy="direct_coarse",
-             manual_sigma=0.6, delta=0.01, power_A=219.48, power_beta=2.42,
+             manual_sigma=0.6, delta=0.01, power_A=150.0, power_beta=2.0,
              full_latent_h=45, full_latent_w=80):
         values = [float(s) for s in sigmas]
         scales = SCALE_PRESETS[explicit_preset]

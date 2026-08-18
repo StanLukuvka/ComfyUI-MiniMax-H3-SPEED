@@ -43,10 +43,10 @@ class SpeedConfig:
     transition_seed_offset: int = 10_000
     transition_mode: str = "explicit"  # "explicit" only for MVP; delta_custom deferred to Phase 5
     delta: float = 0.01
-    # Defaults calibrated for WAN 2.1 (rounded from A=219.484718, β=2.422687).
-    # Documented: see study doc §7 TODO in .hermes/plans/.
-    power_A: float = 219.48
-    power_beta: float = 2.42
+    # Initial estimates for MiniMax-H3 (not WAN 2.1). Replace after running
+    # harvest calibration on a real H3 model — see harvest.py / SigmaHarvest node.
+    power_A: float = 150.0
+    power_beta: float = 2.0
     full_latent_h: int = 45
     full_latent_w: int = 80
     certification: str = "requires_h3_gpu_validation"
