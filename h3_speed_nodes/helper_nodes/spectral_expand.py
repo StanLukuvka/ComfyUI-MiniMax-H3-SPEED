@@ -44,7 +44,7 @@ class MiniMaxH3SpectralExpand:
             return (noise, f"Expansion failed: {e}")
 
         # Preserve the upstream NestedTensor subclass (real or duck-typed).
-        from nodes.common import reconstruct_nested
+        from h3_speed_nodes.common import reconstruct_nested
         new_samples = reconstruct_nested(samples, [expanded] + list(streams[1:]))
         new_noise = {"samples": new_samples}
         report = (

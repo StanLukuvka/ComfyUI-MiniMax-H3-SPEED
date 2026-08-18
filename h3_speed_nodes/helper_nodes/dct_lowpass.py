@@ -35,7 +35,7 @@ class MiniMaxH3DCTLowpass:
         ]
 
         # Preserve the upstream NestedTensor subclass (real or duck-typed).
-        from nodes.common import reconstruct_nested
+        from h3_speed_nodes.common import reconstruct_nested
         return ({"samples": reconstruct_nested(samples, new_streams)},)
 
 

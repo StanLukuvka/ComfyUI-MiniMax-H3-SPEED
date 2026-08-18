@@ -54,7 +54,7 @@ def _load_module(name: str, path: Path):
 
 
 # --- Load helper node modules directly ---
-_NODE_DIR = Path(__file__).parent.parent.parent / "nodes" / "helper_nodes"
+_NODE_DIR = Path(__file__).parent.parent.parent / "h3_speed_nodes" / "helper_nodes"
 
 _mods = {}
 for _name, _fn in [

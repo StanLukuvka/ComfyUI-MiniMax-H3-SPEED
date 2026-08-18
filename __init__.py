@@ -15,8 +15,13 @@ if _NODE_DIR not in sys.path:
 from sampler_node import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
 # Import helper nodes to register them in the global namespace.
+# NOTE: the package is named h3_speed_nodes (NOT "nodes") on purpose.
+# ComfyUI's core already owns the "nodes" module (ComfyUI/nodes.py), so a
+# package named "nodes" here would silently import ComfyUI's built-in node
+# registry instead of ours — the sampler node still registers, but every
+# helper node (SigmaHarvest, Schedule, etc.) silently disappears.
 try:
-    from nodes import (
+    from h3_speed_nodes import (
         NODE_CLASS_MAPPINGS as _HELPER_MAPPINGS,
         NODE_DISPLAY_NAME_MAPPINGS as _HELPER_DISPLAY,
     )

@@ -16,7 +16,7 @@ from sampler_node import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
 # Import helper nodes to register them in the global namespace.
 try:
-    from nodes.helper_nodes import (
+    from h3_speed_nodes.helper_nodes import (
         sigma_harvest,
         harvest_to_config,
         schedule,
