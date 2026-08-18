@@ -261,3 +261,51 @@ def test_av_reentry_oracle_no_reentry():
     assert isinstance(result, tuple)
     assert len(result) == 2
     assert "No reentry" in result[1]
+
+
+# --- Duck-typed NestedTensor pass-through tests ---
+
+class _DuckNestedTensor:
+    """Simulates a real ComfyUI NestedTensor: accepts a list of streams."""
+
+    is_nested = True
+
+    def __init__(self, tensors):
+        self._tensors = list(tensors)
+
+    def unbind(self):
+        return self._tensors
+
+
+def _make_duck_latent(H=16, W=16, T=4, C=4):
+    """Latent using a list-style NestedTensor (real ComfyUI convention)."""
+    video = torch.randn(1, C, T, H, W)
+    audio = torch.randn(1, C, 2, T)
+    return {"samples": _DuckNestedTensor([video, audio])}
+
+
+def test_dct_lowpass_preserves_nested_type():
+    """DCT lowpass node returns the same NestedTensor subclass it receives."""
+    latent = _make_duck_latent()
+    original_cls = type(latent["samples"])
+    node = _mods["_node_dct_lowpass"].MiniMaxH3DCTLowpass()
+    result = node.apply(latent, cutoff_frequency=0.5)
+    assert type(result[0]["samples"]) is original_cls
+
+
+def test_spectral_expand_preserves_nested_type():
+    """Spectral expand node returns the same NestedTensor subclass it receives."""
+    latent = _make_duck_latent()
+    original_cls = type(latent["samples"])
+    node = _mods["_node_spectral_expand"].MiniMaxH3SpectralExpand()
+    result = node.expand(latent, sigma=0.5, direction="up")
+    assert type(result[0]["samples"]) is original_cls
+
+
+def test_dct_lowpass_preserves_mock_fixture_type():
+    """DCT lowpass also works with the (video, audio) fixture convention."""
+    latent = _make_mock_latent()
+    original_cls = type(latent["samples"])
+    node = _mods["_node_dct_lowpass"].MiniMaxH3DCTLowpass()
+    result = node.apply(latent, cutoff_frequency=0.5)
+    assert type(result[0]["samples"]) is original_cls

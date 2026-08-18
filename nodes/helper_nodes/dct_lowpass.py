@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from minimax_h3_speed.spectral import lowpass_filter_dct
-from nodes.common import MockNested
 
 
 class MiniMaxH3DCTLowpass:
@@ -35,7 +34,9 @@ class MiniMaxH3DCTLowpass:
             for stream in streams
         ]
 
-        return ({"samples": MockNested(new_streams)},)
+        # Preserve the upstream NestedTensor subclass (real or duck-typed).
+        from nodes.common import reconstruct_nested
+        return ({"samples": reconstruct_nested(samples, new_streams)},)
 
 
 NODE_CLASS_MAPPINGS = {"MiniMaxH3DCTLowpass": MiniMaxH3DCTLowpass}

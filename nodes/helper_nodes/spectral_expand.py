@@ -5,7 +5,6 @@ from __future__ import annotations
 import torch
 
 from minimax_h3_speed.spectral import spectral_expand_dct
-from nodes.common import MockNested
 
 
 class MiniMaxH3SpectralExpand:
@@ -44,7 +43,9 @@ class MiniMaxH3SpectralExpand:
         except Exception as e:
             return (noise, f"Expansion failed: {e}")
 
-        new_samples = MockNested([expanded] + list(streams[1:]))
+        # Preserve the upstream NestedTensor subclass (real or duck-typed).
+        from nodes.common import reconstruct_nested
+        new_samples = reconstruct_nested(samples, [expanded] + list(streams[1:]))
         new_noise = {"samples": new_samples}
         report = (
             f"Expanded {direction} from {video.shape[-2]}x{video.shape[-1]} "
