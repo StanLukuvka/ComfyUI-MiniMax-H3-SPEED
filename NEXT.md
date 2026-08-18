@@ -3,7 +3,7 @@
 **Repo:** `/agent/projects/minimax-quickfile/ComfyUI-MiniMaxH3-SPEED-Sampler`
 **Branch:** `dev` (off `main`)
 **PR:** none open — working directly on `dev`; merge to `main` when feature is ready
-**Tests:** 119 passing · **Commits ahead of main:** 15
+**Tests:** 132 passing · **Commits ahead of main:** 23
 
 ---
 
@@ -55,7 +55,7 @@ test_oracle.py       15 passed  — Straight-flow oracle proof
 test_spectral.py     3 passed   — Spectral expand correctness
 test_schedule_node.py 8 passed   — Schedule node plan() integration
 
-Total: 119 passed
+Total: 132 passed
 ```
 
 ---

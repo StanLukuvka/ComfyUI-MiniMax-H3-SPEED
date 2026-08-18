@@ -14,8 +14,11 @@ import torch
 import comfy.samplers
 import comfy.utils
 
+from h3_logging import get_logger
 from minimax_h3_speed.harvest import HarvestCallback
 from minimax_h3_speed.h3_runtime import _unpack_tensor, _pack_tensor
+
+log = get_logger()
 
 
 class MiniMaxH3SigmaHarvest:
@@ -51,9 +54,16 @@ class MiniMaxH3SigmaHarvest:
         # Validate H3 nested latent
         samples = latent_image.get("samples")
         if not getattr(samples, "is_nested", False):
+            log.error("latent is not a NestedTensor (is_nested=%r, type=%s); "
+                      "the upstream node must be MiniMaxH3ImageToVideo",
+                      getattr(samples, "is_nested", None), type(samples).__name__)
             raise ValueError("MiniMax-H3 SPEED requires a NestedTensor video/audio latent")
         full_video, full_audio = _unpack_tensor(samples)
         full_h, full_w = full_video.shape[-2:]
+        log.info("SigmaHarvest: video=%s audio=%s sigma_count=%d capture_every=%d fit=%s",
+                 tuple(full_video.shape), tuple(full_audio.shape),
+                 int(sigmas.shape[0]) if hasattr(sigmas, "shape") else len(sigmas),
+                 int(capture_every), fit_mode)
 
         # Zero the latent so measured power is from clean noise (not content).
         zero_latent = latent_image.copy()
@@ -83,6 +93,12 @@ class MiniMaxH3SigmaHarvest:
             delta=float(delta),
             fit_mode=fit_mode,
         )
+        log.info("SigmaHarvest done: fit_mode=%s A=%.3f beta=%.3f r2=%.3f health=%s",
+                 fit_mode,
+                 float(result["overall_fit_A"]),
+                 float(result["overall_fit_beta"]),
+                 float(result["overall_fit_r2"]),
+                 result["fit_health"])
         return (json.dumps(result, indent=2, default=str),)
 
 

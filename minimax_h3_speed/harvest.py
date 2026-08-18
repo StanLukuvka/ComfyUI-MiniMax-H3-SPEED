@@ -21,6 +21,13 @@ from .spectral import dct2
 from .h3_runtime import power_spectrum, activation_time
 from .config import SCALE_PRESETS
 
+try:  # package-relative when imported inside the repo
+    from ..h3_logging import get_logger
+except ImportError:  # root-relative when the repo root is on sys.path
+    from h3_logging import get_logger
+
+log = get_logger("Harvest")
+
 
 def radial_power_spectrum(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     """Mean 2D-DCT power of a video latent [B, C, T, H, W], binned radially.
@@ -128,17 +135,25 @@ class HarvestCallback:
             x_streams = list(x.unbind())
             x0_streams = list(x0.unbind())
         except AttributeError:
+            log.warning("harvest callback step=%s: x/x0 are not NestedTensors "
+                        "(unbind failed) — is the guider producing flat tensors?", step)
             return
         if len(x_streams) != 2 or len(x0_streams) != 2:
+            log.warning("harvest callback step=%s: expected 2 streams, got %d/%d",
+                        step, len(x_streams), len(x0_streams))
             return
         x_video, _ = x_streams
         x0_video, _ = x0_streams
         if x_video.ndim != 5 or x0_video.ndim != 5:
+            log.warning("harvest callback step=%s: video ndim %d/%d (expected 5)",
+                        step, x_video.ndim, x0_video.ndim)
             return
         residual = x_video - x0_video
         sigma = float(self.sigmas[min(step, len(self.sigmas) - 1)])
         freqs, profile = radial_power_spectrum(residual)
         self.profiles.append((sigma, freqs, profile))
+        log.debug("harvest capture: step=%s/%s sigma=%.4f bins=%d mean_power=%.3e",
+                  step, total_steps, sigma, len(freqs), float(np.asarray(profile).mean()))
 
     def finalize(
         self,
@@ -151,6 +166,11 @@ class HarvestCallback:
     ) -> dict:
         """Return the fitted spectrum plus delta-optimal recommendations."""
         if not self.profiles:
+            log.error("harvest finalize: no latents captured — the callback NEVER fired. "
+                      "Check that guider.sample actually calls callbacks (ComfyUI "
+                      ">= 0.30 does); if using BasicGuider, inspect guider.sample's "
+                      "signature. Also check that the input latent is a real "
+                      "NestedTensor from MiniMaxH3ImageToVideo (not a flat LATENT).")
             raise RuntimeError("no latents captured (callback never fired)")
 
         per_sigma_fits = []
