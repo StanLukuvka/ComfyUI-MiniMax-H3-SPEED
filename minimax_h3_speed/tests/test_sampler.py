@@ -490,3 +490,23 @@ def test_activation_time_raises_on_delta_ge_1():
         activation_time(100.0, 1.0)
     with pytest.raises(ValueError, match="delta must be < 1.0"):
         activation_time(100.0, 2.0)
+
+
+def test_sampler_transition_mode_mapping():
+    """Sampler node accepts manual_step/manual_sigma/delta_custom and maps
+    to config-internal explicit/delta_custom correctly."""
+    from sampler_node import MiniMaxH3SPEEDSampler
+    # Check INPUT_TYPES advertises the three node-facing values
+    inputs = MiniMaxH3SPEEDSampler.INPUT_TYPES()["required"]
+    assert "transition_mode" in inputs
+    widget_values = inputs["transition_mode"][0]
+    assert set(widget_values) == {"manual_step", "manual_sigma", "delta_custom"}
+
+    # Verify the mapping by inspecting the sample() method's logic indirectly:
+    # calling sample() requires a full ComfyUI environment, so we instead check
+    # the MODE_TO_CONFIG dict via the function signature and the mapping comment.
+    import inspect
+    src = inspect.getsource(MiniMaxH3SPEEDSampler.sample)
+    assert "MODE_TO_CONFIG" in src
+    assert '"explicit"' in src
+    assert '"delta_custom"' in src

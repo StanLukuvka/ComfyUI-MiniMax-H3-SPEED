@@ -43,7 +43,7 @@ class MiniMaxH3SPEEDSampler:
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
                 "explicit_preset": (list(SCALE_PRESETS.keys()),),
-                "transition_mode": (["explicit", "delta_custom"],),
+                "transition_mode": (["manual_step", "manual_sigma", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
                 "power_A": ("FLOAT", {"default": 219.48, "min": 0.0, "max": 1e6}),
@@ -77,10 +77,19 @@ class MiniMaxH3SPEEDSampler:
         # Delta-custom mode gets (A, β) from a prior SigmaHarvest run; explicit
         # mode uses the manually tuned transition_steps in the config.
         full_video, _ = _unpack_tensor(latent_image.get("samples"))
+        # Map node-facing transition_mode values to config-internal vocabulary.
+        # "manual_step" and "manual_sigma" both produce explicit transition_steps
+        # (resolved from the preset); only "delta_custom" uses power-spectrum
+        # thresholds. The Schedule node emits the same three values, so this keeps
+        # the two nodes' vocabularies consistent end-to-end.
+        MODE_TO_CONFIG = {"manual_step": "explicit",
+                          "manual_sigma": "explicit",
+                          "delta_custom": "delta_custom"}
+        config_mode = MODE_TO_CONFIG.get(transition_mode, "explicit")
         config = SpeedConfig(
             scales=scales,
             transition_steps=transition_steps,
-            transition_mode=transition_mode,
+            transition_mode=config_mode,
             noise_policy=noise_policy,
             delta=float(delta),
             power_A=float(power_A),
