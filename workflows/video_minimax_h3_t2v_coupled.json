@@ -1,8 +1,7 @@
 {
-  "id": "minimax-h3-t2v-speed",
-  "revision": 2,
+  "id": "minimax-h3-t2v-speed-coupled",
   "last_node_id": 13,
-  "last_link_id": 14,
+  "last_link_id": 15,
   "nodes": [
     {
       "id": 1,
@@ -16,7 +15,7 @@
         200
       ],
       "flags": {},
-      "order": 0,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -29,7 +28,9 @@
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
       "widgets_values": [
         "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
         "default"
@@ -47,7 +48,7 @@
         200
       ],
       "flags": {},
-      "order": 1,
+      "order": 2,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -59,7 +60,9 @@
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
       "widgets_values": [
         "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
         "minimax",
@@ -78,7 +81,7 @@
         200
       ],
       "flags": {},
-      "order": 2,
+      "order": 3,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -91,7 +94,9 @@
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
       "widgets_values": [
         "minimax_h3_video_vae_fp16.safetensors"
       ]
@@ -108,7 +113,7 @@
         200
       ],
       "flags": {},
-      "order": 3,
+      "order": 4,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -120,7 +125,9 @@
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
       "widgets_values": [
         "minimax_h3_audio_vae_fp32.safetensors"
       ]
@@ -134,47 +141,21 @@
       ],
       "size": [
         400,
-        400
+        420
       ],
       "flags": {},
-      "order": 4,
+      "order": 5,
       "mode": 0,
       "inputs": [
         {
           "name": "clip",
           "type": "CLIP",
-          "link": 2,
-          "slot_index": 0
+          "link": 2
         },
         {
           "name": "vae",
           "type": "VAE",
-          "link": 3,
-          "slot_index": 1
-        },
-        {
-          "name": "prompt",
-          "type": "STRING",
-          "link": null,
-          "slot_index": 2
-        },
-        {
-          "name": "width",
-          "type": "INT",
-          "link": null,
-          "slot_index": 3
-        },
-        {
-          "name": "height",
-          "type": "INT",
-          "link": null,
-          "slot_index": 4
-        },
-        {
-          "name": "length",
-          "type": "INT",
-          "link": null,
-          "slot_index": 5
+          "link": 3
         }
       ],
       "outputs": [
@@ -186,14 +167,16 @@
           ]
         },
         {
-          "name": "latent",
+          "name": "LATENT",
           "type": "LATENT",
           "links": [
             6
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "MiniMaxH3ImageToVideo"
+      },
       "widgets_values": [
         "Vaporwave title sequence look: pink and blue gradient palette, VHS tracking artifacts, Greek statue motifs, chrome palm trees, RGB chromatic aberration, lo-fi retro atmosphere, mood languid and nostalgic.\n\nTimeline:\n[0s-1s] VHS static opens the frame, the title starts forming with RGB split and slight horizontal jitter.\n[1s-2s] Hard cut to a Greek plaster bust close-up, pink-purple gradient sky, a pixelated sun.\n\nHard cuts only, no dissolves.\n\nAudio: lo-fi vaporwave score, slow drum machine, VHS tape-noise sample joins at 1s.\n\nNo text, subtitles, or watermarks.",
         1344,
@@ -205,58 +188,36 @@
       "id": 6,
       "type": "MiniMaxH3SPEEDSampler",
       "pos": [
-        950,
+        1450,
         300
       ],
       "size": [
         400,
-        350
+        420
       ],
       "flags": {},
-      "order": 8,
+      "order": 6,
       "mode": 0,
       "inputs": [
         {
           "name": "noise",
           "type": "NOISE",
-          "link": 10,
-          "slot_index": 0
+          "link": 10
         },
         {
           "name": "guider",
           "type": "GUIDER",
-          "link": 12,
-          "slot_index": 1
+          "link": 12
         },
         {
           "name": "sigmas",
           "type": "SIGMAS",
-          "link": 9,
-          "slot_index": 2
+          "link": 9
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 6,
-          "slot_index": 3
-        },
-        {
-          "name": "explicit_preset",
-          "type": "COMBO",
-          "link": null,
-          "slot_index": 4
-        },
-        {
-          "name": "transition_mode",
-          "type": "COMBO",
-          "link": null,
-          "slot_index": 5
-        },
-        {
-          "name": "noise_policy",
-          "type": "COMBO",
-          "link": null,
-          "slot_index": 6
+          "link": 6
         }
       ],
       "outputs": [
@@ -273,11 +234,17 @@
           "links": []
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "MiniMaxH3SPEEDSampler"
+      },
       "widgets_values": [
         "half_then_full",
-        "explicit",
-        "coupled_full_grid"
+        "manual_step",
+        "coupled_full_grid",
+        0.01,
+        150.0,
+        2.0,
+        10000
       ]
     },
     {
@@ -285,33 +252,34 @@
       "type": "BasicScheduler",
       "pos": [
         500,
-        750
+        800
       ],
       "size": [
         400,
         200
       ],
       "flags": {},
-      "order": 5,
+      "order": 7,
       "mode": 0,
       "inputs": [
         {
           "name": "model",
           "type": "MODEL",
-          "link": 1,
-          "slot_index": 0
+          "link": 1
         }
       ],
       "outputs": [
         {
-          "name": "sigmas",
+          "name": "SIGMAS",
           "type": "SIGMAS",
           "links": [
             9
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "BasicScheduler"
+      },
       "widgets_values": [
         "simple",
         20,
@@ -327,29 +295,24 @@
       ],
       "size": [
         400,
-        200
+        140
       ],
       "flags": {},
-      "order": 6,
+      "order": 8,
       "mode": 0,
-      "inputs": [
-        {
-          "name": "noise_seed",
-          "type": "INT",
-          "link": null,
-          "slot_index": 0
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
-          "name": "noise",
+          "name": "NOISE",
           "type": "NOISE",
           "links": [
             10
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "RandomNoise"
+      },
       "widgets_values": [
         42
       ]
@@ -359,67 +322,65 @@
       "type": "BasicGuider",
       "pos": [
         950,
-        750
+        800
       ],
       "size": [
         400,
-        200
-      ],
-      "flags": {},
-      "order": 7,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 11,
-          "slot_index": 0
-        },
-        {
-          "name": "conditioning",
-          "type": "CONDITIONING",
-          "link": 5,
-          "slot_index": 1
-        }
-      ],
-      "outputs": [
-        {
-          "name": "guider",
-          "type": "GUIDER",
-          "links": [
-            12
-          ]
-        }
-      ],
-      "properties": {},
-      "widgets_values": []
-    },
-    {
-      "id": 10,
-      "type": "VAEDecode",
-      "pos": [
-        1450,
-        300
-      ],
-      "size": [
-        400,
-        200
+        160
       ],
       "flags": {},
       "order": 9,
       "mode": 0,
       "inputs": [
         {
+          "name": "model",
+          "type": "MODEL",
+          "link": 11
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicGuider"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 10,
+      "type": "VAEDecode",
+      "pos": [
+        1950,
+        300
+      ],
+      "size": [
+        400,
+        160
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
           "name": "samples",
           "type": "LATENT",
-          "link": 13,
-          "slot_index": 0
+          "link": 13
         },
         {
           "name": "vae",
           "type": "VAE",
-          "link": 14,
-          "slot_index": 1
+          "link": 14
         }
       ],
       "outputs": [
@@ -431,90 +392,57 @@
           ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      },
       "widgets_values": []
     },
     {
       "id": 11,
       "type": "VAEDecodeAudio",
       "pos": [
-        1450,
-        600
+        1950,
+        500
       ],
       "size": [
         400,
-        200
-      ],
-      "flags": {},
-      "order": 10,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "samples",
-          "type": "LATENT",
-          "link": 13,
-          "slot_index": 0
-        },
-        {
-          "name": "vae",
-          "type": "VAE",
-          "link": 4,
-          "slot_index": 1
-        }
-      ],
-      "outputs": [
-        {
-          "name": "audio",
-          "type": "AUDIO",
-          "links": [
-            8
-          ]
-        }
-      ],
-      "properties": {},
-      "widgets_values": []
-    },
-    {
-      "id": 12,
-      "type": "CreateVideo",
-      "pos": [
-        1900,
-        300
-      ],
-      "size": [
-        400,
-        200
+        160
       ],
       "flags": {},
       "order": 11,
       "mode": 0,
       "inputs": [
         {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 7,
-          "slot_index": 0
+          "name": "samples",
+          "type": "LATENT",
+          "link": 13
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 4
         }
       ],
       "outputs": [
         {
-          "name": "video",
-          "type": "VIDEO",
-          "links": []
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            8
+          ]
         }
       ],
-      "properties": {},
-      "widgets_values": [
-        24,
-        "mp4"
-      ]
+      "properties": {
+        "Node name for S&R": "VAEDecodeAudio"
+      },
+      "widgets_values": []
     },
     {
-      "id": 13,
-      "type": "SaveVideo",
+      "id": 12,
+      "type": "CreateVideo",
       "pos": [
-        1900,
-        600
+        2450,
+        300
       ],
       "size": [
         400,
@@ -525,22 +453,62 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "video",
-          "type": "VIDEO",
-          "link": null,
-          "slot_index": 0
+          "name": "images",
+          "type": "IMAGE",
+          "link": 7
         },
         {
           "name": "audio",
           "type": "AUDIO",
-          "link": 8,
-          "slot_index": 1
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        24,
+        "video/ComfyUI"
+      ]
+    },
+    {
+      "id": 13,
+      "type": "SaveVideo",
+      "pos": [
+        2450,
+        550
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 15
         }
       ],
       "outputs": [],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
       "widgets_values": [
-        "output_minimax_h3_speed.mp4"
+        "video/minimax_h3_speed",
+        "auto",
+        "auto"
       ]
     }
   ],
@@ -605,7 +573,7 @@
       8,
       11,
       0,
-      13,
+      12,
       1,
       "AUDIO"
     ],
@@ -656,6 +624,14 @@
       10,
       1,
       "VAE"
+    ],
+    [
+      15,
+      12,
+      0,
+      13,
+      0,
+      "VIDEO"
     ]
   ],
   "groups": [],

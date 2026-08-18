@@ -1,8 +1,7 @@
 {
   "id": "minimax-h3-sigma-harvest-calibrated",
-  "revision": 1,
-  "last_node_id": 9,
-  "last_link_id": 7,
+  "last_node_id": 11,
+  "last_link_id": 13,
   "nodes": [
     {
       "id": 1,
@@ -16,17 +15,22 @@
         200
       ],
       "flags": {},
-      "order": 0,
+      "order": 1,
       "mode": 0,
       "inputs": [],
       "outputs": [
         {
           "name": "MODEL",
           "type": "MODEL",
-          "links": []
+          "links": [
+            1,
+            11
+          ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
       "widgets_values": [
         "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
         "default"
@@ -44,17 +48,21 @@
         200
       ],
       "flags": {},
-      "order": 1,
+      "order": 2,
       "mode": 0,
       "inputs": [],
       "outputs": [
         {
           "name": "CLIP",
           "type": "CLIP",
-          "links": []
+          "links": [
+            2
+          ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
       "widgets_values": [
         "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
         "minimax",
@@ -73,135 +81,87 @@
         200
       ],
       "flags": {},
-      "order": 2,
+      "order": 3,
       "mode": 0,
       "inputs": [],
       "outputs": [
         {
           "name": "VAE",
           "type": "VAE",
-          "links": []
+          "links": [
+            3
+          ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
       "widgets_values": [
         "minimax_h3_video_vae_fp16.safetensors"
       ]
     },
     {
-      "id": 4,
+      "id": 5,
       "type": "MiniMaxH3ImageToVideo",
       "pos": [
-        550,
-        50
+        500,
+        300
       ],
       "size": [
-        350,
-        200
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 1
-        },
-        {
-          "name": "clip",
-          "type": "CLIP",
-          "link": 2
-        }
-      ],
-      "outputs": [
-        {
-          "name": "latents",
-          "type": "LATENT",
-          "links": []
-        }
-      ],
-      "properties": {},
-      "widgets_values": [
-        24,
-        16,
-        32,
-        2
-      ]
-    },
-    {
-      "id": 5,
-      "type": "BasicScheduler",
-      "pos": [
-        50,
-        950
-      ],
-      "size": [
-        350,
-        100
-      ],
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 7
-        }
-      ],
-      "outputs": [
-        {
-          "name": "sigmas",
-          "type": "SIGMAS",
-          "links": []
-        }
-      ],
-      "properties": {},
-      "widgets_values": [
-        "simple",
-        20,
-        1
-      ]
-    },
-    {
-      "id": 6,
-      "type": "RandomNoise",
-      "pos": [
-        550,
-        350
-      ],
-      "size": [
-        350,
-        100
+        400,
+        420
       ],
       "flags": {},
       "order": 5,
       "mode": 0,
-      "inputs": [],
-      "outputs": [
+      "inputs": [
         {
-          "name": "noise",
-          "type": "NOISE",
-          "links": []
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3
         }
       ],
-      "properties": {},
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            5
+          ]
+        },
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MiniMaxH3ImageToVideo"
+      },
       "widgets_values": [
-        0,
-        "fixed"
+        "Vaporwave title sequence look: pink and blue gradient palette, VHS tracking artifacts, Greek statue motifs, chrome palm trees, RGB chromatic aberration, lo-fi retro atmosphere, mood languid and nostalgic.\n\nTimeline:\n[0s-1s] VHS static opens the frame, the title starts forming with RGB split and slight horizontal jitter.\n[1s-2s] Hard cut to a Greek plaster bust close-up, pink-purple gradient sky, a pixelated sun.\n\nHard cuts only, no dissolves.\n\nAudio: lo-fi vaporwave score, slow drum machine, VHS tape-noise sample joins at 1s.\n\nNo text, subtitles, or watermarks.",
+        1344,
+        768,
+        73
       ]
     },
     {
-      "id": 7,
+      "id": 6,
       "type": "MiniMaxH3SigmaHarvest",
       "pos": [
-        1000,
-        200
+        1450,
+        300
       ],
       "size": [
-        350,
-        280
+        410,
+        360
       ],
       "flags": {},
       "order": 6,
@@ -210,32 +170,36 @@
         {
           "name": "noise",
           "type": "NOISE",
-          "link": 5
+          "link": 10
         },
         {
           "name": "guider",
           "type": "GUIDER",
-          "link": 4
+          "link": 12
         },
         {
           "name": "sigmas",
           "type": "SIGMAS",
-          "link": 6
+          "link": 9
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 4
+          "link": 6
         }
       ],
       "outputs": [
         {
           "name": "harvest_json",
           "type": "STRING",
-          "links": []
+          "links": [
+            13
+          ]
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "MiniMaxH3SigmaHarvest"
+      },
       "widgets_values": [
         1,
         "first",
@@ -244,14 +208,14 @@
       ]
     },
     {
-      "id": 8,
-      "type": "MiniMaxH3HarvestToConfig",
+      "id": 7,
+      "type": "BasicScheduler",
       "pos": [
-        1450,
-        200
+        950,
+        100
       ],
       "size": [
-        350,
+        400,
         200
       ],
       "flags": {},
@@ -259,9 +223,119 @@
       "mode": 0,
       "inputs": [
         {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicScheduler"
+      },
+      "widgets_values": [
+        "simple",
+        20,
+        1.0
+      ]
+    },
+    {
+      "id": 8,
+      "type": "RandomNoise",
+      "pos": [
+        950,
+        350
+      ],
+      "size": [
+        400,
+        180
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "NOISE",
+          "type": "NOISE",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RandomNoise"
+      },
+      "widgets_values": [
+        42
+      ]
+    },
+    {
+      "id": 9,
+      "type": "BasicGuider",
+      "pos": [
+        950,
+        550
+      ],
+      "size": [
+        400,
+        180
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 11
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicGuider"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 10,
+      "type": "MiniMaxH3HarvestToConfig",
+      "pos": [
+        1950,
+        300
+      ],
+      "size": [
+        420,
+        260
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
           "name": "harvest_json",
           "type": "STRING",
-          "link": 8
+          "link": 13
         }
       ],
       "outputs": [
@@ -271,40 +345,30 @@
           "links": []
         }
       ],
-      "properties": {},
-      "widgets_values": [
-        "{}"
-      ]
+      "properties": {
+        "Node name for S&R": "MiniMaxH3HarvestToConfig"
+      },
+      "widgets_values": []
     },
     {
-      "id": 9,
+      "id": 11,
       "type": "MiniMaxH3SPEEDSchedule",
       "pos": [
-        1000,
+        1950,
         600
       ],
       "size": [
-        350,
-        280
+        440,
+        320
       ],
       "flags": {},
-      "order": 8,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
           "name": "sigmas",
           "type": "SIGMAS",
-          "link": 6
-        },
-        {
-          "name": "explicit_preset",
-          "type": "STRING",
-          "link": null
-        },
-        {
-          "name": "transition_mode",
-          "type": "STRING",
-          "link": null
+          "link": 9
         }
       ],
       "outputs": [
@@ -319,14 +383,17 @@
           "links": []
         }
       ],
-      "properties": {},
+      "properties": {
+        "Node name for S&R": "MiniMaxH3SPEEDSchedule"
+      },
       "widgets_values": [
         "half_then_full",
-        "delta_custom",
+        "manual_step",
+        "direct_coarse",
         0.6,
         0.01,
-        219.48,
-        2.42,
+        150.0,
+        2.0,
         45,
         80
       ]
@@ -337,7 +404,7 @@
       1,
       1,
       0,
-      4,
+      7,
       0,
       "MODEL"
     ],
@@ -345,52 +412,77 @@
       2,
       2,
       0,
-      4,
-      1,
+      5,
+      0,
       "CLIP"
     ],
     [
-      4,
-      4,
+      3,
+      3,
       0,
-      7,
+      5,
       1,
+      "VAE"
+    ],
+    [
+      5,
+      5,
+      0,
+      9,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      6,
+      5,
+      1,
+      6,
+      3,
       "LATENT"
     ],
     [
-      5,
-      5,
-      0,
+      9,
       7,
       0,
-      "NOISE"
-    ],
-    [
       6,
-      6,
-      0,
-      7,
       2,
       "SIGMAS"
     ],
     [
-      7,
+      10,
+      8,
+      0,
+      6,
+      0,
+      "NOISE"
+    ],
+    [
+      11,
       1,
-      1,
-      5,
+      0,
+      9,
       0,
       "MODEL"
     ],
     [
-      8,
-      8,
+      12,
+      9,
       0,
-      8,
+      6,
+      1,
+      "GUIDER"
+    ],
+    [
+      13,
+      6,
+      0,
+      10,
       0,
       "STRING"
     ]
   ],
   "groups": [],
   "config": {},
-  "extra": {}
+  "extra": {},
+  "version": 0.4
 }
