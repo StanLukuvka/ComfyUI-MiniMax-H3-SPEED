@@ -51,3 +51,8 @@ class MiniMaxH3SpectralExpand:
             f"to {new_H}x{new_W} at sigma={sigma}"
         )
         return (new_noise, report)
+
+
+NODE_CLASS_MAPPINGS = {"MiniMaxH3SpectralExpand": MiniMaxH3SpectralExpand}
+NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3SpectralExpand": "MiniMax H3 SPEED — Spectral Expand"}
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "MiniMaxH3SpectralExpand"]

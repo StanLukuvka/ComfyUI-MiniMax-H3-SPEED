@@ -40,3 +40,8 @@ class MiniMaxH3AVReentryOracle:
             f"(sigma={sigmas_list[reentry_idx]:.4f})"
         )
         return (sigmas, report)
+
+
+NODE_CLASS_MAPPINGS = {"MiniMaxH3AVReentryOracle": MiniMaxH3AVReentryOracle}
+NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3AVReentryOracle": "MiniMax H3 SPEED — AV Reentry Oracle"}
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "MiniMaxH3AVReentryOracle"]

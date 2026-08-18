@@ -42,3 +42,8 @@ class MiniMaxH3XFidelityProbe:
         fidelity = (dot / (norm0 * norm1 + 1e-8)).mean().item()
         report = f"X0 fidelity at sigma={sigma}: {fidelity:.4f}"
         return (fidelity, report)
+
+
+NODE_CLASS_MAPPINGS = {"MiniMaxH3XFidelityProbe": MiniMaxH3XFidelityProbe}
+NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3XFidelityProbe": "MiniMax H3 SPEED — X0 Fidelity Probe"}
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "MiniMaxH3XFidelityProbe"]

@@ -46,11 +46,7 @@ else:
     for module in (sigma_harvest, harvest_to_config, schedule, inspect,
                    power_spectrum, dct_lowpass, transition_math,
                    spectral_expand, x0_fidelity_probe, av_reentry_oracle):
-        if not hasattr(module, "NODE_CLASS_MAPPINGS"):
-            continue
-        NODE_DISPLAY_NAME_MAPPINGS.update({
-            k: v.__name__
-            for k, v in module.NODE_CLASS_MAPPINGS.items()
-        })
+        if hasattr(module, "NODE_DISPLAY_NAME_MAPPINGS"):
+            NODE_DISPLAY_NAME_MAPPINGS.update(module.NODE_DISPLAY_NAME_MAPPINGS)
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

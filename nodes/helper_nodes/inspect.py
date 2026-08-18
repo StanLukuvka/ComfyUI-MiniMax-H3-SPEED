@@ -39,3 +39,8 @@ class MiniMaxH3Inspect:
                 f"device={samples.device} dtype={samples.dtype}"
             )
         return (report,)
+
+
+NODE_CLASS_MAPPINGS = {"MiniMaxH3Inspect": MiniMaxH3Inspect}
+NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3Inspect": "MiniMax H3 SPEED — Inspect"}
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "MiniMaxH3Inspect"]

@@ -62,3 +62,8 @@ class MiniMaxH3TransitionMath:
             f"Transition step: {step} / sigma={t_star:.4f}"
         )
         return (int(step), t_star, report)
+
+
+NODE_CLASS_MAPPINGS = {"MiniMaxH3TransitionMath": MiniMaxH3TransitionMath}
+NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3TransitionMath": "MiniMax H3 SPEED — Transition Math"}
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "MiniMaxH3TransitionMath"]

@@ -36,3 +36,8 @@ class MiniMaxH3DCTLowpass:
         ]
 
         return ({"samples": MockNested(new_streams)},)
+
+
+NODE_CLASS_MAPPINGS = {"MiniMaxH3DCTLowpass": MiniMaxH3DCTLowpass}
+NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3DCTLowpass": "MiniMax H3 SPEED — DCT Lowpass"}
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "MiniMaxH3DCTLowpass"]

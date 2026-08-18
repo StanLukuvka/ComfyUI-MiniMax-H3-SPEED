@@ -66,3 +66,8 @@ class MiniMaxH3PowerSpectrum:
             "power": profile.tolist(),
         })
         return (report,)
+
+
+NODE_CLASS_MAPPINGS = {"MiniMaxH3PowerSpectrum": MiniMaxH3PowerSpectrum}
+NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3PowerSpectrum": "MiniMax H3 SPEED — Power Spectrum"}
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "MiniMaxH3PowerSpectrum"]
