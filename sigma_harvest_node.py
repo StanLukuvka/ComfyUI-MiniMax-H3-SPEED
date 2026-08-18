@@ -1,8 +1,8 @@
 """SigmaHarvest node — runs one Euler pass, captures residual spectrum.
 
-Uses the H3 nested latent geometry. Zeroes the latent values before the pass so
-the measured power is from clean noise, not content. Returns JSON for
-HarvestToConfig.
+Flat root-level module, same registration pattern as sampler_node.py:
+export NODE_CLASS_MAPPINGS / NODE_DISPLAY_NAME_MAPPINGS and let the root
+__init__.py import this file directly (no subpackage).
 """
 
 from __future__ import annotations

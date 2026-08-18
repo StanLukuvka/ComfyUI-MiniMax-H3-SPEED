@@ -26,7 +26,7 @@ sys.modules["comfy.model_management"] = _comfy.model_management
 sys.modules["comfy.nested_tensor"] = _comfy.nested_tensor
 
 from minimax_h3_speed.config import SCALE_PRESETS
-from h3_speed_nodes.helper_nodes.schedule import MiniMaxH3SPEEDSchedule
+from schedule_node import MiniMaxH3SPEEDSchedule
 
 
 @pytest.fixture

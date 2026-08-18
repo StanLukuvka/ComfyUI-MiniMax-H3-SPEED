@@ -53,20 +53,20 @@ def _load_module(name: str, path: Path):
     return mod
 
 
-# --- Load helper node modules directly ---
-_NODE_DIR = Path(__file__).parent.parent.parent / "h3_speed_nodes" / "helper_nodes"
+# --- Load helper node modules directly (flat root files) ---
+_REPO_ROOT = Path(__file__).parent.parent.parent
 
 _mods = {}
 for _name, _fn in [
-    ("_node_inspect", "inspect.py"),
-    ("_node_power_spectrum", "power_spectrum.py"),
-    ("_node_dct_lowpass", "dct_lowpass.py"),
-    ("_node_transition_math", "transition_math.py"),
-    ("_node_spectral_expand", "spectral_expand.py"),
-    ("_node_x0_fidelity_probe", "x0_fidelity_probe.py"),
-    ("_node_av_reentry_oracle", "av_reentry_oracle.py"),
+    ("_node_inspect", "inspect_node.py"),
+    ("_node_power_spectrum", "power_spectrum_node.py"),
+    ("_node_dct_lowpass", "dct_lowpass_node.py"),
+    ("_node_transition_math", "transition_math_node.py"),
+    ("_node_spectral_expand", "spectral_expand_node.py"),
+    ("_node_x0_fidelity_probe", "x0_fidelity_probe_node.py"),
+    ("_node_av_reentry_oracle", "av_reentry_oracle_node.py"),
 ]:
-    _mods[_name] = _load_module(_name, _NODE_DIR / _fn)
+    _mods[_name] = _load_module(_name, _REPO_ROOT / _fn)
 
 MiniMaxH3Inspect = _mods["_node_inspect"].MiniMaxH3Inspect
 MiniMaxH3PowerSpectrum = _mods["_node_power_spectrum"].MiniMaxH3PowerSpectrum

@@ -1,20 +1,20 @@
-"""Simulate ComfyUI's node-loading to prove the rename fixed the collision.
+"""Simulate ComfyUI's node-loading to prove all 11 nodes register.
 
 ComfyUI's core has its own `nodes` module (ComfyUI/nodes.py). This script
 replicates a fake copy BEFORE importing our package, which is exactly the
-condition that broke helper-node registration.
+condition that broke subpackage-based registration.
 """
+import importlib.util
 import sys
 import types
-import importlib.util
 
-# Fake ComfyUI built-in nodes module (this is what was silently winning).
+# Fake ComfyUI built-in nodes module (this was silently winning before).
 fake_comfy_nodes = types.ModuleType("nodes")
 fake_comfy_nodes.NODE_CLASS_MAPPINGS = {"FakeComfyBuiltin": object}
 fake_comfy_nodes.NODE_DISPLAY_NAME_MAPPINGS = {"FakeComfyBuiltin": "Fake Builtin"}
 sys.modules["nodes"] = fake_comfy_nodes
 
-# Fake comfy package bits used by sampler_node.py import chain.
+# Fake comfy package bits used by the node modules.
 comfy = types.ModuleType("comfy")
 samplers = types.ModuleType("comfy.samplers")
 utils = types.ModuleType("comfy.utils")
@@ -34,6 +34,7 @@ spec = importlib.util.spec_from_file_location(
 )
 mod = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = mod
+assert spec.loader is not None
 spec.loader.exec_module(mod)
 
 expected = {
