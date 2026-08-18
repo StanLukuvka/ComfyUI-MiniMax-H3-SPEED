@@ -300,11 +300,12 @@ stage_t = [
 **Verify:** `python -m pytest minimax_h3_speed/tests/test_debug_nodes.py -q --tb=short`
 **Status:** Committed in ce7ca72. 23 debug-node tests passing.
 
-### P5-006: [TODO] Temporal scale scheduling (GAP-6)
-**What:** Add `temporal_scales` to SpeedConfig, thread through runtime, expose in sampler/schedule nodes.
-**Files:** `minimax_h3_speed/config.py`, `minimax_h3_speed/h3_runtime.py`, `sampler_node.py`, `nodes/helper_nodes/schedule.py`
+### ✅ P5-006: [DONE] Temporal scale scheduling (GAP-6)
+**What:** Added `temporal_scales` field to SpeedConfig with validation (length match, range, non-decreasing). Runtime computes `stage_t` alongside `stage_hw`; coarse stage runs at reduced T; 3D DCT expansion path activates at boundaries when temporal axis grows. 5 new config validation tests.
+**Files:** `minimax_h3_speed/config.py`, `minimax_h3_speed/h3_runtime.py`, `minimax_h3_speed/tests/test_sampler.py`
 **Authority:** Paper Sec 4.2
 **Verify:** `python -m pytest minimax_h3_speed/tests/test_sampler.py minimax_h3_speed/tests/test_integration.py -q --tb=short`
+**Status:** Committed in 23e3c2a. 132 total passing.
 
 ---
 
