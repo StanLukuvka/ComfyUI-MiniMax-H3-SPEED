@@ -50,6 +50,8 @@ class SpeedConfig:
     full_latent_h: int = 45
     full_latent_w: int = 80
     certification: str = "requires_h3_gpu_validation"
+    # Temporal scale per stage (empty = no temporal scaling, run full T at every stage).
+    temporal_scales: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         scales = tuple(float(s) for s in self.scales)
@@ -88,6 +90,13 @@ class SpeedConfig:
             raise ValueError(f"unsupported sigma_policy: {self.sigma_policy}")
         if self.audio_policy == "untouched" and self.sigma_policy != "no_alignment":
             raise ValueError("untouched audio requires sigma_policy=no_alignment")
+        if self.temporal_scales:
+            if len(self.temporal_scales) != len(scales):
+                raise ValueError("temporal_scales must have the same length as scales")
+            if not all(0.0 < s <= 1.0 for s in self.temporal_scales):
+                raise ValueError("temporal scales must be in (0, 1]")
+            if not all(left <= right for left, right in zip(self.temporal_scales[:-1], self.temporal_scales[1:])):
+                raise ValueError("temporal_scales must be non-decreasing")
         object.__setattr__(self, "scales", scales)
         object.__setattr__(self, "transition_steps", steps)
 

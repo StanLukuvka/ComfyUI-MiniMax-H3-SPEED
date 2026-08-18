@@ -510,3 +510,52 @@ def test_sampler_transition_mode_mapping():
     assert "MODE_TO_CONFIG" in src
     assert '"explicit"' in src
     assert '"delta_custom"' in src
+
+
+# --- Temporal scale scheduling tests (P5-006 / GAP-6) ---
+
+def test_config_temporal_scales_default_empty():
+    """Default SpeedConfig has empty temporal_scales (no temporal scaling)."""
+    config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,))
+    assert config.temporal_scales == ()
+
+
+def test_config_temporal_scales_accepted():
+    """Valid temporal_scales matching scales length is accepted."""
+    config = SpeedConfig(
+        scales=(0.5, 1.0), transition_steps=(5,),
+        temporal_scales=(0.5, 1.0),
+    )
+    assert config.temporal_scales == (0.5, 1.0)
+
+
+def test_config_temporal_scales_wrong_length_raises():
+    """temporal_scales with mismatched length raises ValueError."""
+    with pytest.raises(ValueError, match="temporal_scales must have the same length"):
+        SpeedConfig(
+            scales=(0.5, 1.0), transition_steps=(5,),
+            temporal_scales=(0.5,),
+        )
+
+
+def test_config_temporal_scales_out_of_range_raises():
+    """temporal_scales with values outside (0, 1] raises ValueError."""
+    with pytest.raises(ValueError, match="temporal scales must be in"):
+        SpeedConfig(
+            scales=(0.5, 1.0), transition_steps=(5,),
+            temporal_scales=(0.0, 1.0),
+        )
+    with pytest.raises(ValueError, match="temporal scales must be in"):
+        SpeedConfig(
+            scales=(0.5, 1.0), transition_steps=(5,),
+            temporal_scales=(0.5, 1.5),
+        )
+
+
+def test_config_temporal_scales_decreasing_raises():
+    """temporal_scales must be non-decreasing."""
+    with pytest.raises(ValueError, match="temporal_scales must be non-decreasing"):
+        SpeedConfig(
+            scales=(0.25, 0.5, 1.0), transition_steps=(3, 5),
+            temporal_scales=(0.5, 0.25, 1.0),
+        )
