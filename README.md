@@ -26,13 +26,11 @@ git clone https://github.com/StanLukuvka/H3-SPEED.git ComfyUI/custom_nodes/H3-SP
 # restart ComfyUI
 ```
 
-**Required:** MiniMax-H3 plugin ([ComfyUI-MiniMax-H3](https://github.com/StanLukuvka/ComfyUI-MiniMax-H3), requires ComfyUI 0.32.0+).
-
 ## Usage
 
 After cloning, load one of these workflows via ComfyUI's workflow browser (Workflow → Open):
 
-- `video_minimax_h3_t2v_speed.json` — standard SPEED pipeline (sampler → decode → save)
+- `video_minimax_h3_t2v-SPEED.json` — standard SPEED pipeline (sampler → decode → save)
 - `sigma_harvest.json` — calibration pass: harvest residual spectrum from clean noise
 - `sigma_harvest_calibrated.json` — full pipeline: harvest → report → schedule node
 
@@ -50,7 +48,7 @@ SPEED reduces VRAM by running early denoising at lower resolution. The `noise_po
 | `direct_coarse` | Fresh noise per stage, standard SPEED | Default. Lower VRAM, standard quality. |
 | `coupled_full_grid` | Shared full-grid noise across all scales | Higher quality (better high-frequency coherence) at the cost of more VRAM. |
 
-Use `video_minimax_h3_t2v_speed.json` (direct_coarse) for the default path, or `video_minimax_h3_t2v_coupled.json` (coupled_full_grid) when quality matters more than memory.
+Use `video_minimax_h3_t2v-SPEED.json` (direct_coarse) for the default path, or `video_minimax_h3_t2v_coupled.json` (coupled_full_grid) when quality matters more than memory.
 
 ### Presets (default 20-step schedule)
 
@@ -79,7 +77,7 @@ H3-SPEED/
 │   ├── spectral.py            — resolution expansion math
 │   ├── flow.py                — sigma alignment, audio handling
 │   ├── harvest.py             — radial power spectrum + fitting
-│   └── tests/                 — 61 passing tests
+│   └── tests/                 — 8 test files
 ├── nodes/
 │   ├── sampler_node.py        — MiniMaxH3SPEEDSampler (main)
 │   └── helper_nodes/
@@ -94,7 +92,7 @@ H3-SPEED/
 │       ├── x0_fidelity_probe.py — debug: X0 fidelity probe
 │       └── av_reentry_oracle.py — debug: AV reentry schedule
 └── workflows/
-    ├── video_minimax_h3_t2v_speed.json     — standard SPEED pipeline
+    ├── video_minimax_h3_t2v-SPEED.json     — standard SPEED pipeline
     ├── sigma_harvest.json                  — calibration-only workflow
     └── sigma_harvest_calibrated.json       — harvest → report → schedule
 ```
@@ -105,11 +103,14 @@ H3-SPEED/
 uv run pytest minimax_h3_speed/tests/ -q
 ```
 
-**Current:** 74 tests passing across 5 test files:
+**Current:** 8 test files:
 - `test_dct.py` — DCT transform correctness
+- `test_debug_nodes.py` — helper node smoke tests
 - `test_flow.py` — sigma alignment, audio handling
 - `test_harvest.py` — power spectrum, fitting, callback
 - `test_integration.py` — end-to-end harvest→schedule→sample pipeline
+- `test_oracle.py` — AV reentry oracle
+- `test_sampler.py` — sampler node behavior
 - `test_spectral.py` — spectral expansion
 
 ### Helper Nodes
