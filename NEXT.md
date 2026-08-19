@@ -10,10 +10,12 @@ All 4 workflows regenerated against the live registry schema and pass validation
 
 ## Immediate work (highest priority first)
 
-- [ ] **Port PR #3 (chflame163) into `dev`** — fixes `_active_av_shifts` for ComfyUI
+- [x] **Port PR #3 (chflame163) into `dev`** — fixes `_active_av_shifts` for ComfyUI
       v0.33.1 (shifts on `model_sampling` + `transformer_options`, not `diffusion_model`).
-      Dev currently has the broken probe at `h3_runtime.py:84-86`. This is issue #2.
-      Add fallback-chain tests. Then push `dev`.
+      Done: `h3_runtime.py` now walks a candidate chain (transformer_options →
+      model_sampling → model → diffusion_model), taking the first numeric pair.
+      Verified against live ComfyUI master + local v0.32.0 lab. 6 fallback-chain
+      tests added (test_sampler.py); full suite 137 passed. Pushed `dev`.
 - [ ] **Decide `dev` → `main` promotion** — clean merge once PR #3 is in + README fixed.
       (main is the default branch; 30 strangers are cloning it and hitting old bugs.)
 - [ ] **README overhaul** — fix the 6 lies: install URL `H3-SPEED.git` (self-referential

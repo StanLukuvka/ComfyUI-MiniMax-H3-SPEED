@@ -38,16 +38,19 @@ Agent-oriented session state. Branch: `dev`. Last sync: 2026-08-18.
   runtime), so headless CPU load works.
 - **Sigma shifts:** on ComfyUI v0.33.1 the active shifts live on
   `model.model_sampling` (ModelSamplingAV) + `transformer_options`, with stale
-  `12.0`/`3.0` defaults on `diffusion_model`. Our `h3_runtime.py:84-86` reads
-  `diffusion_model` — **broken on v0.33.1** (issue #2). PR #3 by chflame163 fixes this
-  and targets `main`; NOT yet in `dev`.
+  `12.0`/`3.0` defaults on `diffusion_model`. **FIXED in `dev`** (port of PR #3 /
+  chflame163): `_active_av_shifts` walks a candidate chain
+  (transformer_options → model_sampling → model → diffusion_model) and returns the
+  first numeric `(video_shift, audio_shift)` pair. Verified against live ComfyUI
+  master `nodes_minimax_h3.py` + `model_sampling.py` and the local v0.32.0 lab.
 - **Guider-based `sampler_node.py` is the ONLY working sampler.** There was a
   SAMPLER-type node in early history; it is gone. Do not reintroduce a SAMPLER-type node.
 
 ## Open Work (as of handover)
 
-1. **Port PR #3 (chflame163) into `dev`** — sigma-shift fix for v0.33.1. Currently only
-   on `main` via an open PR. Dev still broken on this.
+1. **~~Port PR #3 (chflame163) into `dev`~~ — DONE.** sigma-shift fix for v0.33.1 landed
+   in `h3_runtime.py` (candidate-chain lookup) + 6 fallback tests. `dev` pushed.
+   Open PR #3 still targets `main` upstream; ported into our `dev` instead.
 2. **Decide `dev` → `main` promotion** — once #1 lands + README lies fixed.
 3. **README overhaul** — 6 lies (install URL `H3-SPEED.git` alias, "required plugin"
    when it's native core, `transition_mode` "explicit" not a valid option, shows deleted

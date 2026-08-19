@@ -280,6 +280,124 @@ def test_audio_scale_is_ratio_not_one():
     assert abs(a_scale - 4.0) < 1e-6
 
 
+def _make_patcher(model_obj):
+    return type("MP", (), {"model": model_obj, "model_options": {}})()
+
+
+def test_av_shifts_from_transformer_options():
+    """MiniMaxH3SigmaShift writes transformer_options overrides; these win."""
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    class FakeGuider:
+        model_patcher = _make_patcher(type("M", (), {
+            "sigma_shift_video": 12.0,
+            "sigma_shift_audio": 3.0,
+        })())
+        model_options = {
+            "transformer_options": {
+                "minimax_h3_sigma_shift_video": 20.0,
+                "minimax_h3_sigma_shift_audio": 5.0,
+            }
+        }
+
+    v, a, scale = _active_av_shifts(FakeGuider())
+    assert v == 20.0
+    assert a == 5.0
+    assert abs(scale - 4.0) < 1e-6
+
+
+def test_av_shifts_from_model_sampling():
+    """When transformer_options has no override, read ModelSamplingAV."""
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    model_sampling = type("MS", (), {"shift": 12.0, "audio_shift": 3.0})()
+
+    class FakePatcher:
+        model = type("M", (), {
+            "sigma_shift_video": 99.0,
+            "sigma_shift_audio": 99.0,
+        })()
+        model_options = {}
+        def get_model_object(self, name):
+            if name == "model_sampling":
+                return model_sampling
+            raise KeyError(name)
+
+    class FakeGuider:
+        model_patcher = FakePatcher()
+
+    v, a, scale = _active_av_shifts(FakeGuider())
+    assert v == 12.0
+    assert a == 3.0
+    assert abs(scale - 4.0) < 1e-6
+
+
+def test_av_shifts_from_diffusion_model_fallback():
+    """model + model_sampling absent -> fall back to diffusion_model attrs."""
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    class FakePatcher:
+        model = type("M", (), {
+            "diffusion_model": type("DM", (), {
+                "sigma_shift_video": 8.0,
+                "sigma_shift_audio": 2.0,
+            })(),
+        })()
+        model_options = {}
+        def get_model_object(self, name):
+            raise KeyError(name)
+
+    class FakeGuider:
+        model_patcher = FakePatcher()
+
+    v, a, scale = _active_av_shifts(FakeGuider())
+    assert v == 8.0
+    assert a == 2.0
+    assert abs(scale - 4.0) < 1e-6
+
+
+def test_av_shifts_skips_non_numeric_candidates():
+    """A candidate whose values are None/str must be skipped, not crash."""
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    class FakePatcher:
+        model = type("M", (), {
+            "sigma_shift_video": None,
+            "sigma_shift_audio": "broken",
+            "diffusion_model": type("DM", (), {
+                "sigma_shift_video": 12.0,
+                "sigma_shift_audio": 3.0,
+            })(),
+        })()
+        model_options = {}
+        def get_model_object(self, name):
+            raise KeyError(name)
+
+    class FakeGuider:
+        model_patcher = FakePatcher()
+
+    v, a, _ = _active_av_shifts(FakeGuider())
+    assert v == 12.0
+    assert a == 3.0
+
+
+def test_av_shifts_raises_when_unavailable():
+    """No numeric shift anywhere -> raise, no silent 12.0/3.0 default."""
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    class FakePatcher:
+        model = type("M", (), {})()
+        model_options = {}
+        def get_model_object(self, name):
+            raise KeyError(name)
+
+    class FakeGuider:
+        model_patcher = FakePatcher()
+
+    with pytest.raises(ValueError):
+        _active_av_shifts(FakeGuider())
+
+
 def test_sigma_policy_canonical_vs_no_alignment():
     """canonical: apply kappa alignment; no_alignment: no rescaling."""
     from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
