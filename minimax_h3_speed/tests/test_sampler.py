@@ -280,6 +280,39 @@ def test_audio_scale_is_ratio_not_one():
     assert abs(a_scale - 4.0) < 1e-6
 
 
+def test_av_shifts_ignore_generic_model_sampling_shift():
+    """REGRESSION: ComfyUI's generic ModelSamplingAV.shift (often 1.0) must NOT
+    shadow the H3 model's own sigma_shift_video/audio (12.0 / 3.0).
+
+    The 84e61ba 'sigma shift lookup' fix put model_sampling.shift at higher
+    priority than sigma_shift_video. That collapsed audio_scale to ~0.333
+    instead of 4.0, rescaling every audio transition ~12x wrong (garbled sound).
+    The H3 attributes must win.
+    """
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    class FakeModelSampling:
+        # Generic ComfyUI flow-matching shift — NOT H3-specific.
+        shift = 1.0
+        audio_shift = 1.0
+
+    class FakeGuider:
+        model_patcher = type("MP", (), {
+            "model": type("M", (), {
+                "sigma_shift_video": 12.0,
+                "sigma_shift_audio": 3.0,
+            })(),
+            "get_model_object": lambda self, name: (
+                FakeModelSampling() if name == "model_sampling" else None
+            ),
+        })()
+
+    v_shift, a_shift, a_scale = _active_av_shifts(FakeGuider())
+    assert v_shift == 12.0, f"expected H3 video_shift=12.0, got {v_shift}"
+    assert a_shift == 3.0, f"expected H3 audio_shift=3.0, got {a_shift}"
+    assert abs(a_scale - 4.0) < 1e-6, f"expected audio_scale=4.0, got {a_scale}"
+
+
 def test_sigma_policy_canonical_vs_no_alignment():
     """canonical: apply kappa alignment; no_alignment: no rescaling."""
     from minimax_h3_speed.h3_runtime import run_repeated_stage_calls

@@ -85,6 +85,13 @@ def _active_av_shifts(guider):
     if model is None:
         raise ValueError("no model_patcher.model on guider")
 
+    # Candidate priority order MUST match the H3 model's own resolution logic
+    # (model.py:527): explicit transformer_options overrides, then the model's
+    # own sigma_shift_video/audio attributes. ComfyUI's generic
+    # ModelSamplingAV.shift is a DIFFERENT quantity (flow-matching shift, often
+    # 1.0) and must only be used as a LAST RESORT fallback — never allowed to
+    # shadow the H3-specific 12.0/3.0 default, or audio_scale collapses and
+    # every audio transition is rescaled ~12x wrong (garbled sound).
     candidates = []
 
     model_options = getattr(guider, "model_options", None)
@@ -98,6 +105,21 @@ def _active_av_shifts(guider):
                 transformer_options.get("minimax_h3_sigma_shift_audio"),
             ))
 
+    # H3 model's own authoritative sigma shifts (default 12.0 / 3.0).
+    candidates.append((
+        getattr(model, "sigma_shift_video", None),
+        getattr(model, "sigma_shift_audio", None),
+    ))
+    diffusion_model = getattr(model, "diffusion_model", None)
+    if diffusion_model is not None:
+        candidates.append((
+            getattr(diffusion_model, "sigma_shift_video", None),
+            getattr(diffusion_model, "sigma_shift_audio", None),
+        ))
+
+    # LAST RESORT: ComfyUI's generic ModelSamplingAV.shift / audio_shift.
+    # These are NOT H3-specific and usually differ from sigma_shift_video/audio;
+    # only fall back here if the H3 attributes above are absent.
     get_model_object = getattr(patcher, "get_model_object", None)
     if callable(get_model_object):
         try:
@@ -109,17 +131,6 @@ def _active_av_shifts(guider):
                 getattr(model_sampling, "shift", None),
                 getattr(model_sampling, "audio_shift", None),
             ))
-
-    candidates.append((
-        getattr(model, "sigma_shift_video", None),
-        getattr(model, "sigma_shift_audio", None),
-    ))
-    diffusion_model = getattr(model, "diffusion_model", None)
-    if diffusion_model is not None:
-        candidates.append((
-            getattr(diffusion_model, "sigma_shift_video", None),
-            getattr(diffusion_model, "sigma_shift_audio", None),
-        ))
 
     shifts = next((pair for pair in candidates if all(isinstance(v, (int, float)) for v in pair)), None)
     if shifts is None:
@@ -185,7 +196,12 @@ def run_repeated_stage_calls(
     *,
     sampler,
     nested_type,
-    disable_pbar: bool = True,
+    # KEEP THE PROGRESS BAR ON BY DEFAULT. disable_pbar defaults to False (bar
+    # VISIBLE). The SPEED sampler node explicitly passes
+    # `disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED` to honor the user's
+    # ComfyUI setting. DO NOT change this default back to True — doing so hides
+    # the progress bar for every run and is easy to miss (the node still "works").
+    disable_pbar: bool = False,
     output_device=None,
 ):
     """Run an N-stage progressive-resolution Euler chain (multi-stage SPEED).
