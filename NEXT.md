@@ -44,7 +44,16 @@ stages, so it was cut. Harvest now runs only on a native Euler pass.
 - [x] Dependency declarations fixed: numpy + networkx now in pyproject/requirements.
 - [x] dev → main promotion; dev tracks main.
 
-## Known deferrals (honest)
+## CRITICAL: Sigma Harvest design rule (do NOT violate)
+
+The harvest node (`MiniMaxH3HarvestToConfig`) is a **native Euler sampler wrapper**,
+NOT a SPEED-chain wrapper. The SPEED sampler splices/re-aligns sigmas at every
+stage boundary, which corrupts per-step sigma labels — you CANNOT harvest a
+meaningful spectrum mid-SPEED-chain. The harvester runs ONE full-res native
+Euler pass with a FIXED sigma schedule, captures residual = x - x0 at each step,
+fits P = A*|ω|^(-β), emits `harvest_json`. Same inputs as any sampler node
+(noise/guider/sigmas/latent_image). If you ever see the harvest node take a
+`harvest_json` STRING input instead of native sampler inputs, it has regressed.
 
 - [ ] P5-004 audio spectral expansion — no paper authority for audio `[B,C,2,T]`.
 - [ ] `temporal_scales` UI exposure — config + runtime only, no node widget yet.
