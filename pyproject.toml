@@ -5,15 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "comfyui-mini-max-h3-speed-sampler"
 version = "0.1.0"
-description = "WIP — SPEED progressive-resolution sampler as a ComfyUI SAMPLER node (single-node MVP)."
+description = "MiniMax-H3 SPEED progressive-resolution sampler as two ComfyUI nodes (sampler + harvest-to-config)."
 readme = "README.md"
 license = {text = "PolyForm Noncommercial 1.0.0"}
 requires-python = ">=3.10"
-# Requires ComfyUI and torch at runtime; these are provided by the host.
-dependencies = ["torch"]
-
-[project.entry-points."comfyui.custom_nodes"]
-comfyui_mini_max_h3_speed_sampler = "sampler"
+# ComfyUI core + torch are provided by the host at runtime. numpy/networkx are
+# direct runtime deps of this pack (numpy in harvest.py, networkx in flow.py).
+dependencies = ["torch", "numpy", "networkx"]
 
 [tool.setuptools.packages.find]
-include = ["*"]
+include = ["minimax_h3_speed*"]

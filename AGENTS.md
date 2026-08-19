@@ -12,17 +12,24 @@ The pack ships exactly two ComfyUI nodes:
 
 > **Why this is two nodes, not more:** everything else (Schedule, SigmaHarvest) was deleted because it pretends to wire into generation but actually can't. The SPEED sampler takes raw widget values (`power_A`, `power_beta`, `transition_mode`, etc.), not a config object — so a node that emits `SpeedConfig` is a dead-end.
 
-## Sigma Harvest: Must Run on a Native Sampler
+## Sigma Harvest: External Only
 
-The critical correctness constraint:
+The pack does NOT harvest. The `harvest_json` STRING input on
+`MiniMaxH3HarvestToConfig` is meant to come from a **native** Euler pass run
+outside this pack (a workflow the user builds themselves, or another tool).
+Nothing in this pack produces `harvest_json`, and the `diagnostics="JSON"` hook
+that once instrumented the sampler has been deleted — it was circular (measured
+the spectrum *inside* the SPEED sampler, contaminating the residual with
+DCT artifacts) and broke step indexing across stages.
 
-- **SPEED uses `(A, β)` to choose its transitions.** Harvest derives those same `(A, β)` from a residual power spectrum. Measuring the spectrum *inside* the SPEED sampler is circular and contaminates the residual with DCT-expand / boundary-align artifacts at each stage boundary.
+**Correct path:** run a **native** full-res Euler pass elsewhere with whatever
+harvest tooling you prefer, then feed the resulting JSON into
+`MiniMaxH3HarvestToConfig` to read the fitted `power_A` / `power_beta` and bake
+those into the SPEED sampler's widget defaults (or hardcode them in the workflow).
 
-- **Step indexing breaks across stages.** In `run_repeated_stage_calls`, `guider.sample()` is called *per stage* over a *sliced* sigma window. The callback's `step` is local to each stage, but the full sigma schedule is indexed globally — so after stage 1 the stamped sigma is wrong.
-
-**Correct path:** run a **native Euler** full-res pass with the harvest callback active. Feed the resulting `harvest_json` into `MiniMaxH3HarvestToConfig` to read the fitted `power_A` / `power_beta`, then bake those into the SPEED sampler's widget defaults (or hardcode them in the workflow).
-
-**Wrong path:** `MiniMaxH3SPEEDSampler` with `diagnostics="JSON"` — this hook instruments the wrong sampler and produces a mislabeled spectrum.
+**Wrong path:** trying to harvest from inside `MiniMaxH3SPEEDSampler` — there is
+no hook for it anymore, and resurrecting one would re-introduce the circularity
+and step-indexing bugs that got it deleted.
 
 ## Development Conventions
 

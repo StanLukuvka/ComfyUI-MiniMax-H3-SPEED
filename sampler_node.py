@@ -80,8 +80,8 @@ class MiniMaxH3SPEEDSampler:
         # Map node-facing transition_mode values to config-internal vocabulary.
         # "manual_step" and "manual_sigma" both produce explicit transition_steps
         # (resolved from the preset); only "delta_custom" uses power-spectrum
-        # thresholds. The Schedule node emits the same three values, so this keeps
-        # the two nodes' vocabularies consistent end-to-end.
+        # thresholds. (The deleted Schedule node used to emit the same three values;
+        # its vocabulary was folded into this mapping when it was pruned.)
         MODE_TO_CONFIG = {"manual_step": "explicit",
                           "manual_sigma": "explicit",
                           "delta_custom": "delta_custom"}

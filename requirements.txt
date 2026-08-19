@@ -1,4 +1,6 @@
 # Runtime deps for ComfyUI-MiniMaxH3-SPEED-Sampler.
-# torch is provided by ComfyUI at runtime; pin here only if you install
-# standalone. Keep no pinned versions so ComfyUI's own torch is respected.
+# torch is provided by ComfyUI at runtime; ComfyUI core is the host.
+# numpy + networkx are direct deps of this pack (harvest.py / flow.py).
 torch>=2.0
+numpy>=1.24
+networkx>=3.0
