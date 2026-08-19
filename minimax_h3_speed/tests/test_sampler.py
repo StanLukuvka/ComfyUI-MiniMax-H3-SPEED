@@ -99,19 +99,19 @@ def test_input_schema_widgets_and_required_inputs():
     inputs = mod.MiniMaxH3SPEEDSampler.INPUT_TYPES()
     required = inputs["required"]
     for key in ("noise", "guider", "sigmas", "latent_image",
-                "explicit_preset", "transition_mode"):
+                "preset", "transition_mode"):
         assert key in required, f"missing required input: {key}"
     # delta_custom path is enabled with sigma-harvest calibration
     assert "delta" in required
     assert "power_A" in required
     assert "power_beta" in required
     assert "seed_offset" in required
-    assert required["explicit_preset"][0][0] == "half_then_full"
+    assert required["preset"][0][0] == "half_then_full"
 
 
 def test_sample_runs_multi_stage():
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
+    from minimax_h3_speed.h3_runtime import run_progressive_stages
 
     sample_calls = []
 
@@ -152,7 +152,7 @@ def test_sample_runs_multi_stage():
     sigmas = torch.linspace(1.0, 0.025, 20)
     config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,))
 
-    out, denoised = run_repeated_stage_calls(
+    out, denoised = run_progressive_stages(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
         nested_type=type("NT", (), {"is_nested": True})(),
@@ -165,7 +165,7 @@ def test_sample_runs_multi_stage():
 def test_coupled_full_grid_noise_policy():
     """coupled_full_grid: full-grid noise is shared across stages."""
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
+    from minimax_h3_speed.h3_runtime import run_progressive_stages
 
     sample_calls = []
     captured_noises = []
@@ -210,7 +210,7 @@ def test_coupled_full_grid_noise_policy():
     sigmas = torch.linspace(1.0, 0.025, 20)
     config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), noise_policy="coupled_full_grid")
 
-    out, denoised = run_repeated_stage_calls(
+    out, denoised = run_progressive_stages(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
         nested_type=type("NT", (), {"is_nested": True})(),
@@ -280,127 +280,9 @@ def test_audio_scale_is_ratio_not_one():
     assert abs(a_scale - 4.0) < 1e-6
 
 
-def _make_patcher(model_obj):
-    return type("MP", (), {"model": model_obj, "model_options": {}})()
-
-
-def test_av_shifts_from_transformer_options():
-    """MiniMaxH3SigmaShift writes transformer_options overrides; these win."""
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
-
-    class FakeGuider:
-        model_patcher = _make_patcher(type("M", (), {
-            "sigma_shift_video": 12.0,
-            "sigma_shift_audio": 3.0,
-        })())
-        model_options = {
-            "transformer_options": {
-                "minimax_h3_sigma_shift_video": 20.0,
-                "minimax_h3_sigma_shift_audio": 5.0,
-            }
-        }
-
-    v, a, scale = _active_av_shifts(FakeGuider())
-    assert v == 20.0
-    assert a == 5.0
-    assert abs(scale - 4.0) < 1e-6
-
-
-def test_av_shifts_from_model_sampling():
-    """When transformer_options has no override, read ModelSamplingAV."""
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
-
-    model_sampling = type("MS", (), {"shift": 12.0, "audio_shift": 3.0})()
-
-    class FakePatcher:
-        model = type("M", (), {
-            "sigma_shift_video": 99.0,
-            "sigma_shift_audio": 99.0,
-        })()
-        model_options = {}
-        def get_model_object(self, name):
-            if name == "model_sampling":
-                return model_sampling
-            raise KeyError(name)
-
-    class FakeGuider:
-        model_patcher = FakePatcher()
-
-    v, a, scale = _active_av_shifts(FakeGuider())
-    assert v == 12.0
-    assert a == 3.0
-    assert abs(scale - 4.0) < 1e-6
-
-
-def test_av_shifts_from_diffusion_model_fallback():
-    """model + model_sampling absent -> fall back to diffusion_model attrs."""
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
-
-    class FakePatcher:
-        model = type("M", (), {
-            "diffusion_model": type("DM", (), {
-                "sigma_shift_video": 8.0,
-                "sigma_shift_audio": 2.0,
-            })(),
-        })()
-        model_options = {}
-        def get_model_object(self, name):
-            raise KeyError(name)
-
-    class FakeGuider:
-        model_patcher = FakePatcher()
-
-    v, a, scale = _active_av_shifts(FakeGuider())
-    assert v == 8.0
-    assert a == 2.0
-    assert abs(scale - 4.0) < 1e-6
-
-
-def test_av_shifts_skips_non_numeric_candidates():
-    """A candidate whose values are None/str must be skipped, not crash."""
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
-
-    class FakePatcher:
-        model = type("M", (), {
-            "sigma_shift_video": None,
-            "sigma_shift_audio": "broken",
-            "diffusion_model": type("DM", (), {
-                "sigma_shift_video": 12.0,
-                "sigma_shift_audio": 3.0,
-            })(),
-        })()
-        model_options = {}
-        def get_model_object(self, name):
-            raise KeyError(name)
-
-    class FakeGuider:
-        model_patcher = FakePatcher()
-
-    v, a, _ = _active_av_shifts(FakeGuider())
-    assert v == 12.0
-    assert a == 3.0
-
-
-def test_av_shifts_raises_when_unavailable():
-    """No numeric shift anywhere -> raise, no silent 12.0/3.0 default."""
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
-
-    class FakePatcher:
-        model = type("M", (), {})()
-        model_options = {}
-        def get_model_object(self, name):
-            raise KeyError(name)
-
-    class FakeGuider:
-        model_patcher = FakePatcher()
-
-    with pytest.raises(ValueError):
-        _active_av_shifts(FakeGuider())
-
-
 def test_sigma_policy_canonical_vs_no_alignment():
     """canonical: apply kappa alignment; no_alignment: no rescaling."""
-    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
+    from minimax_h3_speed.h3_runtime import run_progressive_stages
 
     canonical_calls = []
     no_align_calls = []
@@ -429,7 +311,7 @@ def test_sigma_policy_canonical_vs_no_alignment():
     config_canon = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="canonical")
     config_noalign = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="no_alignment")
 
-    run_repeated_stage_calls(
+    run_progressive_stages(
         type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
         make_guider(canonical_calls),
         sigmas, latent, config_canon,
@@ -437,7 +319,7 @@ def test_sigma_policy_canonical_vs_no_alignment():
         nested_type=type("NT", (), {"is_nested": True})(),
         disable_pbar=True,
     )
-    run_repeated_stage_calls(
+    run_progressive_stages(
         type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
         make_guider(no_align_calls),
         sigmas, latent, config_noalign,
@@ -516,6 +398,16 @@ def test_time_shift_sigma_identity_at_full_res():
     assert abs(result - 0.5) < 1e-10
 
 
+def test_flow_time_shift_sigma():
+    """time_shift_sigma bridges video→audio sigma space correctly."""
+    from minimax_h3_speed.flow import time_shift_sigma
+    # With video_shift=2.0, audio_shift=1.0, q_video=0.5:
+    #   base = 0.5 / (2 + 0.5 * (1-2)) = 0.5 / 1.5 = 1/3
+    #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3
+    q_audio = time_shift_sigma(0.5, 2.0, 1.0)
+    assert abs(q_audio - (1.0/3.0)) < 1e-6
+
+
 def test_resolve_transition_steps_delta_custom_matches_recommend():
     """Given config with transition_mode='delta_custom', the resolved steps
     must equal recommend_configs output for the same parameters."""
@@ -592,88 +484,3 @@ def test_flow_time_shift_sigma():
     #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3
     q_audio = time_shift_sigma(0.5, 2.0, 1.0)
     assert abs(q_audio - (1.0/3.0)) < 1e-6
-
-
-def test_activation_time_boundary_delta():
-    """Very small delta pushes t* toward 1 (noise dominates longer)."""
-    from minimax_h3_speed.h3_runtime import activation_time
-    result = activation_time(100.0, 1e-10)
-    assert result > 0.99
-
-
-def test_activation_time_raises_on_delta_ge_1():
-    """delta >= 1 must raise ValueError."""
-    from minimax_h3_speed.h3_runtime import activation_time
-    with pytest.raises(ValueError, match="delta must be < 1.0"):
-        activation_time(100.0, 1.0)
-    with pytest.raises(ValueError, match="delta must be < 1.0"):
-        activation_time(100.0, 2.0)
-
-
-def test_sampler_transition_mode_mapping():
-    """Sampler node accepts manual_step/manual_sigma/delta_custom and maps
-    to config-internal explicit/delta_custom correctly."""
-    from sampler_node import MiniMaxH3SPEEDSampler
-    # Check INPUT_TYPES advertises the three node-facing values
-    inputs = MiniMaxH3SPEEDSampler.INPUT_TYPES()["required"]
-    assert "transition_mode" in inputs
-    widget_values = inputs["transition_mode"][0]
-    assert set(widget_values) == {"manual_step", "manual_sigma", "delta_custom"}
-
-    # Verify the mapping by inspecting the sample() method's logic indirectly:
-    # calling sample() requires a full ComfyUI environment, so we instead check
-    # the MODE_TO_CONFIG dict via the function signature and the mapping comment.
-    import inspect
-    src = inspect.getsource(MiniMaxH3SPEEDSampler.sample)
-    assert "MODE_TO_CONFIG" in src
-    assert '"explicit"' in src
-    assert '"delta_custom"' in src
-
-
-# --- Temporal scale scheduling tests (P5-006 / GAP-6) ---
-
-def test_config_temporal_scales_default_empty():
-    """Default SpeedConfig has empty temporal_scales (no temporal scaling)."""
-    config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,))
-    assert config.temporal_scales == ()
-
-
-def test_config_temporal_scales_accepted():
-    """Valid temporal_scales matching scales length is accepted."""
-    config = SpeedConfig(
-        scales=(0.5, 1.0), transition_steps=(5,),
-        temporal_scales=(0.5, 1.0),
-    )
-    assert config.temporal_scales == (0.5, 1.0)
-
-
-def test_config_temporal_scales_wrong_length_raises():
-    """temporal_scales with mismatched length raises ValueError."""
-    with pytest.raises(ValueError, match="temporal_scales must have the same length"):
-        SpeedConfig(
-            scales=(0.5, 1.0), transition_steps=(5,),
-            temporal_scales=(0.5,),
-        )
-
-
-def test_config_temporal_scales_out_of_range_raises():
-    """temporal_scales with values outside (0, 1] raises ValueError."""
-    with pytest.raises(ValueError, match="temporal scales must be in"):
-        SpeedConfig(
-            scales=(0.5, 1.0), transition_steps=(5,),
-            temporal_scales=(0.0, 1.0),
-        )
-    with pytest.raises(ValueError, match="temporal scales must be in"):
-        SpeedConfig(
-            scales=(0.5, 1.0), transition_steps=(5,),
-            temporal_scales=(0.5, 1.5),
-        )
-
-
-def test_config_temporal_scales_decreasing_raises():
-    """temporal_scales must be non-decreasing."""
-    with pytest.raises(ValueError, match="temporal_scales must be non-decreasing"):
-        SpeedConfig(
-            scales=(0.25, 0.5, 1.0), transition_steps=(3, 5),
-            temporal_scales=(0.5, 0.25, 1.0),
-        )

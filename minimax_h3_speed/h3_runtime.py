@@ -197,6 +197,8 @@ def run_repeated_stage_calls(
     Mirrors canonical SPEED ``generate``: it computes transition steps from
     delta-optimal thresholds, runs each scale stage, and DCT-expands + kappa-aligns
     at each boundary.
+
+    Returns ``(output_latent, denoised_latent)``.
     """
     if "noise_mask" in latent:
         raise ValueError("T2V oracle does not support noise masks")

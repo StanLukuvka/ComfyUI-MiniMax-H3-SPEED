@@ -98,9 +98,10 @@ class MiniMaxH3SPEEDSampler:
             full_latent_h=int(full_video.shape[-2]),
             full_latent_w=int(full_video.shape[-1]),
         )
-        
 
-        return run_repeated_stage_calls(
+        # Run the multi-stage SPEED diffusion chain. Audio is carried through
+        # unchanged; the final-stage x0 (denoised) is surfaced as denoised_output.
+        out, denoised = run_repeated_stage_calls(
             noise,
             guider,
             sigmas,
@@ -114,6 +115,8 @@ class MiniMaxH3SPEEDSampler:
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
             output_device=None,
         )
+
+        return (out, denoised)
 
 
 NODE_CLASS_MAPPINGS = {"MiniMaxH3SPEEDSampler": MiniMaxH3SPEEDSampler}

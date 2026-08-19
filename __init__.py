@@ -22,11 +22,7 @@ for _p in (_NODE_DIR, _REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from h3_logging import get_logger, banner  # noqa: E402
-
-log = get_logger()
-
-banner("MiniMax-H3 SPEED node pack: registering nodes...")
+print("MiniMax-H3 SPEED node pack: registering nodes...")
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
@@ -38,29 +34,27 @@ try:
     )
     NODE_CLASS_MAPPINGS.update(_SAMPLER_CLASS)
     NODE_DISPLAY_NAME_MAPPINGS.update(_SAMPLER_DISPLAY)
-    log.info("Registered sampler_node: %s", sorted(_SAMPLER_CLASS))
+    print("Registered sampler_node:", sorted(_SAMPLER_CLASS))
 except Exception:
-    log.error("FAILED to import sampler_node:\n%s", traceback.format_exc())
+    print("FAILED to import sampler_node:\n%s" % traceback.format_exc())
 
 # All other nodes — flat root files, same pattern as sampler_node.
 _NODE_MODULES = (
-    "sigma_harvest_node",
     "harvest_to_config_node",
-    "schedule_node",
 )
 
 for _name in _NODE_MODULES:
     try:
         _mod = importlib.import_module(_name)
     except Exception:
-        log.error("FAILED to import %s:\n%s", _name, traceback.format_exc())
+        print("FAILED to import %s:\n%s" % (_name, traceback.format_exc()))
         continue
     _mappings = getattr(_mod, "NODE_CLASS_MAPPINGS", {})
     _display = getattr(_mod, "NODE_DISPLAY_NAME_MAPPINGS", {})
     NODE_CLASS_MAPPINGS.update(_mappings)
     NODE_DISPLAY_NAME_MAPPINGS.update(_display)
-    log.info("Registered %-28s %s", _name, ", ".join(sorted(_mappings)) or "(nothing exported)")
+    print("Registered %-28s %s" % (_name, ", ".join(sorted(_mappings)) or "(nothing exported)"))
 
-banner(f"MiniMax-H3 SPEED registration complete: {len(NODE_CLASS_MAPPINGS)} node(s)")
+print("MiniMax-H3 SPEED registration complete: %d node(s)" % len(NODE_CLASS_MAPPINGS))
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

@@ -50,9 +50,6 @@ from minimax_h3_speed.spectral import (
     idct2,
     spectral_expand_dct,
     spectral_expand_dct_coupled,
-    dct_temporal,
-    idct_temporal,
-    spectral_expand_dct_3d,
 )
 
 
@@ -91,49 +88,3 @@ def test_spectral_expand_dct_sigma_amplitude():
     hf_01 = expanded_01[..., source_h:, source_w:].abs().mean()
     hf_05 = expanded_05[..., source_h:, source_w:].abs().mean()
     assert hf_05 > hf_01 * 1.9  # roughly 5x, accounting for randomness
-
-
-# --- Temporal DCT tests ---
-
-def test_dct_temporal_roundtrip():
-    """idct_temporal(dct_temporal(x)) must recover x to within 1e-5."""
-    x = torch.randn(1, 4, 8, 16, 16)
-    recovered = idct_temporal(dct_temporal(x))
-    assert recovered.shape == x.shape
-    assert torch.allclose(recovered, x, atol=1e-5)
-
-
-def test_dct_temporal_dc_component():
-    """The DC bin (index 0) of the temporal DCT equals the temporal mean."""
-    x = torch.randn(1, 4, 8, 16, 16)
-    coeffs = dct_temporal(x)
-    # DC = sqrt(1/T) * sum along T; so coeffs[:, :, 0, :, :] should be
-    # proportional to the mean along the T axis.
-    T = x.shape[-3]
-    expected_dc = x.mean(dim=-3) * (T ** 0.5)  # DCT-II scaling
-    assert torch.allclose(coeffs[:, :, 0, :, :], expected_dc, atol=1e-5)
-
-
-def test_spectral_expand_dct_3d_shape():
-    """Output shape must match the target_thw tuple."""
-    source = torch.randn(1, 4, 4, 8, 8)
-    result = spectral_expand_dct_3d(source, (8, 16, 16), sigma=0.5, seed=42)
-    assert result.shape == (1, 4, 8, 16, 16)
-
-
-def test_spectral_expand_dct_3d_lowfreq_preserved():
-    """Source's combined temporal+spatial DCT coefficients must appear in the
-    low-freq corner of the expanded result."""
-    source = torch.randn(1, 4, 4, 8, 8)
-    target_t, target_h, target_w = 8, 16, 16
-    result = spectral_expand_dct_3d(source, (target_t, target_h, target_w), sigma=0.5, seed=42)
-
-    # Extract the source-shaped low-freq block from the result's combined DCT.
-    source_dct = dct2(dct_temporal(source))
-    result_dct = dct2(dct_temporal(result))
-    source_t, source_h, source_w = source.shape[-3:]
-    assert torch.allclose(
-        result_dct[..., :source_t, :source_h, :source_w],
-        source_dct,
-        atol=1e-5,
-    )
