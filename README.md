@@ -10,13 +10,14 @@ Standard diffusion generates at full resolution the whole time. SPEED starts coa
 
 ## Install
 
-ComfyUI Manager (recommended), or manually:
+Manual (ComfyUI-Manager entry pending):
 
 ```bash
 cd ComfyUI/custom_nodes/
 git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 cd ComfyUI-MiniMax-H3-SPEED
-uv run pytest minimax_h3_speed/tests/ -q   # optional sanity check
+# optional sanity check (needs pytest + torch):
+python -m pytest minimax_h3_speed/tests/ -q
 # restart ComfyUI
 ```
 
@@ -61,7 +62,8 @@ Each preset splits denoising across resolutions. More stages = more time at low 
 
 ### Transition mode
 
-- `manual_step` / `manual_sigma` — explicit preset transition steps (default behavior; same thing here)
+- `manual_step` — explicit preset transition steps (first option, so the default)
+- `manual_sigma` — explicit transitions expressed as sigmas (same preset math)
 - `delta_custom` — uses `power_A` / `power_beta` (calibrated from a native-sampler harvest) for δ-optimal transitions
 
 ### Noise policy
@@ -79,9 +81,8 @@ The pack does **not** harvest inside the SPEED sampler. To get `(A, β)` for `de
 
 Load via ComfyUI's workflow browser (Workflow → Open):
 
-- `workflows/video_minimax_h3_SPEED.json` — standard SPEED pipeline (sampler → decode → save)
-- `workflows/video_minimax_h3_t2v_speed.json` — `direct_coarse` noise policy
-- `workflows/video_minimax_h3_t2v_coupled.json` — `coupled_full_grid` noise policy
+- `workflows/video_minimax_h3_t2v_speed.json` — standard SPEED pipeline (`direct_coarse` noise policy; sampler → decode → save)
+- `workflows/video_minimax_h3_t2v_coupled.json` — `coupled_full_grid` noise policy (higher quality, more VRAM)
 
 ## Repository structure
 
@@ -97,7 +98,7 @@ ComfyUI-MiniMax-H3-SPEED/
 │   ├── flow.py                  — sigma alignment, audio handling
 │   ├── harvest.py               — power spectrum + power-law fitting
 │   └── tests/                   — 4 test files, 42 passing
-├── workflows/                   — 3 ready-to-load workflows
+├── workflows/                   — 2 ready-to-load workflows
 ├── AGENTS.md                    — correctness constraints
 └── NEXT.md                      — roadmap
 ```
