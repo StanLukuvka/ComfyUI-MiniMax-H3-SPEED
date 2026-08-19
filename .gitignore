@@ -5,3 +5,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.hermes/
+AGENTS.md
+uv.lock

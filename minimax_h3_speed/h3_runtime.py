@@ -20,7 +20,11 @@ from .flow import (
     reentry_noise,
     time_shift_sigma,
 )
-from .spectral import dct2, lowpass_dct, spectral_expand_dct, spectral_expand_dct_coupled
+from .spectral import (
+    dct2, idct2, idct_temporal, lowpass_dct,
+    spectral_expand_dct, spectral_expand_dct_3d, spectral_expand_dct_coupled,
+    dct_temporal,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +197,8 @@ def run_repeated_stage_calls(
     Mirrors canonical SPEED ``generate``: it computes transition steps from
     delta-optimal thresholds, runs each scale stage, and DCT-expands + kappa-aligns
     at each boundary.
+
+    Returns ``(output_latent, denoised_latent)``.
     """
     if "noise_mask" in latent:
         raise ValueError("T2V oracle does not support noise masks")
@@ -210,9 +216,14 @@ def run_repeated_stage_calls(
         raise ValueError("need at least two stages (scales ending at 1.0)")
 
     full_h, full_w = full_video.shape[-2:]
+    full_t = full_video.shape[-3]
     stage_hw = [
         (max(1, round(full_h * s)), max(1, round(full_w * s))) for s in scales
     ]
+    if config.temporal_scales:
+        stage_t = [max(1, round(full_t * ts)) for ts in config.temporal_scales]
+    else:
+        stage_t = [full_t] * n_stages
 
     # Resolve transition steps (delta-optimal or explicit), using the LIVE full
     # resolution latent dims (matches canonical SPEED x.shape[-2:]) rather than
@@ -226,8 +237,10 @@ def run_repeated_stage_calls(
 
     # Stage 1: initialize coarse latent + noise at scale[0].
     s0_h, s0_w = stage_hw[0]
+    s0_t = stage_t[0]
+    coarse_video = full_video.new_zeros(full_video.shape[:-3] + (s0_t, s0_h, s0_w))
     coarse_samples = _pack_tensor(
-        full_video.new_zeros(full_video.shape[:-2] + (s0_h, s0_w)),
+        coarse_video,
         torch.zeros_like(full_audio),
     )
     cur_latent = latent.copy()
@@ -237,8 +250,12 @@ def run_repeated_stage_calls(
     if config.noise_policy == "coupled_full_grid":
         full_noise = noise.generate_noise(latent)
         full_noise_video, full_noise_audio = _unpack_tensor(full_noise)
+        # Apply temporal crop first (3D lowpass-like), then spatial DCT lowpass.
+        coarse_noise_video = lowpass_dct(
+            full_noise_video[..., :s0_t, :, :], (s0_h, s0_w)
+        )
         coarse_noise = _pack_tensor(
-            lowpass_dct(full_noise_video, (s0_h, s0_w)),
+            coarse_noise_video,
             full_noise_audio,
         )
     else:
@@ -300,7 +317,31 @@ def run_repeated_stage_calls(
 
         # DCT-expand the video (coupled or fresh band) and rescale by kappa.
         next_hw = stage_hw[stage_idx + 1]
-        if config.noise_policy == "coupled_full_grid":
+        next_t = stage_t[stage_idx + 1]
+        if next_t > internal_video.shape[-3]:
+            # Temporal expansion needed: use the 3D spectral path.
+            if config.noise_policy == "coupled_full_grid":
+                full_noise_video, _ = _unpack_tensor(full_noise)
+                # For coupled 3D: re-DCT-expand using full noise + cropped source.
+                # Combined low-freq block = DCT of source (3D); high-freq = scaled noise.
+                full_noise_video_dev = full_noise_video.to(
+                    device=internal_video.device, dtype=internal_video.dtype,
+                )
+                # Slice full noise to next_t in temporal axis, then use 3D coupled-style
+                # expansion: source DCT coefs go in low-freq corner, full noise coefs elsewhere.
+                source_dct = dct2(dct_temporal(internal_video))
+                target_noise = full_noise_video_dev[..., :next_t, :, :]
+                target_dct = dct2(dct_temporal(target_noise)) * float(q)
+                target_dct[..., :internal_video.shape[-3], :internal_video.shape[-2], :internal_video.shape[-1]] = source_dct
+                expanded_video = idct_temporal(idct2(target_dct))
+            else:
+                expanded_video = spectral_expand_dct_3d(
+                    internal_video,
+                    (next_t, *next_hw),
+                    q,
+                    int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
+                )
+        elif config.noise_policy == "coupled_full_grid":
             full_noise_video, _ = _unpack_tensor(full_noise)
             expanded_video = spectral_expand_dct_coupled(
                 internal_video,
@@ -394,8 +435,3 @@ def run_repeated_stage_calls(
             x0.cpu() if hasattr(x0, "cpu") else x0
         )
     return out, denoised
-
-
-# Alias retained for the sampler node's import.
-run_progressive_stages = run_repeated_stage_calls
-
