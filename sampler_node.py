@@ -14,6 +14,29 @@ import comfy.samplers
 from minimax_h3_speed.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS, SpeedConfig
 from minimax_h3_speed.h3_runtime import run_repeated_stage_calls, _unpack_tensor
 
+# Human-readable dropdown labels (what the user sees) mapped back to the
+# internal codes the config layer speaks. Labels stay space-separated; the
+# raw underscore codes never reach the UI.
+PRESET_LABELS = {
+    "Half then Full": "half_then_full",
+    "Quarter, Half, Full": "quarter_half_full",
+    "Quarter, Half, 3Q, Full": "quarter_half_3q_full",
+    "Aggressive": "aggressive",
+    "Three Quarter then Full": "three_quarter_then_full",
+}
+
+TRANSITION_MODE_LABELS = {
+    "Manual Step": "manual_step",
+    "Manual Sigma": "manual_sigma",
+    "Delta Custom": "delta_custom",
+}
+
+NOISE_POLICY_LABELS = {
+    "Direct Coarse": "direct_coarse",
+    "Coupled Full Grid": "coupled_full_grid",
+}
+
+
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
 
@@ -42,9 +65,9 @@ class MiniMaxH3SPEEDSampler:
                 "guider": ("GUIDER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "explicit_preset": (list(SCALE_PRESETS.keys()),),
-                "transition_mode": (["manual_step", "manual_sigma", "delta_custom"],),
-                "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
+                "explicit_preset": (list(PRESET_LABELS.keys()),),
+                "transition_mode": (list(TRANSITION_MODE_LABELS.keys()),),
+                "noise_policy": (list(NOISE_POLICY_LABELS.keys()), {"default": "Direct Coarse"}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
                 "power_A": ("FLOAT", {"default": 150.0, "min": 0.0, "max": 1e6}),
                 "power_beta": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
@@ -53,14 +76,21 @@ class MiniMaxH3SPEEDSampler:
         }
 
     def sample(self, noise, guider, sigmas, latent_image, explicit_preset,
-               transition_mode, noise_policy="direct_coarse",
+               transition_mode, noise_policy="Direct Coarse",
                delta=0.01, power_A=150.0, power_beta=2.0,
                seed_offset=10000):
+        # Translate UI labels back to the internal codes used everywhere else
+        # (config, runtime, tests). Unknown labels fail loudly rather than
+        # silently falling back.
+        preset_code = PRESET_LABELS[explicit_preset]
+        transition_code = TRANSITION_MODE_LABELS[transition_mode]
+        noise_code = NOISE_POLICY_LABELS.get(noise_policy, "direct_coarse")
+
         # Use the calibrated transition steps from the preset config.
         # These are tuned per-preset (e.g. 2_stage_half transitions at step 5
         # out of 20, leaving 15 steps for full-res detail refinement).
-        scales = SCALE_PRESETS[explicit_preset]
-        transition_steps = DEFAULT_TRANSITION_STEPS[explicit_preset]
+        scales = SCALE_PRESETS[preset_code]
+        transition_steps = DEFAULT_TRANSITION_STEPS[preset_code]
         n_stages = len(scales)
         n_sigmas = len(sigmas)
         # Need at least 2 sigmas per stage, plus enough room for transition steps.
@@ -70,7 +100,7 @@ class MiniMaxH3SPEEDSampler:
         if n_sigmas < min_required:
             raise ValueError(
                 f"sigma schedule too short: got {n_sigmas} sigmas, need "
-                f"at least {min_required} for preset '{explicit_preset}' with "
+                f"at least {min_required} for preset '{preset_code}' with "
                 f"transition steps {transition_steps}. "
                 f"Increase steps to >= {min_required - 1}."
             )
@@ -80,17 +110,16 @@ class MiniMaxH3SPEEDSampler:
         # Map node-facing transition_mode values to config-internal vocabulary.
         # "manual_step" and "manual_sigma" both produce explicit transition_steps
         # (resolved from the preset); only "delta_custom" uses power-spectrum
-        # thresholds. The Schedule node emits the same three values, so this keeps
-        # the two nodes' vocabularies consistent end-to-end.
+        # thresholds.
         MODE_TO_CONFIG = {"manual_step": "explicit",
                           "manual_sigma": "explicit",
                           "delta_custom": "delta_custom"}
-        config_mode = MODE_TO_CONFIG.get(transition_mode, "explicit")
+        config_mode = MODE_TO_CONFIG.get(transition_code, "explicit")
         config = SpeedConfig(
             scales=scales,
             transition_steps=transition_steps,
             transition_mode=config_mode,
-            noise_policy=noise_policy,
+            noise_policy=noise_code,
             delta=float(delta),
             power_A=float(power_A),
             power_beta=float(power_beta),

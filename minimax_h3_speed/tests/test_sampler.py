@@ -106,7 +106,7 @@ def test_input_schema_widgets_and_required_inputs():
     assert "power_A" in required
     assert "power_beta" in required
     assert "seed_offset" in required
-    assert required["explicit_preset"][0][0] == "half_then_full"
+    assert required["explicit_preset"][0][0] == "Half then Full"
 
 
 def test_sample_runs_multi_stage():
