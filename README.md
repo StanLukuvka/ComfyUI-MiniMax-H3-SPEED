@@ -1,135 +1,107 @@
 # ComfyUI MiniMax-H3 SPEED Sampler
 
-⚠️ **Noncommercial license** — see [LICENSE.md](LICENSE.md). Free to use for personal/learning projects. Contact for commercial use.
+⚠️ **Noncommercial license** — see [LICENSE.md](LICENSE.md). Free for personal/learning projects; contact for commercial use.
 
-A ComfyUI node that runs [SPEED](https://github.com/howardhx/speed) (Spectral Progressive Diffusion) on MiniMax-H3's packed video+audio latent. Replaces KSAMPLER + SamplerCustomAdvanced.
+A ComfyUI node that runs [SPEED](https://github.com/howardhx/speed) (Spectral Progressive Diffusion) on MiniMax-H3's packed video+audio latent. Replaces KSampler + SamplerCustomAdvanced for MiniMax-H3 video generation.
 
 ## Why use this?
 
-Standard diffusion generates at full resolution the whole time. SPEED starts coarse (half or quarter resolution), then progressively refines up to full. You get similar quality with less VRAM and faster generation because most steps run on smaller buffers.
-
-```
-MiniMaxH3SPEEDSampler
-  noise        ← RandomNoise
-  guider       ← BasicGuider (UNETLoader + MiniMaxH3ImageToVideo)
-  sigmas       ← BasicScheduler (default 20 steps)
-  latent_image ← MiniMaxH3ImageToVideo
-  preset       ← "half_then_full" (default)
-                ↓
-  output → VAEDecode + VAEDecodeAudio → CreateVideo → SaveVideo
-```
+Standard diffusion generates at full resolution the whole time. SPEED starts coarse (half or quarter resolution), then progressively refines up to full resolution. You get similar quality with less VRAM and faster generation because most steps run on smaller buffers.
 
 ## Install
 
+ComfyUI Manager (recommended), or manually:
+
 ```bash
-git clone https://github.com/StanLukuvka/H3-SPEED.git ComfyUI/custom_nodes/H3-SPEED
+cd ComfyUI/custom_nodes/
+git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
+cd ComfyUI-MiniMax-H3-SPEED
+uv run pytest minimax_h3_speed/tests/ -q   # optional sanity check
 # restart ComfyUI
 ```
 
 **Required:** MiniMax-H3 plugin ([ComfyUI-MiniMax-H3](https://github.com/StanLukuvka/ComfyUI-MiniMax-H3), requires ComfyUI 0.32.0+).
 
-## Usage
+## Nodes
 
-After cloning, load one of these workflows via ComfyUI's workflow browser (Workflow → Open):
+This pack ships **two nodes**:
 
-- `video_minimax_h3_t2v_speed.json` — standard SPEED pipeline (sampler → decode → save)
-- `sigma_harvest.json` — calibration pass: harvest residual spectrum from clean noise
-- `sigma_harvest_calibrated.json` — full pipeline: harvest → report → schedule node
+| Node | Display name | Inputs | Outputs |
+|------|-------------|--------|---------|
+| `MiniMaxH3SPEEDSampler` | MiniMax H3 SPEED — Sampler | `noise` (NOISE), `guider` (GUIDER), `sigmas` (SIGMAS), `latent_image` (LATENT), `explicit_preset`, `transition_mode`, `noise_policy`, `delta`, `power_A`, `power_beta`, `seed_offset` | `output` (LATENT), `denoised_output` (LATENT) |
+| `MiniMaxH3HarvestToConfig` | MiniMax H3 SPEED — Harvest → Config | `harvest_json` (STRING) | `report` (STRING) |
 
-Options:
-- `preset` — see table below
-- `transition_mode` — `explicit` (default) or `delta_custom` (uses calibrated A/β)
-- `noise_policy` — `direct_coarse` (default) or `coupled_full_grid`
+```text
+MiniMaxH3SPEEDSampler
+  noise         ← RandomNoise
+  guider        ← BasicGuider (UNETLoader + MiniMaxH3ImageToVideo)
+  sigmas        ← BasicScheduler (default 20 steps)
+  latent_image  ← MiniMaxH3ImageToVideo
+  explicit_preset ← "half_then_full" (default)
+              ↓
+  output → VAEDecode + VAEDecodeAudio → CreateVideo → SaveVideo
+```
 
-### Noise policies
-
-SPEED reduces VRAM by running early denoising at lower resolution. The `noise_policy` controls how noise is generated across stages:
-
-| Policy | Behavior | When to use |
-|--------|----------|-------------|
-| `direct_coarse` | Fresh noise per stage, standard SPEED | Default. Lower VRAM, standard quality. |
-| `coupled_full_grid` | Shared full-grid noise across all scales | Higher quality (better high-frequency coherence) at the cost of more VRAM. |
-
-Use `video_minimax_h3_t2v_speed.json` (direct_coarse) for the default path, or `video_minimax_h3_t2v_coupled.json` (coupled_full_grid) when quality matters more than memory.
-
-### Presets (default 20-step schedule)
+### Presets
 
 Each preset splits denoising across resolutions. More stages = more time at low res = faster but potentially softer mid-frequency detail.
 
-| Preset | Steps @ each stage | Outcome |
-|--------|-------------------|---------|
-| `half_then_full` | 5 @ 50%, 15 @ 100% | Default. Good balance. |
-| `three_quarter_then_full` | 10 @ 75%, 10 @ 100% | Fastest. Fewer coarse steps, but may miss fine detail. |
-| `quarter_half_full` | 3 @ 25%, 2 @ 50%, 15 @ 100% | Higher quality. More refinement passes. |
-| `aggressive` | 3 @ 25%, 5 @ 75%, 12 @ 100% | Skips 50% stage. Fast but loses mid-frequency detail. |
-| `quarter_half_3q_full` | 3 @ 25%, 2 @ 50%, 3 @ 75%, 12 @ 100% | Slowest. Highest quality. All intermediate resolutions. |
+| Preset | Scales | Transition steps | Outcome |
+|--------|--------|-----------------|---------|
+| `half_then_full` | 50% → 100% | step 5 | Default. Good balance. |
+| `three_quarter_then_full` | 75% → 100% | step 10 | Fastest. Fewer coarse steps. |
+| `quarter_half_full` | 25% → 50% → 100% | steps 3, 5 | More refinement passes. |
+| `aggressive` | 25% → 75% → 100% | steps 3, 8 | Skips 50%. Fast, loses mid detail. |
+| `quarter_half_3q_full` | 25% → 50% → 75% → 100% | steps 3, 5, 8 | Slowest. Highest quality. |
 
 **How to choose:**
-- **Speed** → `three_quarter_then_full` (fastest, decent quality)
-- **Quality** → `quarter_half_3q_full` (most stages, slowest)
-- **Default** → `half_then_full` (proven sweet spot)
+- **Speed** → `three_quarter_then_full`
+- **Quality** → `quarter_half_3q_full`
+- **Default** → `half_then_full`
+
+### Transition mode
+
+- `manual_step` / `manual_sigma` — explicit preset transition steps (default behavior; same thing here)
+- `delta_custom` — uses `power_A` / `power_beta` (calibrated from a native-sampler harvest) for δ-optimal transitions
+
+### Noise policy
+
+| Policy | Behavior |
+|--------|----------|
+| `direct_coarse` | Fresh noise per stage, standard SPEED. Lower VRAM. |
+| `coupled_full_grid` | Shared full-grid noise across scales. Higher quality, more VRAM. |
+
+## Sigma harvesting (calibration)
+
+The pack does **not** harvest inside the SPEED sampler. To get `(A, β)` for `delta_custom`, run a **native** single-resolution Euler pass with a harvest callback, then feed the JSON into `MiniMaxH3HarvestToConfig` to read the fitted values. See [AGENTS.md](AGENTS.md) for why this must not run inside SPEED (multi-stage sigma splicing mislabels per-step sigmas).
+
+## Workflows
+
+Load via ComfyUI's workflow browser (Workflow → Open):
+
+- `workflows/video_minimax_h3_SPEED.json` — standard SPEED pipeline (sampler → decode → save)
+- `workflows/video_minimax_h3_t2v_speed.json` — `direct_coarse` noise policy
+- `workflows/video_minimax_h3_t2v_coupled.json` — `coupled_full_grid` noise policy
 
 ## Repository structure
 
-```
-H3-SPEED/
+```text
+ComfyUI-MiniMax-H3-SPEED/
+├── __init__.py                  — registration (2 nodes)
+├── sampler_node.py              — MiniMaxH3SPEEDSampler
+├── harvest_to_config_node.py    — MiniMaxH3HarvestToConfig
 ├── minimax_h3_speed/
-│   ├── config.py              — presets, transition steps, SpeedConfig
-│   ├── h3_runtime.py          — multi-stage diffusion loop
-│   ├── spectral.py            — resolution expansion math
-│   ├── flow.py                — sigma alignment, audio handling
-│   ├── harvest.py             — radial power spectrum + fitting
-│   └── tests/                 — 61 passing tests
-├── nodes/
-│   ├── sampler_node.py        — MiniMaxH3SPEEDSampler (main)
-│   └── helper_nodes/
-│       ├── sigma_harvest.py   — SigmaHarvest (calibration pass)
-│       ├── harvest_to_config.py — parse harvest JSON → report
-│       ├── schedule.py        — SpeedConfig planner
-│       ├── inspect.py         — debug: inspect latent geometry
-│       ├── power_spectrum.py  — debug: radial power spectrum
-│       ├── dct_lowpass.py     — debug: DCT lowpass filter
-│       ├── transition_math.py — debug: compute transition from A/β
-│       ├── spectral_expand.py — debug: visualize spectral expansion
-│       ├── x0_fidelity_probe.py — debug: X0 fidelity probe
-│       └── av_reentry_oracle.py — debug: AV reentry schedule
-└── workflows/
-    ├── video_minimax_h3_t2v_speed.json     — standard SPEED pipeline
-    ├── sigma_harvest.json                  — calibration-only workflow
-    └── sigma_harvest_calibrated.json       — harvest → report → schedule
+│   ├── config.py                — presets, transition steps, SpeedConfig
+│   ├── h3_runtime.py            — multi-stage diffusion loop
+│   ├── spectral.py              — resolution expansion math
+│   ├── flow.py                  — sigma alignment, audio handling
+│   ├── harvest.py               — power spectrum + power-law fitting
+│   └── tests/                   — 4 test files, 42 passing
+├── workflows/                   — 3 ready-to-load workflows
+├── AGENTS.md                    — correctness constraints
+└── NEXT.md                      — roadmap
 ```
 
-## Test suite
+## License
 
-```bash
-uv run pytest minimax_h3_speed/tests/ -q
-```
-
-**Current:** 74 tests passing across 5 test files:
-- `test_dct.py` — DCT transform correctness
-- `test_flow.py` — sigma alignment, audio handling
-- `test_harvest.py` — power spectrum, fitting, callback
-- `test_integration.py` — end-to-end harvest→schedule→sample pipeline
-- `test_spectral.py` — spectral expansion
-
-### Helper Nodes
-
-**Calibration pipeline** (3 nodes):
-- `MiniMaxH3SigmaHarvest` (diagnostics) — takes noise, guider, sigmas, latent; returns JSON string
-- `MiniMaxH3HarvestToConfig` (diagnostics) — parses harvest JSON into a readable calibration report
-- `MiniMaxH3SPEEDSchedule` (schedule) — computes a SpeedConfig from sigmas + preset + mode
-
-**Debug utilities** (7 nodes):
-- `MiniMaxH3Inspect` — prints latent shape, device, dtype for troubleshooting
-- `MiniMaxH3PowerSpectrum` — computes radial power spectrum of a latent
-- `MiniMaxH3DCTLowpass` — applies DCT lowpass filter for ablation studies
-- `MiniMaxH3TransitionMath` — computes transition steps from A, β, delta
-- `MiniMaxH3SpectralExpand` — visualizes spectral expansion effect on noise
-- `MiniMaxH3XFidelityProbe` — measures X0 fidelity during sampling
-- `MiniMaxH3AVReentryOracle` — computes when audio should re-enter
-
-Calibration workflow: Run `SigmaHarvest` on a clean noise pass → parse with `HarvestToConfig` → feed calibrated `power_A`/`power_beta` into the sampler in `delta_custom` mode.
-
-PolyForm Noncommercial 1.0.0 — see [LICENSE.md](LICENSE.md).
-
-Canonical SPEED: [howardhx/speed](https://github.com/howardhx/speed).
+PolyForm Noncommercial 1.0.0 — free for personal/learning, contact for commercial use. See [LICENSE.md](LICENSE.md).
