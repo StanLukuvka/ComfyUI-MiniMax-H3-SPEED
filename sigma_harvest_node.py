@@ -73,10 +73,14 @@ class MiniMaxH3SigmaHarvest:
         )
 
         # Run one Euler pass with our capture callback.
+        # The H3 guider's sample() calls noise.unbind() directly, so `noise` must
+        # already be a NestedTensor — generate it from the (zeroed) latent first,
+        # exactly like the stock SamplerCustomAdvanced / run_repeated_stage_calls.
+        noise_tensor = noise.generate_noise(zero_latent)
         callback = HarvestCallback(sigmas=sigmas, every=int(capture_every))
 
         guider.sample(
-            noise,
+            noise_tensor,
             zero_latent["samples"],
             comfy.samplers.sampler_object("euler"),
             sigmas,

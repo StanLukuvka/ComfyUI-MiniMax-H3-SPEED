@@ -39,6 +39,12 @@ All 4 workflows regenerated against the live registry schema and pass validation
 - [x] Regenerate all 4 workflows vs live v0.32.0 registry (was the real "not installed"
       cause — stale workflow JSONs, not the node install)
 - [x] H3 power-spectrum defaults = 150.0 / 2.0 (estimates; replace after GPU harvest)
+- [x] Port PR #3 (chflame163) sigma-shift lookup into `dev` + 6 fallback tests.
+      Fixes v0.33.1 `ValueError: active MiniMax-H3 sigma shifts are unavailable`.
+- [x] Fix `sigma_harvest_node.run()` — must call `noise.generate_noise(latent)` to
+      produce a NestedTensor before `guider.sample()`; raw `Noise_RandomNoise` fails
+      with `AttributeError: ... no attribute 'unbind'` on ComfyUI v0.33.1. Added a
+      node-level regression test.
 
 ## Known deferrals (honest)
 
@@ -51,7 +57,7 @@ All 4 workflows regenerated against the live registry schema and pass validation
 - test_spectral.py    : 7
 - test_sampler.py     : 32
 - test_config / runtime / harvest / integration / schedule_node : remaining
-- Total: 132 passed
+- Total: 138 passed
 
 ## Local test env
 
