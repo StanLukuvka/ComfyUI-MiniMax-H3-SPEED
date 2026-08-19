@@ -2,7 +2,7 @@
 
 ⚠️ **Noncommercial license** — see [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0).
 
-An experimental ComfyUI node pack that implements progressive-resolution diffusion ([SPEED](https://github.com/howardhx/speed), spectral progressive denoising) for MiniMax-H3 image-to-video latents. The pack's own docstring: it replaces KSampler + SamplerCustomAdvanced because the default sampler does not expect you to change resolution mid-flight — SPEED does exactly that.
+An experimental ComfyUI node pack that implements [SPEED](https://github.com/howardhx/speed) — Spectral Progressive Diffusion for Efficient Image and Video Generation — for MiniMax-H3 image-to-video latents. The pack's own docstring: it replaces KSampler + SamplerCustomAdvanced because the default sampler does not expect you to change resolution mid-flight — SPEED does exactly that.
 
 ## Why
 
