@@ -47,13 +47,6 @@ _NODE_MODULES = (
     "sigma_harvest_node",
     "harvest_to_config_node",
     "schedule_node",
-    "inspect_node",
-    "power_spectrum_node",
-    "dct_lowpass_node",
-    "transition_math_node",
-    "spectral_expand_node",
-    "x0_fidelity_probe_node",
-    "av_reentry_oracle_node",
 )
 
 for _name in _NODE_MODULES:

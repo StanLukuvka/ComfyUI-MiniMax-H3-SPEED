@@ -42,13 +42,6 @@ expected = {
     "MiniMaxH3SigmaHarvest",
     "MiniMaxH3HarvestToConfig",
     "MiniMaxH3SPEEDSchedule",
-    "MiniMaxH3Inspect",
-    "MiniMaxH3PowerSpectrum",
-    "MiniMaxH3DCTLowpass",
-    "MiniMaxH3TransitionMath",
-    "MiniMaxH3SpectralExpand",
-    "MiniMaxH3XFidelityProbe",
-    "MiniMaxH3AVReentryOracle",
 }
 got = set(mod.NODE_CLASS_MAPPINGS.keys())
 got -= {"FakeComfyBuiltin"}  # tolerate ComfyUI merging its own builtins
@@ -60,4 +53,4 @@ print(f"missing: {sorted(missing)}" if missing else "missing: none ✓")
 print(f"extra: {sorted(extra)}" if extra else "extra: none ✓")
 assert not missing, f"FAIL — nodes missing: {missing}"
 assert not extra, f"FAIL — unexpected nodes: {extra}"
-print("PASS — all 11 nodes register despite ComfyUI's 'nodes' module collision")
+print("PASS — all 4 nodes register despite ComfyUI's 'nodes' module collision")

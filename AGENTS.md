@@ -7,17 +7,17 @@ Agent-oriented session state. Branch: `dev`. Last sync: 2026-08-18.
 - **Branch:** `dev` is the working branch. `main` is 1 commit ahead (PR #1 merge) and
   ~21 commits behind. Default branch is `main` — strangers clone it and get the OLD
   code. `dev` is NOT auto-promoted.
-- **Tests:** 132 passing (`.venv/bin/python -m pytest minimax_h3_speed/tests/ -q`).
-- **Last real commit on `dev`:** `3b375ef` — regenerated all 4 workflows against the
-  live ComfyUI v0.32.0 registry schema.
+- **Tests:** 115 passing (`.venv/bin/python -m pytest minimax_h3_speed/tests/ -q`).
+- **Last real commit on `dev`:** `dcc0524` — trimmed 7 debug nodes + `common.py` +
+  stale `video_minimax_h3_t2v-SPEED.json`; kept 4 public nodes.
+- **Only 4 public nodes:** `MiniMaxH3SPEEDSampler`, `MiniMaxH3SigmaHarvest`,
+  `MiniMaxH3HarvestToConfig`, `MiniMaxH3SPEEDSchedule`. Debug/dev nodes removed.
 
 ## Repo Layout (post-refactor)
 
 - **All nodes are FLAT root-level files**, imported by `ROOT/__init__.py`:
-  `sampler_node.py`, `sigma_harvest_node.py`, `schedule_node.py`,
-  `harvest_to_config_node.py`, `inspect_node.py`, `power_spectrum_node.py`,
-  `dct_lowpass_node.py`, `transition_math_node.py`, `spectral_expand_node.py`,
-  `x0_fidelity_probe_node.py`, `av_reentry_oracle_node.py`. Shared helper: `common.py`.
+  `sampler_node.py`, `sigma_harvest_node.py`, `harvest_to_config_node.py`,
+  `schedule_node.py`. Shared helper: `h3_logging.py`.
 - **Do NOT reintroduce the `nodes/` or `h3_speed_nodes/` subpackage.** It broke under
   ComfyUI's `importlib.util.spec_from_file_location` loading (root dir is not on
   sys.path), and `nodes` collides with ComfyUI core's OWN `nodes` module. Flat is the
