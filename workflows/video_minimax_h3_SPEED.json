@@ -1,8 +1,8 @@
 {
   "id": "e3f2b845-8f2c-4b5a-9caf-eac1029d3e7e",
   "revision": 0,
-  "last_node_id": 121,
-  "last_link_id": 234,
+  "last_node_id": 123,
+  "last_link_id": 253,
   "nodes": [
     {
       "id": 92,
@@ -133,7 +133,7 @@
       "type": "MarkdownNote",
       "pos": [
         -1570,
-        5458.8918279164845
+        5460
       ],
       "size": [
         300,
@@ -231,7 +231,7 @@
         1344,
         768,
         5,
-        127775624934527,
+        766525019843087,
         "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
         "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
         "minimax_h3_video_vae_fp16.safetensors",
@@ -273,8 +273,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 4,
-          "lastNodeId": 121,
-          "lastLinkId": 234,
+          "lastNodeId": 123,
+          "lastLinkId": 253,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -463,7 +463,7 @@
               70
             ],
             "flags": {},
-            "order": 5,
+            "order": 4,
             "mode": 0,
             "inputs": [
               {
@@ -513,7 +513,7 @@
               70
             ],
             "flags": {},
-            "order": 10,
+            "order": 9,
             "mode": 0,
             "inputs": [
               {
@@ -564,14 +564,14 @@
             "flags": {
               "collapsed": false
             },
-            "order": 9,
+            "order": 8,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "samples",
                 "name": "samples",
                 "type": "LATENT",
-                "link": 233
+                "link": 251
               },
               {
                 "localized_name": "vae",
@@ -596,102 +596,6 @@
             "widgets_values": []
           },
           {
-            "id": 10,
-            "type": "VAEDecode",
-            "pos": [
-              -50,
-              4760
-            ],
-            "size": [
-              230,
-              60
-            ],
-            "flags": {
-              "collapsed": false
-            },
-            "order": 4,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "samples",
-                "name": "samples",
-                "type": "LATENT",
-                "link": 232
-              },
-              {
-                "localized_name": "vae",
-                "name": "vae",
-                "type": "VAE",
-                "link": 8
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "IMAGE",
-                "name": "IMAGE",
-                "type": "IMAGE",
-                "links": [
-                  167
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "VAEDecode"
-            },
-            "widgets_values": []
-          },
-          {
-            "id": 6,
-            "type": "UNETLoader",
-            "pos": [
-              -2020,
-              4630
-            ],
-            "size": [
-              640,
-              90
-            ],
-            "flags": {},
-            "order": 2,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "unet_name",
-                "name": "unet_name",
-                "type": "COMBO",
-                "widget": {
-                  "name": "unet_name"
-                },
-                "link": 221
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "MODEL",
-                "name": "MODEL",
-                "type": "MODEL",
-                "links": [
-                  5,
-                  193
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "UNETLoader",
-              "models": [
-                {
-                  "name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-                  "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-                  "directory": "diffusion_models"
-                }
-              ]
-            },
-            "widgets_values": [
-              "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-              "default"
-            ]
-          },
-          {
             "id": 13,
             "type": "CLIPLoader",
             "pos": [
@@ -703,7 +607,7 @@
               120
             ],
             "flags": {},
-            "order": 6,
+            "order": 5,
             "mode": 0,
             "inputs": [
               {
@@ -754,7 +658,7 @@
               110
             ],
             "flags": {},
-            "order": 11,
+            "order": 10,
             "mode": 0,
             "inputs": [
               {
@@ -803,7 +707,7 @@
             "flags": {
               "collapsed": false
             },
-            "order": 13,
+            "order": 12,
             "mode": 0,
             "inputs": [
               {
@@ -863,7 +767,7 @@
               70
             ],
             "flags": {},
-            "order": 14,
+            "order": 13,
             "mode": 0,
             "inputs": [
               {
@@ -895,6 +799,102 @@
             ]
           },
           {
+            "id": 10,
+            "type": "VAEDecode",
+            "pos": [
+              -46.658342999999974,
+              4701.044927999995
+            ],
+            "size": [
+              230,
+              60
+            ],
+            "flags": {
+              "collapsed": false
+            },
+            "order": 3,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "samples",
+                "name": "samples",
+                "type": "LATENT",
+                "link": 250
+              },
+              {
+                "localized_name": "vae",
+                "name": "vae",
+                "type": "VAE",
+                "link": 8
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "IMAGE",
+                "name": "IMAGE",
+                "type": "IMAGE",
+                "links": [
+                  167
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "VAEDecode"
+            },
+            "widgets_values": []
+          },
+          {
+            "id": 6,
+            "type": "UNETLoader",
+            "pos": [
+              -2020,
+              4630
+            ],
+            "size": [
+              640,
+              90
+            ],
+            "flags": {},
+            "order": 1,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "unet_name",
+                "name": "unet_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "unet_name"
+                },
+                "link": 221
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  5,
+                  244
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "UNETLoader",
+              "models": [
+                {
+                  "name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+                  "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+                  "directory": "diffusion_models"
+                }
+              ]
+            },
+            "widgets_values": [
+              "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+              "default"
+            ]
+          },
+          {
             "id": 15,
             "type": "RandomNoise",
             "pos": [
@@ -906,7 +906,7 @@
               90
             ],
             "flags": {},
-            "order": 7,
+            "order": 6,
             "mode": 0,
             "inputs": [
               {
@@ -925,7 +925,7 @@
                 "name": "NOISE",
                 "type": "NOISE",
                 "links": [
-                  228
+                  246
                 ]
               }
             ],
@@ -936,49 +936,6 @@
               1,
               "randomize"
             ]
-          },
-          {
-            "id": 16,
-            "type": "BasicGuider",
-            "pos": [
-              -790,
-              4800
-            ],
-            "size": [
-              360,
-              60
-            ],
-            "flags": {},
-            "order": 8,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "model",
-                "name": "model",
-                "type": "MODEL",
-                "link": 193
-              },
-              {
-                "localized_name": "conditioning",
-                "name": "conditioning",
-                "type": "CONDITIONING",
-                "link": 187
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "GUIDER",
-                "name": "GUIDER",
-                "type": "GUIDER",
-                "links": [
-                  229
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "BasicGuider"
-            },
-            "widgets_values": []
           },
           {
             "id": 17,
@@ -1022,7 +979,7 @@
               130
             ],
             "flags": {},
-            "order": 3,
+            "order": 2,
             "mode": 0,
             "inputs": [
               {
@@ -1038,7 +995,7 @@
                 "name": "SIGMAS",
                 "type": "SIGMAS",
                 "links": [
-                  230
+                  248
                 ]
               }
             ],
@@ -1063,7 +1020,7 @@
               510
             ],
             "flags": {},
-            "order": 12,
+            "order": 11,
             "mode": 0,
             "inputs": [
               {
@@ -1143,9 +1100,7 @@
                 "name": "LATENT",
                 "type": "LATENT",
                 "links": [
-                  231,
-                  232,
-                  233
+                  249
                 ]
               }
             ],
@@ -1160,53 +1115,98 @@
             ]
           },
           {
-            "id": 120,
-            "type": "SaveText",
+            "id": 122,
+            "type": "PathchSageAttentionKJ",
             "pos": [
-              69.29031577471304,
-              5045.330767613124
+              -1220.2993562166987,
+              4395.245191507657
             ],
             "size": [
               270,
-              170
+              82
             ],
             "flags": {},
-            "order": 16,
+            "order": 14,
             "mode": 0,
             "inputs": [
               {
-                "localized_name": "text",
-                "name": "text",
-                "type": "STRING",
-                "link": 234
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 244
               }
             ],
             "outputs": [
               {
-                "localized_name": "text",
-                "name": "text",
-                "type": "STRING",
-                "links": null
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  252
+                ]
               }
             ],
             "properties": {
-              "Node name for S&R": "SaveText"
+              "Node name for S&R": "PathchSageAttentionKJ"
             },
             "widgets_values": [
-              "ComfyUI",
-              "txt"
+              "auto",
+              false
             ]
           },
           {
-            "id": 119,
-            "type": "MiniMaxH3SigmaHarvest",
+            "id": 16,
+            "type": "BasicGuider",
             "pos": [
-              -357.39811982362505,
-              5042.781971821038
+              -797.179096373199,
+              4790.391914334935
             ],
             "size": [
-              345.8833374023437,
-              190
+              360,
+              60
+            ],
+            "flags": {},
+            "order": 7,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 252
+              },
+              {
+                "localized_name": "conditioning",
+                "name": "conditioning",
+                "type": "CONDITIONING",
+                "link": 187
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "GUIDER",
+                "name": "GUIDER",
+                "type": "GUIDER",
+                "links": [
+                  253
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "BasicGuider"
+            },
+            "widgets_values": []
+          },
+          {
+            "id": 123,
+            "type": "MiniMaxH3SPEEDSampler",
+            "pos": [
+              -343.9540471127028,
+              4379.082390852378
+            ],
+            "size": [
+              303.8833374023437,
+              262
             ],
             "flags": {},
             "order": 15,
@@ -1216,70 +1216,56 @@
                 "localized_name": "noise",
                 "name": "noise",
                 "type": "NOISE",
-                "link": 228
+                "link": 246
               },
               {
                 "localized_name": "guider",
                 "name": "guider",
                 "type": "GUIDER",
-                "link": 229
+                "link": 253
               },
               {
                 "localized_name": "sigmas",
                 "name": "sigmas",
                 "type": "SIGMAS",
-                "link": 230
+                "link": 248
               },
               {
                 "localized_name": "latent_image",
                 "name": "latent_image",
                 "type": "LATENT",
-                "link": 231
+                "link": 249
               }
             ],
             "outputs": [
               {
-                "localized_name": "harvest_json",
-                "name": "harvest_json",
-                "type": "STRING",
+                "localized_name": "output",
+                "name": "output",
+                "type": "LATENT",
                 "links": [
-                  234
+                  250,
+                  251
                 ]
+              },
+              {
+                "localized_name": "denoised_output",
+                "name": "denoised_output",
+                "type": "LATENT",
+                "links": null
               }
             ],
             "properties": {
-              "Node name for S&R": "MiniMaxH3SigmaHarvest"
+              "Node name for S&R": "MiniMaxH3SPEEDSampler"
             },
             "widgets_values": [
-              1,
-              "first",
-              0.5,
-              0.01
+              "half_then_full",
+              "explicit",
+              "direct_coarse",
+              0.01,
+              219.48,
+              2.42,
+              10000
             ]
-          },
-          {
-            "id": 121,
-            "type": "MarkdownNote",
-            "pos": [
-              -192.2713333206071,
-              4169.197381703231
-            ],
-            "size": [
-              746.2066363636363,
-              349.4967272727272
-            ],
-            "flags": {},
-            "order": 3,
-            "mode": 0,
-            "inputs": [],
-            "outputs": [],
-            "title": "Note: SPEED Settings Reference",
-            "properties": {},
-            "widgets_values": [
-              "# SPEED Preset — steps @ resolution (20-step schedule)\n\n`transition_steps` = diffusion steps run at each scale before jumping to the next.\n`%` = steps ÷ 20, rounded. Cumulative always = 20.\n\n| Preset | Scales (→) | Steps @ each scale | % of 20 | Cumulative |\n|---|---|---|---|---|\n| `half_then_full` | 0.5 → 1.0 | 5 @ 50%, 15 @ 100% | 25% → 75% | 20 |\n| `three_quarter_then_full` | 0.75 → 1.0 | 10 @ 75%, 10 @ 100% | 50% → 50% | 20 |\n| `quarter_half_full` | 0.25 → 0.5 → 1.0 | 3 @ 25%, 2 @ 50%, 15 @ 100% | 15% → 10% → 75% | 20 |\n| `aggressive` | 0.25 → 0.75 → 1.0 | 3 @ 25%, 5 @ 75%, 12 @ 100% | 15% → 25% → 60% | 20 |\n| `quarter_half_3q_full` | 0.25 → 0.5 → 0.75 → 1.0 | 3 @ 25%, 2 @ 50%, 3 @ 75%, 12 @ 100% | 15% → 10% → 15% → 60% | 20 |\n\nNotes:\n- More steps at low res = faster but softer mid-frequency detail.\n- `half_then_full` = default sweet spot. `three_quarter_then_full` = fastest. `quarter_half_3q_full` = slowest, highest quality.\n- `coupled_full_grid` noise policy shares full-grid noise across scales (higher quality, more VRAM); doesn't change step counts.\n"
-            ],
-            "color": "#222",
-            "bgcolor": "#000"
           }
         ],
         "groups": [
@@ -1354,14 +1340,6 @@
             "origin_id": 6,
             "origin_slot": 0,
             "target_id": 9,
-            "target_slot": 0,
-            "type": "MODEL"
-          },
-          {
-            "id": 193,
-            "origin_id": 6,
-            "origin_slot": 0,
-            "target_id": 16,
             "target_slot": 0,
             "type": "MODEL"
           },
@@ -1518,60 +1496,68 @@
             "type": "COMBO"
           },
           {
-            "id": 228,
+            "id": 244,
+            "origin_id": 6,
+            "origin_slot": 0,
+            "target_id": 122,
+            "target_slot": 0,
+            "type": "MODEL"
+          },
+          {
+            "id": 246,
             "origin_id": 15,
             "origin_slot": 0,
-            "target_id": 119,
+            "target_id": 123,
             "target_slot": 0,
             "type": "NOISE"
           },
           {
-            "id": 229,
-            "origin_id": 16,
-            "origin_slot": 0,
-            "target_id": 119,
-            "target_slot": 1,
-            "type": "GUIDER"
-          },
-          {
-            "id": 230,
+            "id": 248,
             "origin_id": 9,
             "origin_slot": 0,
-            "target_id": 119,
+            "target_id": 123,
             "target_slot": 2,
             "type": "SIGMAS"
           },
           {
-            "id": 231,
+            "id": 249,
             "origin_id": 104,
             "origin_slot": 1,
-            "target_id": 119,
+            "target_id": 123,
             "target_slot": 3,
             "type": "LATENT"
           },
           {
-            "id": 232,
-            "origin_id": 104,
-            "origin_slot": 1,
+            "id": 250,
+            "origin_id": 123,
+            "origin_slot": 0,
             "target_id": 10,
             "target_slot": 0,
             "type": "LATENT"
           },
           {
-            "id": 233,
-            "origin_id": 104,
-            "origin_slot": 1,
+            "id": 251,
+            "origin_id": 123,
+            "origin_slot": 0,
             "target_id": 23,
             "target_slot": 0,
             "type": "LATENT"
           },
           {
-            "id": 234,
-            "origin_id": 119,
+            "id": 252,
+            "origin_id": 122,
             "origin_slot": 0,
-            "target_id": 120,
+            "target_id": 16,
             "target_slot": 0,
-            "type": "STRING"
+            "type": "MODEL"
+          },
+          {
+            "id": 253,
+            "origin_id": 16,
+            "origin_slot": 0,
+            "target_id": 123,
+            "target_slot": 1,
+            "type": "GUIDER"
           }
         ],
         "extra": {}
@@ -1586,10 +1572,10 @@
     "VHS_MetadataImage": true,
     "VHS_KeepIntermediate": true,
     "ds": {
-      "scale": 0.7513148009015777,
+      "scale": 0.683013455365071,
       "offset": [
-        1434.8241151387892,
-        -3890.4924635214134
+        1585.3357867922557,
+        -4198.347771474352
       ]
     }
   },
