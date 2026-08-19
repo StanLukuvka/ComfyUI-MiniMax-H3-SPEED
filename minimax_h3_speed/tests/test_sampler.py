@@ -99,19 +99,19 @@ def test_input_schema_widgets_and_required_inputs():
     inputs = mod.MiniMaxH3SPEEDSampler.INPUT_TYPES()
     required = inputs["required"]
     for key in ("noise", "guider", "sigmas", "latent_image",
-                "preset", "transition_mode"):
+                "explicit_preset", "transition_mode"):
         assert key in required, f"missing required input: {key}"
     # delta_custom path is enabled with sigma-harvest calibration
     assert "delta" in required
     assert "power_A" in required
     assert "power_beta" in required
     assert "seed_offset" in required
-    assert required["preset"][0][0] == "half_then_full"
+    assert required["explicit_preset"][0][0] == "half_then_full"
 
 
 def test_sample_runs_multi_stage():
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_progressive_stages
+    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
 
     sample_calls = []
 
@@ -152,7 +152,7 @@ def test_sample_runs_multi_stage():
     sigmas = torch.linspace(1.0, 0.025, 20)
     config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,))
 
-    out, denoised = run_progressive_stages(
+    out, denoised = run_repeated_stage_calls(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
         nested_type=type("NT", (), {"is_nested": True})(),
@@ -165,7 +165,7 @@ def test_sample_runs_multi_stage():
 def test_coupled_full_grid_noise_policy():
     """coupled_full_grid: full-grid noise is shared across stages."""
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_progressive_stages
+    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
 
     sample_calls = []
     captured_noises = []
@@ -210,7 +210,7 @@ def test_coupled_full_grid_noise_policy():
     sigmas = torch.linspace(1.0, 0.025, 20)
     config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), noise_policy="coupled_full_grid")
 
-    out, denoised = run_progressive_stages(
+    out, denoised = run_repeated_stage_calls(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
         nested_type=type("NT", (), {"is_nested": True})(),
@@ -282,7 +282,7 @@ def test_audio_scale_is_ratio_not_one():
 
 def test_sigma_policy_canonical_vs_no_alignment():
     """canonical: apply kappa alignment; no_alignment: no rescaling."""
-    from minimax_h3_speed.h3_runtime import run_progressive_stages
+    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
 
     canonical_calls = []
     no_align_calls = []
@@ -311,7 +311,7 @@ def test_sigma_policy_canonical_vs_no_alignment():
     config_canon = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="canonical")
     config_noalign = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="no_alignment")
 
-    run_progressive_stages(
+    run_repeated_stage_calls(
         type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
         make_guider(canonical_calls),
         sigmas, latent, config_canon,
@@ -319,7 +319,7 @@ def test_sigma_policy_canonical_vs_no_alignment():
         nested_type=type("NT", (), {"is_nested": True})(),
         disable_pbar=True,
     )
-    run_progressive_stages(
+    run_repeated_stage_calls(
         type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
         make_guider(no_align_calls),
         sigmas, latent, config_noalign,
