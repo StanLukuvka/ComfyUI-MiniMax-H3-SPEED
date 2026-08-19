@@ -123,7 +123,7 @@ class MiniMaxH3HarvestToConfig:
                 sampler_obj,
                 sigmas,
                 callback=harvest_callback,
-                disable_pbar=True,
+                disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
                 seed=getattr(noise, "seed", 42),
             )
         except Exception as exc:

@@ -55,6 +55,27 @@ fits P = A*|ω|^(-β), emits `harvest_json`. Same inputs as any sampler node
 (noise/guider/sigmas/latent_image). If you ever see the harvest node take a
 `harvest_json` STRING input instead of native sampler inputs, it has regressed.
 
+## CRITICAL: audio sigma-shift lookup (garbled sound regression)
+
+`_active_av_shifts` in h3_runtime.py picks the H3 sigma shifts. Priority MUST be:
+(1) `transformer_options["minimax_h3_sigma_shift_*"]`, (2) `model.sigma_shift_*`
+(12.0 / 3.0 — AUTHORITATIVE), (3) `diffusion_model.sigma_shift_*`, (4) LAST RESORT
+`model_sampling.shift` (generic ComfyUI flow shift, often 1.0 — WRONG for H3).
+
+Commit 84e61ba ("Fix MiniMax-H3 sigma shift lookup") inverted this: it put
+`model_sampling.shift` at HIGHER priority than `sigma_shift_video`. That collapsed
+`audio_scale` from 4.0 to ~0.333, rescaling every audio transition ~12x wrong →
+garbled/awful sound. The regression test `test_av_shifts_ignore_generic_model_sampling_shift`
+locks the correct priority. NEVER let generic `model_sampling.shift` shadow the
+H3-specific `sigma_shift_video`/`audio`.
+
+## CRITICAL: SPEED progress bar must stay ON
+
+`run_repeated_stage_calls` defaults `disable_pbar=False` (bar VISIBLE). The SPEED
+sampler node passes `disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED`. Do NOT
+change the runtime default back to `True` — it hides the bar for every run and is
+easy to miss.
+
 - [ ] P5-004 audio spectral expansion — no paper authority for audio `[B,C,2,T]`.
 - [ ] `temporal_scales` UI exposure — config + runtime only, no node widget yet.
 - [ ] GPU validation — fit `power_A` / `power_beta` from a real H3 harvest and

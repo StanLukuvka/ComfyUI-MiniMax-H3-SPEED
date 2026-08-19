@@ -24,6 +24,35 @@ for _p in (_NODE_DIR, _REPO_ROOT):
 
 print("MiniMax-H3 SPEED node pack: registering nodes...")
 
+# PR3 startup banner: confirms the running code, progress-bar setting, and the
+# resolved disable_pbar behavior at node-load time. If you do not see this in
+# the ComfyUI console after a fresh restart, the install is stale (Python is
+# still importing the old __init__.py from before the PR3 fix).
+try:
+    import subprocess
+    _commit = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        stderr=subprocess.DEVNULL,
+    ).decode().strip()
+except Exception:
+    _commit = "unknown (not a git checkout?)"
+
+try:
+    import comfy.utils as _comfy_utils
+    _pbar_enabled = bool(_comfy_utils.PROGRESS_BAR_ENABLED)
+    _sampler_disable_pbar = not _pbar_enabled
+except Exception:
+    _pbar_enabled = None
+    _sampler_disable_pbar = None
+
+print(f"[SPEED] git commit: {_commit}")
+print(f"[SPEED] PROGRESS_BAR_ENABLED: {_pbar_enabled}")
+print(f"[SPEED] sampler_node passes disable_pbar={_sampler_disable_pbar} to run_repeated_stage_calls")
+print(f"[SPEED] run_repeated_stage_calls default: disable_pbar=False (bar visible by default)")
+print(f"[SPEED] -> progress bar will show: {_pbar_enabled}" if _pbar_enabled is not None
+      else "[SPEED] -> comfy.utils not importable at __init__ time; bar will be decided by sampler_node's runtime check")
+
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
