@@ -26,8 +26,6 @@ git clone https://github.com/StanLukuvka/H3-SPEED.git ComfyUI/custom_nodes/H3-SP
 # restart ComfyUI
 ```
 
-**Required:** MiniMax-H3 plugin ([ComfyUI-MiniMax-H3](https://github.com/StanLukuvka/ComfyUI-MiniMax-H3), requires ComfyUI 0.32.0+).
-
 ## Usage
 
 After cloning, load one of these workflows via ComfyUI's workflow browser (Workflow → Open):
