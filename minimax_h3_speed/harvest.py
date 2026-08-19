@@ -1,18 +1,18 @@
-"""Radial DCT power-spectrum harvesting and power-law fitting for MiniMax-H3.
+"""Radial DCT power-spectrum analysis for MiniMax-H3 SPEED calibration.
 
-Ported from the Lab's `speed_lab/tools.py`. Fits P = A * |omega|^(-beta) from
-the *residual* noise field (x - x0) captured across a denoising pass. Used to
-calibrate delta-optimal SPEED transition thresholds.
+Fits P = A * |omega|^(-beta) from a residual noise field (x - x0), and turns the
+fitted (A, beta) into delta-optimal SPEED transition_steps for every scale preset.
 
-The finalized payload includes a `recommended_config` section that runs the
-fitted (A, beta) through the delta-optimal activation-time formula for every
-scale preset, producing ready-to-use transition_steps.
+This module is the *consumer-side* math. The actual capture of the residual field
+must happen on a NATIVE single-resolution sampler pass (not inside the SPEED sampler,
+whose multi-stage sigma splicing makes per-step sigma labeling incorrect). The
+harvested JSON is then fed to the MiniMaxH3HarvestToConfig node for a human-readable
+report.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
 
 import numpy as np
 import torch
@@ -20,13 +20,6 @@ import torch
 from .spectral import dct2
 from .h3_runtime import power_spectrum, activation_time
 from .config import SCALE_PRESETS
-
-try:  # package-relative when imported inside the repo
-    from ..h3_logging import get_logger
-except ImportError:  # root-relative when the repo root is on sys.path
-    from h3_logging import get_logger
-
-log = get_logger("Harvest")
 
 
 def radial_power_spectrum(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
@@ -120,106 +113,7 @@ def recommend_configs(
     return presets
 
 
-@dataclass
-class HarvestCallback:
-    """A guider.sample callback that captures residual (x - x0) power per sigma."""
-
-    sigmas: torch.Tensor
-    every: int = 1
-    profiles: list = field(default_factory=list)
-
-    def __call__(self, step, x0, x, total_steps):
-        if step % max(1, self.every) != 0 and step != total_steps - 1:
-            return
-        try:
-            x_streams = list(x.unbind())
-            x0_streams = list(x0.unbind())
-        except AttributeError:
-            log.warning("harvest callback step=%s: x/x0 are not NestedTensors "
-                        "(unbind failed) — is the guider producing flat tensors?", step)
-            return
-        if len(x_streams) != 2 or len(x0_streams) != 2:
-            log.warning("harvest callback step=%s: expected 2 streams, got %d/%d",
-                        step, len(x_streams), len(x0_streams))
-            return
-        x_video, _ = x_streams
-        x0_video, _ = x0_streams
-        if x_video.ndim != 5 or x0_video.ndim != 5:
-            log.warning("harvest callback step=%s: video ndim %d/%d (expected 5)",
-                        step, x_video.ndim, x0_video.ndim)
-            return
-        residual = x_video - x0_video
-        sigma = float(self.sigmas[min(step, len(self.sigmas) - 1)])
-        freqs, profile = radial_power_spectrum(residual)
-        self.profiles.append((sigma, freqs, profile))
-        log.debug("harvest capture: step=%s/%s sigma=%.4f bins=%d mean_power=%.3e",
-                  step, total_steps, sigma, len(freqs), float(np.asarray(profile).mean()))
-
-    def finalize(
-        self,
-        omega_min: float = 0.5,
-        *,
-        latent_h: int | None = None,
-        latent_w: int | None = None,
-        delta: float = 0.01,
-        fit_mode: str = "first",
-    ) -> dict:
-        """Return the fitted spectrum plus delta-optimal recommendations."""
-        if not self.profiles:
-            log.error("harvest finalize: no latents captured — the callback NEVER fired. "
-                      "Check that guider.sample actually calls callbacks (ComfyUI "
-                      ">= 0.30 does); if using BasicGuider, inspect guider.sample's "
-                      "signature. Also check that the input latent is a real "
-                      "NestedTensor from MiniMaxH3ImageToVideo (not a flat LATENT).")
-            raise RuntimeError("no latents captured (callback never fired)")
-
-        per_sigma_fits = []
-        for sigma, freqs, power in self.profiles:
-            vel = np.asarray(power) / max(float(sigma) ** 2, 1e-12)
-            if (freqs >= omega_min).sum() >= 3:
-                per_sigma_fits.append(
-                    {"sigma": float(sigma), **fit_power_law(freqs, vel, omega_min)}
-                )
-
-        raw_profiles = [(p[1], np.asarray(p[2])) for p in self.profiles]
-        if fit_mode == "first":
-            if not per_sigma_fits:
-                raise RuntimeError("no sigma level has enough bins to fit")
-            fit = per_sigma_fits[0]
-        elif fit_mode == "per_sigma":
-            candidates = [f for f in per_sigma_fits if f["sigma"] < 0.99]
-            fit = max(candidates or per_sigma_fits, key=lambda f: f["r_squared"])
-        elif fit_mode == "pooled":
-            all_freqs = np.concatenate([p[0] for p in raw_profiles])
-            all_power = np.concatenate([p[1] for p in raw_profiles])
-            fit = fit_power_law(all_freqs, all_power, omega_min)
-        else:
-            raise ValueError(f"unknown fit_mode {fit_mode!r}")
-
-        result: dict = {
-            "fit_mode": fit_mode,
-            "sigma_levels": [float(p[0]) for p in self.profiles],
-            "sigma_fits": per_sigma_fits,
-            "overall_fit_A": fit["A"],
-            "overall_fit_beta": fit["beta"],
-            "overall_fit_r2": fit["r_squared"],
-            "n_frequency_bins": fit["n_bins"],
-            "fit_health": _fit_health(fit),
-            "per_sigma_profiles": [
-                {"sigma": float(p[0]), "freqs": p[1].tolist(),
-                 "power": np.asarray(p[2]).tolist()}
-                for p in self.profiles
-            ],
-        }
-        if latent_h is not None and latent_w is not None:
-            result["recommended_config"] = recommend_configs(
-                fit["A"], fit["beta"], self.sigmas,
-                latent_h, latent_w, delta=delta,
-            )
-        return result
-
-
 __all__ = [
     "radial_power_spectrum", "fit_power_law", "_fit_health",
-    "recommend_configs", "HarvestCallback",
+    "recommend_configs",
 ]
