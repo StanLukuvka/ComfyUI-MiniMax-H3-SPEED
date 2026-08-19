@@ -71,18 +71,56 @@ def _pack_tensor(video, audio):
 def _active_av_shifts(guider):
     """Return (video_shift, audio_shift, audio_scale) from the guider's model.
 
-    The shifts live on the MiniMaxH3Model's sigma shift attributes.
+    ComfyUI exposes the active shifts through ModelSamplingAV. The diffusion
+    model keeps the checkpoint defaults, while transformer options may contain
+    overrides from the MiniMaxH3SigmaShift node.
     audio_scale is the constant bridge ratio used by flow.recover_internal_state.
     """
-    model = getattr(getattr(guider, "model_patcher", None), "model", None)
+    patcher = getattr(guider, "model_patcher", None)
+    model = getattr(patcher, "model", None)
     if model is None:
         raise ValueError("no model_patcher.model on guider")
-    video_shift = getattr(model, "sigma_shift_video", None)
-    audio_shift = getattr(model, "sigma_shift_audio", None)
-    if not (isinstance(video_shift, (int, float)) and isinstance(audio_shift, (int, float))):
+
+    candidates = []
+
+    model_options = getattr(guider, "model_options", None)
+    if not isinstance(model_options, dict):
+        model_options = getattr(patcher, "model_options", None)
+    if isinstance(model_options, dict):
+        transformer_options = model_options.get("transformer_options", {})
+        if isinstance(transformer_options, dict):
+            candidates.append((
+                transformer_options.get("minimax_h3_sigma_shift_video"),
+                transformer_options.get("minimax_h3_sigma_shift_audio"),
+            ))
+
+    get_model_object = getattr(patcher, "get_model_object", None)
+    if callable(get_model_object):
+        try:
+            model_sampling = get_model_object("model_sampling")
+        except (AttributeError, KeyError):
+            model_sampling = None
+        if model_sampling is not None:
+            candidates.append((
+                getattr(model_sampling, "shift", None),
+                getattr(model_sampling, "audio_shift", None),
+            ))
+
+    candidates.append((
+        getattr(model, "sigma_shift_video", None),
+        getattr(model, "sigma_shift_audio", None),
+    ))
+    diffusion_model = getattr(model, "diffusion_model", None)
+    if diffusion_model is not None:
+        candidates.append((
+            getattr(diffusion_model, "sigma_shift_video", None),
+            getattr(diffusion_model, "sigma_shift_audio", None),
+        ))
+
+    shifts = next((pair for pair in candidates if all(isinstance(v, (int, float)) for v in pair)), None)
+    if shifts is None:
         raise ValueError("active MiniMax-H3 sigma shifts are unavailable")
-    video_shift = float(video_shift)
-    audio_shift = float(audio_shift)
+    video_shift, audio_shift = map(float, shifts)
     if video_shift <= 0.0 or audio_shift <= 0.0:
         raise ValueError("active MiniMax-H3 shifts must be positive")
     return video_shift, audio_shift, video_shift / audio_shift
