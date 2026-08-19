@@ -1,68 +1,59 @@
-# SPEED-Sampler — State & Next Steps
+# NEXT.md — ComfyUI-MiniMax-H3-SPEED (SPEED Sampler)
 
-**Repo:** `/agent/projects/minimax-quickfile/ComfyUI-MiniMaxH3-SPEED-Sampler`
-**Branch:** `dev` (off `main`)
-**PR:** none open — working directly on `dev`; merge to `main` when feature is ready
-**Tests:** 132 passing · **Commits ahead of main:** 23
+Last updated: 2026-08-18. Branch: `dev`. 132 tests passing.
 
----
+## Status: MVP shipped + proven-load pass; branch hygiene + public face still open
 
-## ✅ Done
+The node pack installs and loads correctly in real ComfyUI v0.32.0 CPU mode
+(verified: 852 node types registered, all 11 ours present, log banner fires).
+All 4 workflows regenerated against the live registry schema and pass validation.
 
-- Sigma-harvest calibration pipeline (`harvest.py` + 3 nodes)
-- `noise_policy` wired through Schedule + Sampler nodes (direct_coarse / coupled_full_grid)
-- `coupled_full_grid` workflow variant created
-- 7 debug/utility helper nodes (inspect, power_spectrum, dct_lowpass, transition_math, spectral_expand, x0_fidelity_probe, av_reentry_oracle)
-- **Oracle straight-flow proof** — `StraightFlowModel`, `run_euler_pack`, 15 CPU-only tests
-- End-to-end integration test (`test_integration.py`)
-- README + node docs updated
-- Pushed to origin, PR #1 open
+## Immediate work (highest priority first)
 
----
+- [ ] **Port PR #3 (chflame163) into `dev`** — fixes `_active_av_shifts` for ComfyUI
+      v0.33.1 (shifts on `model_sampling` + `transformer_options`, not `diffusion_model`).
+      Dev currently has the broken probe at `h3_runtime.py:84-86`. This is issue #2.
+      Add fallback-chain tests. Then push `dev`.
+- [ ] **Decide `dev` → `main` promotion** — clean merge once PR #3 is in + README fixed.
+      (main is the default branch; 30 strangers are cloning it and hitting old bugs.)
+- [ ] **README overhaul** — fix the 6 lies: install URL `H3-SPEED.git` (self-referential
+      alias), "required MiniMax-H3 plugin" (it's native core v0.32.0+),
+      `transition_mode: "explicit"` (not a valid option anymore), shows deleted `nodes/`
+      tree, test counts 61/74 (reality 132), ships `MiniMaxH3ImageToVideo` as external.
+- [ ] **License decision** — `LICENSE.md` = MIT vs README PolyForm Noncommercial. Pick
+      one, align both. User call.
+- [ ] **GPU validation** — run `sigma_harvest.json` on Modal against real H3, pull fitted
+      `power_A`/`power_beta`, update defaults. Then run t2v + coupled workflows end-to-end.
+- [ ] **Repo hygiene** — move `verify_comfy_load.py` under `tools/`, decide if force-
+      committed `.hermes/plans/` should be public, clear stale NEXT.md checkboxes.
 
-## 🚧 Remaining
+## Done (for reference)
 
-### 1. PR review / merge
-Working on `dev` branch directly. Merge to `main` when feature is complete.
+- [x] Flatten all nodes to flat root files (subpackage broke ComfyUI loading + collided
+      with core `nodes` module)
+- [x] Loud fail-fast logging (`h3_logging.py`, per-node registration + failure tracebacks)
+- [x] Temporal DCT expansion (P5-003), MockNested removal (P5-005), temporal scale
+      scheduling (P5-006) in `minimax_h3_speed/`
+- [x] Regenerate all 4 workflows vs live v0.32.0 registry (was the real "not installed"
+      cause — stale workflow JSONs, not the node install)
+- [x] H3 power-spectrum defaults = 150.0 / 2.0 (estimates; replace after GPU harvest)
 
-### 2. ComfyUI smoke test (manual, requires GPU)
-- Load `video_minimax_h3_t2v_speed.json` and `video_minimax_h3_t2v_coupled.json` in a real ComfyUI
-- Verify both sampler nodes execute and produce video
-- Verify `sigma_harvest.json` → `sigma_harvest_calibrated.json` round-trips a real harvest
+## Known deferrals (honest)
 
-### 3. Lab parity (future, out of scope for MVP)
-The Lab has deeper capabilities the MVP skipped:
-- `speed_nodes/base.py`, `speed_nodes/configurable.py` (audio/sigma policy knobs)
-- Multi-GPU parallel harvest
-- Live latent auto-detection (remove optional `latent` input requirement)
-- `av_reentry_oracle` live re-entry point finder on real latents
+- [ ] P5-004 audio spectral expansion — no paper authority for audio `[B,C,2,T]`
+- [ ] `temporal_scales` UI exposure — config+runtime only, no node widget yet
 
-### 4. Lab sync
-`/agent/projects/minimax-quickfile/ComfyUI-MiniMaxH3-SPEED-Lab` was the source. If the Lab advances (new calibration modes, new presets), re-sync here.
+## Test counts (132 total)
 
----
+- test_debug_nodes.py : 23
+- test_spectral.py    : 7
+- test_sampler.py     : 32
+- test_config / runtime / harvest / integration / schedule_node : remaining
+- Total: 132 passed
 
-## 🧪 Test matrix
+## Local test env
 
-```
-test_dct.py          9 passed   — DCT transform correctness
-test_flow.py         6 passed   — Sigma alignment, audio handling
-test_harvest.py      26 passed  — Power spectrum, fitting, callback
-test_sampler.py      47 passed  — Full sampler integration, coupled_full_grid
-test_integration.py  6 passed   — End-to-end harvest→schedule→sample
-test_debug_nodes.py  20 passed  — All 7 debug nodes + bug fixes
-test_oracle.py       15 passed  — Straight-flow oracle proof
-test_spectral.py     3 passed   — Spectral expand correctness
-test_schedule_node.py 8 passed   — Schedule node plan() integration
-
-Total: 132 passed
-```
-
----
-
-## 📝 Notes
-
-- MVP is intentionally minimal vs the Lab (3 calibration nodes + 7 debug nodes vs ~16 in Lab).
-- All core SPEED functionality present and tested; `coupled_full_grid` fully supported.
-- Oracle tests prove the SPEED transition + re-entry contracts on synthetic data — no model weights needed.
-- The `hkb` wrapper at `/agent/hkb` bypasses the delegated-child kanban guard.
+`/agent/comfyui-lab/` — Python 3.12 venv, CPU torch, ComfyUI v0.32.0, repo symlinked
+into `custom_nodes/ComfyUI-MiniMaxH3-SPEED-Sampler`. Server up on `127.0.0.1:8188`.
+Validation: `/agent/comfyui-lab/.venv/bin/python /agent/comfyui-lab/validate_workflows.py
+workflows/*.json`.
