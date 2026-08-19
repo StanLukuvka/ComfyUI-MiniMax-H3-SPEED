@@ -30,7 +30,7 @@ git clone https://github.com/StanLukuvka/H3-SPEED.git ComfyUI/custom_nodes/H3-SP
 
 After cloning, load one of these workflows via ComfyUI's workflow browser (Workflow → Open):
 
-- `video_minimax_h3_t2v-SPEED.json` — standard SPEED pipeline (sampler → decode → save)
+- `video_minimax_h3_t2v_speed.json` — standard SPEED pipeline (sampler → decode → save)
 - `sigma_harvest.json` — calibration pass: harvest residual spectrum from clean noise
 - `sigma_harvest_calibrated.json` — full pipeline: harvest → report → schedule node
 
@@ -48,7 +48,7 @@ SPEED reduces VRAM by running early denoising at lower resolution. The `noise_po
 | `direct_coarse` | Fresh noise per stage, standard SPEED | Default. Lower VRAM, standard quality. |
 | `coupled_full_grid` | Shared full-grid noise across all scales | Higher quality (better high-frequency coherence) at the cost of more VRAM. |
 
-Use `video_minimax_h3_t2v-SPEED.json` (direct_coarse) for the default path, or `video_minimax_h3_t2v_coupled.json` (coupled_full_grid) when quality matters more than memory.
+Use `video_minimax_h3_t2v_speed.json` (direct_coarse) for the default path, or `video_minimax_h3_t2v_coupled.json` (coupled_full_grid) when quality matters more than memory.
 
 ### Presets (default 20-step schedule)
 
@@ -77,10 +77,13 @@ H3-SPEED/
 │   ├── spectral.py            — resolution expansion math
 │   ├── flow.py                — sigma alignment, audio handling
 │   ├── harvest.py             — radial power spectrum + fitting
+│   ├── oracle.py              — straight-flow oracle for CPU-verified proofs
 │   └── tests/                 — 8 test files
 ├── nodes/
 │   ├── sampler_node.py        — MiniMaxH3SPEEDSampler (main)
+│   ├── common.py              — shared node plumbing
 │   └── helper_nodes/
+│       ├── sampler_speed.py   — SPEED as a ComfyUI SAMPLER node
 │       ├── sigma_harvest.py   — SigmaHarvest (calibration pass)
 │       ├── harvest_to_config.py — parse harvest JSON → report
 │       ├── schedule.py        — SpeedConfig planner
@@ -92,7 +95,7 @@ H3-SPEED/
 │       ├── x0_fidelity_probe.py — debug: X0 fidelity probe
 │       └── av_reentry_oracle.py — debug: AV reentry schedule
 └── workflows/
-    ├── video_minimax_h3_t2v-SPEED.json     — standard SPEED pipeline
+    ├── video_minimax_h3_t2v_speed.json     — standard SPEED pipeline
     ├── sigma_harvest.json                  — calibration-only workflow
     └── sigma_harvest_calibrated.json       — harvest → report → schedule
 ```
