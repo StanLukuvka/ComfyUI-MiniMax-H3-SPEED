@@ -45,8 +45,8 @@ class SpeedConfig:
     delta: float = 0.01
     # Initial estimates for MiniMax-H3 (not WAN 2.1). Replace after running
     # harvest calibration on a real H3 model — see harvest.py / SigmaHarvest node.
-    power_A: float = 150.0
-    power_beta: float = 2.0
+    noise_amplitude: float = 150.0
+    noise_decay_exponent: float = 2.0
     full_latent_h: int = 45
     full_latent_w: int = 80
     certification: str = "requires_h3_gpu_validation"
@@ -78,7 +78,7 @@ class SpeedConfig:
             raise ValueError("delta must be in (0, 1)")
         if self.transition_mode not in ("explicit", "delta_custom"):
             raise ValueError("transition_mode must be 'explicit' or 'delta_custom'")
-        if self.power_A <= 0.0 or self.power_beta <= 0.0:
+        if self.noise_amplitude <= 0.0 or self.noise_decay_exponent <= 0.0:
             raise ValueError("power spectrum A and beta must be positive")
         if self.full_latent_h < 1 or self.full_latent_w < 1:
             raise ValueError("full latent dims must be positive")
@@ -109,7 +109,7 @@ class SpeedConfig:
         )
 
     @property
-    def claims_canonical_speed(self) -> bool:
+    def is_canonical(self) -> bool:
         return not self.is_ablation
 
     @property
@@ -120,7 +120,7 @@ class SpeedConfig:
         return replace(self, **values)
 
 
-def preset_config(preset: str, *, noise="direct_coarse", audio="clock_reindex",
+def config_from_preset(preset: str, *, noise="direct_coarse", audio="clock_reindex",
                   sigma="canonical", seed_offset=10_000, delta=0.01,
                   mode="explicit") -> SpeedConfig:
     """Build a SpeedConfig from a named scale preset."""
@@ -140,22 +140,22 @@ def preset_config(preset: str, *, noise="direct_coarse", audio="clock_reindex",
     )
 
 
-def canonical_config() -> SpeedConfig:
-    return preset_config("half_then_full")
+def default_config() -> SpeedConfig:
+    return config_from_preset("half_then_full")
 
 
 def coupled_noise_config() -> SpeedConfig:
-    return preset_config("half_then_full", noise="coupled_full_grid")
+    return config_from_preset("half_then_full", noise="coupled_full_grid")
 
 
 def carry_preserve_config() -> SpeedConfig:
-    return preset_config("half_then_full", audio="carry_preserve")
+    return config_from_preset("half_then_full", audio="carry_preserve")
 
 
 def no_alignment_config() -> SpeedConfig:
-    return preset_config("half_then_full", audio="untouched", sigma="no_alignment")
+    return config_from_preset("half_then_full", audio="untouched", sigma="no_alignment")
 
 
 __all__ = ["SCALE_PRESETS", "DEFAULT_TRANSITION_STEPS", "SpeedConfig",
-           "preset_config", "canonical_config", "coupled_noise_config",
+           "config_from_preset", "default_config", "coupled_noise_config",
            "carry_preserve_config", "no_alignment_config"]

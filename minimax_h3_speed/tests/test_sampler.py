@@ -110,19 +110,19 @@ def test_input_schema_widgets_and_required_inputs():
     inputs = mod.MiniMaxH3SPEEDSampler.INPUT_TYPES()
     required = inputs["required"]
     for key in ("noise", "guider", "sigmas", "latent_image",
-                "explicit_preset", "transition_mode"):
+                "preset", "transition_mode"):
         assert key in required, f"missing required input: {key}"
     # delta_custom path is enabled with sigma-harvest calibration
     assert "delta" in required
-    assert "power_A" in required
-    assert "power_beta" in required
+    assert "noise_amplitude" in required
+    assert "noise_decay_exponent" in required
     assert "seed_offset" in required
-    assert required["explicit_preset"][0][0] == "half_then_full"
+    assert required["preset"][0][0] == "half_then_full"
 
 
 def test_sample_runs_multi_stage():
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
+    from minimax_h3_speed.h3_runtime import run_speed_pipeline
 
     sample_calls = []
 
@@ -163,7 +163,7 @@ def test_sample_runs_multi_stage():
     sigmas = torch.linspace(1.0, 0.025, 20)
     config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,))
 
-    out, denoised = run_repeated_stage_calls(
+    out, denoised = run_speed_pipeline(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
         nested_type=type("NT", (), {"is_nested": True})(),
@@ -176,7 +176,7 @@ def test_sample_runs_multi_stage():
 def test_coupled_full_grid_noise_policy():
     """coupled_full_grid: full-grid noise is shared across stages."""
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
+    from minimax_h3_speed.h3_runtime import run_speed_pipeline
 
     sample_calls = []
     captured_noises = []
@@ -221,7 +221,7 @@ def test_coupled_full_grid_noise_policy():
     sigmas = torch.linspace(1.0, 0.025, 20)
     config = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), noise_policy="coupled_full_grid")
 
-    out, denoised = run_repeated_stage_calls(
+    out, denoised = run_speed_pipeline(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
         nested_type=type("NT", (), {"is_nested": True})(),
@@ -232,11 +232,11 @@ def test_coupled_full_grid_noise_policy():
     assert len(captured_noises) > 0
 
 
-def test_aligned_speed_sigma_math():
+def test_aligned_sigma_math():
     """kappa = r / (1 + (r-1)q); t_tilde = kappa * q. Verify the paper formula."""
     flow = importlib.import_module("minimax_h3_speed.flow")
     for q, r in [(0.5, 2.0), (0.3, 2.0), (0.8, 4.0 / 3.0)]:
-        kappa, t = flow.aligned_speed_sigma(q, r)
+        kappa, t = flow.aligned_sigma(q, r)
         assert abs(kappa - r / (1.0 + (r - 1.0) * q)) < 1e-6
         assert abs(t - kappa * q) < 1e-12
 
@@ -253,13 +253,13 @@ def test_resolve_transition_steps_explicit_example():
     assert tuple(explicit_steps) == (5,)
 
 
-def test_active_av_shifts_returns_audio_scale_from_ratio():
-    """_active_av_shifts should compute audio_scale = video_shift / audio_shift,
+def test_sigma_shifts_returns_audio_scale_from_ratio():
+    """resolve_sigma_shifts should compute audio_scale = video_shift / audio_shift,
     not read a non-existent 'audio_scale' attribute.
 
     With shift_video=12.0 and shift_audio=3.0, the correct audio_scale is 4.0.
     """
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
+    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
 
     class FakeGuider:
         model_patcher = type("MP", (), {"model": type("M", (), {
@@ -271,15 +271,15 @@ def test_active_av_shifts_returns_audio_scale_from_ratio():
             })(),
         })()})()
 
-    v_shift, a_shift, a_scale = _active_av_shifts(FakeGuider())
+    v_shift, a_shift, a_scale = resolve_sigma_shifts(FakeGuider())
     assert v_shift == 12.0
     assert a_shift == 3.0
     assert abs(a_scale - 4.0) < 1e-6
 
 
-def test_audio_scale_is_ratio_not_one():
+def test_audio_scale_equals_shift_ratio():
     """Verify audio_scale = video_shift / audio_shift, not 1.0."""
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
+    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
 
     class FakeGuider:
         model_patcher = type("MP", (), {"model": type("M", (), {
@@ -287,11 +287,11 @@ def test_audio_scale_is_ratio_not_one():
             "sigma_shift_audio": 3.0,
         })()})()
 
-    _, _, a_scale = _active_av_shifts(FakeGuider())
+    _, _, a_scale = resolve_sigma_shifts(FakeGuider())
     assert abs(a_scale - 4.0) < 1e-6
 
 
-def test_av_shifts_ignore_generic_model_sampling_shift():
+def test_sigma_shifts_ignore_generic_comfy_shift():
     """REGRESSION: ComfyUI's generic ModelSamplingAV.shift (often 1.0) must NOT
     shadow the H3 model's own sigma_shift_video/audio (12.0 / 3.0).
 
@@ -300,7 +300,7 @@ def test_av_shifts_ignore_generic_model_sampling_shift():
     instead of 4.0, rescaling every audio transition ~12x wrong (garbled sound).
     The H3 attributes must win.
     """
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
+    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
 
     class FakeModelSampling:
         # Generic ComfyUI flow-matching shift — NOT H3-specific.
@@ -318,13 +318,13 @@ def test_av_shifts_ignore_generic_model_sampling_shift():
             ),
         })()
 
-    v_shift, a_shift, a_scale = _active_av_shifts(FakeGuider())
+    v_shift, a_shift, a_scale = resolve_sigma_shifts(FakeGuider())
     assert v_shift == 12.0, f"expected H3 video_shift=12.0, got {v_shift}"
     assert a_shift == 3.0, f"expected H3 audio_shift=3.0, got {a_shift}"
     assert abs(a_scale - 4.0) < 1e-6, f"expected audio_scale=4.0, got {a_scale}"
 
 
-def test_av_shifts_raise_when_no_h3_attributes_present():
+def test_sigma_shifts_raise_without_h3_model():
     """PR3: A model that lacks H3 sigma_shift_video/audio must RAISE, not
     silently fall back to ComfyUI's generic ModelSamplingAV.shift.
 
@@ -333,7 +333,7 @@ def test_av_shifts_raise_when_no_h3_attributes_present():
     so a non-H3 model surfaces as a configuration error.
     """
     import pytest
-    from minimax_h3_speed.h3_runtime import _active_av_shifts
+    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
 
     class FakeGuider:
         model_patcher = type("MP", (), {
@@ -345,12 +345,12 @@ def test_av_shifts_raise_when_no_h3_attributes_present():
         })()
 
     with pytest.raises(ValueError, match="active MiniMax-H3 sigma shifts are unavailable"):
-        _active_av_shifts(FakeGuider())
+        resolve_sigma_shifts(FakeGuider())
 
 
 def test_sigma_policy_canonical_vs_no_alignment():
     """canonical: apply kappa alignment; no_alignment: no rescaling."""
-    from minimax_h3_speed.h3_runtime import run_repeated_stage_calls
+    from minimax_h3_speed.h3_runtime import run_speed_pipeline
 
     canonical_calls = []
     no_align_calls = []
@@ -379,7 +379,7 @@ def test_sigma_policy_canonical_vs_no_alignment():
     config_canon = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="canonical")
     config_noalign = SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), sigma_policy="no_alignment")
 
-    run_repeated_stage_calls(
+    run_speed_pipeline(
         type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
         make_guider(canonical_calls),
         sigmas, latent, config_canon,
@@ -387,7 +387,7 @@ def test_sigma_policy_canonical_vs_no_alignment():
         nested_type=type("NT", (), {"is_nested": True})(),
         disable_pbar=True,
     )
-    run_repeated_stage_calls(
+    run_speed_pipeline(
         type("N", (), {"seed": 42, "generate_noise": lambda s, l: l["samples"]})(),
         make_guider(no_align_calls),
         sigmas, latent, config_noalign,
@@ -442,10 +442,10 @@ def test_reentry_noise_raises_on_zero():
 
 def test_kappa_formula():
     """κ = r / (1 + (r-1)t) per Eq. (5)."""
-    from minimax_h3_speed.flow import aligned_speed_sigma
+    from minimax_h3_speed.flow import aligned_sigma
     r = 2.0
     t = 0.5
-    kappa, new_q = aligned_speed_sigma(t, r)
+    kappa, new_q = aligned_sigma(t, r)
     expected_kappa = r / (1.0 + (r - 1.0) * t)
     assert abs(kappa - expected_kappa) < 1e-10
 
@@ -478,29 +478,29 @@ def test_flow_time_shift_sigma():
 
 def test_resolve_transition_steps_delta_custom_matches_recommend():
     """Given config with transition_mode='delta_custom', the resolved steps
-    must equal recommend_configs output for the same parameters."""
+    must equal recommend_transition_steps output for the same parameters."""
     from minimax_h3_speed.h3_runtime import resolve_transition_steps
-    from minimax_h3_speed.harvest import recommend_configs
+    from minimax_h3_speed.harvest import recommend_transition_steps
     sigmas = torch.linspace(1.0, 0.0, 21)  # 20 steps
     config = SpeedConfig(
         scales=(0.5, 1.0),
         transition_steps=(5,),
         transition_mode="delta_custom",
         delta=0.01,
-        power_A=219.48,
-        power_beta=2.42,
+        noise_amplitude=219.48,
+        noise_decay_exponent=2.42,
         full_latent_h=45,
         full_latent_w=80,
     )
     resolved = resolve_transition_steps(config, sigmas, H_full=45, W_full=80)
-    rec = recommend_configs(219.48, 2.42, sigmas, latent_h=45, latent_w=80)
+    rec = recommend_transition_steps(219.48, 2.42, sigmas, latent_h=45, latent_w=80)
     expected = rec["half_then_full"]["transition_steps"]
     assert resolved == tuple(expected)
 
 
 def test_resolve_transition_steps_explicit_ignores_delta():
     """For 'explicit' mode, resolved steps must equal config.transition_steps,
-    regardless of delta/power_A/power_beta values."""
+    regardless of delta/noise_amplitude/noise_decay_exponent values."""
     from minimax_h3_speed.h3_runtime import resolve_transition_steps
     sigmas = torch.linspace(1.0, 0.0, 21)
     config = SpeedConfig(
@@ -508,8 +508,8 @@ def test_resolve_transition_steps_explicit_ignores_delta():
         transition_steps=(7,),
         transition_mode="explicit",
         delta=0.5,  # irrelevant in explicit mode
-        power_A=999.0,
-        power_beta=9.0,
+        noise_amplitude=999.0,
+        noise_decay_exponent=9.0,
         full_latent_h=45,
         full_latent_w=80,
     )
@@ -526,8 +526,8 @@ def test_resolve_transition_steps_validation():
         transition_steps=(1,),  # valid for config (>= 1)
         transition_mode="explicit",
         delta=0.01,
-        power_A=219.48,
-        power_beta=2.42,
+        noise_amplitude=219.48,
+        noise_decay_exponent=2.42,
         full_latent_h=45,
         full_latent_w=80,
     )
@@ -536,10 +536,10 @@ def test_resolve_transition_steps_validation():
 
 
 def test_activation_time_matches_canonical_formula():
-    """Verify activation_time against hand-computed values from Eq. 9."""
-    from minimax_h3_speed.h3_runtime import activation_time
+    """Verify activation_threshold against hand-computed values from Eq. 9."""
+    from minimax_h3_speed.h3_runtime import activation_threshold
     import math
-    result = activation_time(100.0, 0.01)
+    result = activation_threshold(100.0, 0.01)
     expected = 1.0 / (1.0 + math.sqrt(0.01 / (100.0 * (101.0 - 0.01))))
     assert abs(result - expected) < 1e-10
 

@@ -18,11 +18,11 @@ import numpy as np
 import torch
 
 from .spectral import dct2
-from .h3_runtime import power_spectrum, activation_time
+from .h3_runtime import power_at_frequency, activation_threshold
 from .config import SCALE_PRESETS
 
 
-def radial_power_spectrum_noise_energy(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
+def radial_dct_power(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     """Mean 2D-DCT power of a video latent [B, C, T, H, W], binned radially.
 
     Returns (frequencies, mean_power) as numpy arrays.
@@ -45,7 +45,7 @@ def radial_power_spectrum_noise_energy(video: torch.Tensor) -> tuple[np.ndarray,
     return freqs, profile
 
 
-def fit_power_law_decay_rate(freqs: np.ndarray, profile: np.ndarray,
+def fit_power_law(freqs: np.ndarray, profile: np.ndarray,
                   omega_min: float = 0.5) -> dict:
     """Fit P = A * omega^(-beta) on log-log. Returns {A, beta, r_squared, n_bins}."""
     mask = (freqs >= omega_min) & (profile > 0)
@@ -63,7 +63,7 @@ def fit_power_law_decay_rate(freqs: np.ndarray, profile: np.ndarray,
     return {"A": A, "beta": beta, "r_squared": r2, "n_bins": len(x)}
 
 
-def _fit_health(fit: dict) -> str:
+def classify_fit_quality(fit: dict) -> str:
     """Classify a spectral fit so downstream consumers can warn on bad ones."""
     a, beta, r2 = fit["A"], fit["beta"], fit["r_squared"]
     if a != a or beta != beta or r2 != r2:  # any nan
@@ -77,14 +77,14 @@ def _fit_health(fit: dict) -> str:
     return "suspect"  # beta <= 0: power not decaying
 
 
-def recommend_configs(
+def recommend_transition_steps(
     A: float, beta: float, sigmas, latent_h: int, latent_w: int,
     delta: float = 0.01,
 ) -> dict:
     """Compute delta-optimal transition_steps for every scale preset.
 
     Returns {preset_name: {scales, transition_steps, activation_thresholds}}.
-    Uses the same activation_time / find_first_step_below formula as the
+    Uses the same activation_threshold / find_first_step_below formula as the
     runtime so the numbers match a delta_custom run.
     """
     sigmas_list = [float(s) for s in sigmas]
@@ -96,8 +96,8 @@ def recommend_configs(
         thresholds = []
         for i in range(len(scales) - 1):
             omega_i = scales[i] * omega_max
-            p = power_spectrum(omega_i, A, beta)
-            t_star = activation_time(p, delta)
+            p = power_at_frequency(omega_i, A, beta)
+            t_star = activation_threshold(p, delta)
             thresholds.append(t_star)
             step = n_sigmas  # fallback
             for j in range(n_sigmas):
@@ -114,6 +114,6 @@ def recommend_configs(
 
 
 __all__ = [
-    "radial_power_spectrum_noise_energy", "fit_power_law_decay_rate", "_fit_health",
-    "recommend_configs",
+    "radial_dct_power", "fit_power_law", "classify_fit_quality",
+    "recommend_transition_steps",
 ]

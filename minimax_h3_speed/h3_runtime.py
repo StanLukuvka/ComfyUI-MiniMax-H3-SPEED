@@ -13,16 +13,16 @@ import torch
 
 from .config import SpeedConfig
 from .flow import (
-    aligned_speed_sigma,
-    carry_preserving_audio_state,
+    aligned_sigma,
+    carry_preserved_audio,
     clock_reindex_audio_state,
-    recover_internal_state,
+    to_internal_state,
     reentry_noise,
     time_shift_sigma,
 )
 from .spectral import (
     dct2, idct2, idct_temporal, lowpass_dct,
-    spectral_expand_dct, spectral_expand_dct_3d, spectral_expand_dct_coupled,
+    spectral_expand, spectral_expand_3d, spectral_expand_coupled,
     dct_temporal,
 )
 
@@ -32,12 +32,12 @@ from .spectral import (
 # ---------------------------------------------------------------------------
 
 
-def power_spectrum(omega: float, A: float, beta: float) -> float:
+def power_at_frequency(omega: float, A: float, beta: float) -> float:
     """Radial power-law spectrum P(omega) = A * |omega|^(-beta). Matches paper Eq. 8."""
     return A * abs(omega) ** (-beta)
 
 
-def activation_time(P_omega: float, delta: float) -> float:
+def activation_threshold(P_omega: float, delta: float) -> float:
     """Activation time for one radial frequency. Matches paper Eq. 9."""
     if delta >= 1.0:
         raise ValueError("delta must be < 1.0")
@@ -49,7 +49,7 @@ def activation_time(P_omega: float, delta: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _unpack_tensor(samples):
+def unpack_latent(samples):
     """Unpack a NestedTensor into (video, audio) with H3 geometry validation."""
     if not getattr(samples, "is_nested", False):
         raise ValueError("MiniMax-H3 SPEED requires a NestedTensor video/audio latent")
@@ -66,20 +66,20 @@ def _unpack_tensor(samples):
     return video, audio
 
 
-def _pack_tensor(video, audio):
+def pack_latent(video, audio):
     """Pack (video, audio) into a NestedTensor."""
     from comfy import nested_tensor as default_comfy_nested_tensor
     return default_comfy_nested_tensor.NestedTensor([video, audio])
 
 
-def _active_av_shifts(guider):
+def resolve_sigma_shifts(guider):
     """Return (video_shift, audio_shift, audio_scale) from the guider's model.
 
     Resolves in priority order:
         transformer_options['minimax_h3_sigma_shift_video/audio']
         -> model.sigma_shift_video/audio
         -> model.diffusion_model.sigma_shift_video/audio
-    audio_scale is the constant bridge ratio used by flow.recover_internal_state.
+    audio_scale is the constant bridge ratio used by flow.to_internal_state.
     """
     patcher = getattr(guider, "model_patcher", None)
     model = getattr(patcher, "model", None)
@@ -133,7 +133,7 @@ def _active_av_shifts(guider):
     return video_shift, audio_shift, video_shift / audio_shift
 
 
-def _capture():
+def _step_capture():
     """Build a step callback that records per-step state and drives the
     ComfyUI UI progress bar (ProgressBar.update_absolute).
 
@@ -187,20 +187,20 @@ def resolve_transition_steps(
     scales = config.scales
     if config.transition_mode == "delta_custom":
         tolerance = config.delta
-        A, beta = config.power_A, config.power_beta
+        A, beta = config.noise_amplitude, config.noise_decay_exponent
         if H_full is None or W_full is None:
             H_full, W_full = config.full_latent_h, config.full_latent_w
         steps = []
         for i in range(len(scales) - 1):
             omega_i = scales[i] * min(H_full, W_full) / 2.0
-            p = power_spectrum(omega_i, A, beta)
-            thr = activation_time(p, tolerance)
+            p = power_at_frequency(omega_i, A, beta)
+            thr = activation_threshold(p, tolerance)
             steps.append(_find_first_step_below(sigmas, thr))
         return tuple(steps)
     return tuple(int(s) for s in config.transition_steps)
 
 
-def run_repeated_stage_calls(
+def run_speed_pipeline(
     noise,
     guider,
     sigmas: torch.Tensor,
@@ -232,8 +232,8 @@ def run_repeated_stage_calls(
     if "noise_mask" in latent:
         raise ValueError("T2V oracle does not support noise masks")
     samples = latent.get("samples")
-    full_video, full_audio = _unpack_tensor(samples)
-    video_shift, audio_shift, audio_scale = _active_av_shifts(guider)
+    full_video, full_audio = unpack_latent(samples)
+    video_shift, audio_shift, audio_scale = resolve_sigma_shifts(guider)
     if torch.count_nonzero(full_video) or torch.count_nonzero(full_audio):
         raise ValueError("T2V oracle currently requires an empty H3 latent")
     if sigmas.ndim != 1 or len(sigmas) < 3:
@@ -268,7 +268,7 @@ def run_repeated_stage_calls(
     s0_h, s0_w = stage_hw[0]
     s0_t = stage_t[0]
     coarse_video = full_video.new_zeros(full_video.shape[:-3] + (s0_t, s0_h, s0_w))
-    coarse_samples = _pack_tensor(
+    coarse_samples = pack_latent(
         coarse_video,
         torch.zeros_like(full_audio),
     )
@@ -278,12 +278,12 @@ def run_repeated_stage_calls(
     full_noise = None
     if config.noise_policy == "coupled_full_grid":
         full_noise = noise.generate_noise(latent)
-        full_noise_video, full_noise_audio = _unpack_tensor(full_noise)
+        full_noise_video, full_noise_audio = unpack_latent(full_noise)
         # Apply temporal crop first (3D lowpass-like), then spatial DCT lowpass.
         coarse_noise_video = lowpass_dct(
             full_noise_video[..., :s0_t, :, :], (s0_h, s0_w)
         )
-        coarse_noise = _pack_tensor(
+        coarse_noise = pack_latent(
             coarse_noise_video,
             full_noise_audio,
         )
@@ -315,7 +315,7 @@ def run_repeated_stage_calls(
             raise ValueError("transition step must be inside the sigma schedule")
 
         # Run the current stage over current_sigmas[:boundary+1].
-        capture, callback = _capture()
+        capture, callback = _step_capture()
         stage_sigmas = current_sigmas[: boundary + 1]
         public = guider.sample(
             stage_start_pub,
@@ -329,18 +329,18 @@ def run_repeated_stage_calls(
         last_public = public
         last_capture = capture
 
-        public_video, public_audio = _unpack_tensor(public)
+        public_video, public_audio = unpack_latent(public)
         q = float(current_sigmas[boundary])
 
         # Recover internal state (public -> carry-representation).
-        internal_video, internal_audio = recover_internal_state(
+        internal_video, internal_audio = to_internal_state(
             public_video, public_audio, q, audio_scale
         )
 
         # Align (kappa) for this transition: r = next_scale / current_scale.
         ratio = scales[stage_idx + 1] / scales[stage_idx]
         if config.sigma_policy == "canonical":
-            kappa, new_q = aligned_speed_sigma(q, ratio)
+            kappa, new_q = aligned_sigma(q, ratio)
         else:
             kappa, new_q = 1.0, q
 
@@ -350,7 +350,7 @@ def run_repeated_stage_calls(
         if next_t > internal_video.shape[-3]:
             # Temporal expansion needed: use the 3D spectral path.
             if config.noise_policy == "coupled_full_grid":
-                full_noise_video, _ = _unpack_tensor(full_noise)
+                full_noise_video, _ = unpack_latent(full_noise)
                 # For coupled 3D: re-DCT-expand using full noise + cropped source.
                 # Combined low-freq block = DCT of source (3D); high-freq = scaled noise.
                 full_noise_video_dev = full_noise_video.to(
@@ -364,21 +364,21 @@ def run_repeated_stage_calls(
                 target_dct[..., :internal_video.shape[-3], :internal_video.shape[-2], :internal_video.shape[-1]] = source_dct
                 expanded_video = idct_temporal(idct2(target_dct))
             else:
-                expanded_video = spectral_expand_dct_3d(
+                expanded_video = spectral_expand_3d(
                     internal_video,
                     (next_t, *next_hw),
                     q,
                     int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
                 )
         elif config.noise_policy == "coupled_full_grid":
-            full_noise_video, _ = _unpack_tensor(full_noise)
-            expanded_video = spectral_expand_dct_coupled(
+            full_noise_video, _ = unpack_latent(full_noise)
+            expanded_video = spectral_expand_coupled(
                 internal_video,
                 full_noise_video.to(device=internal_video.device, dtype=internal_video.dtype),
                 q,
             )
         else:
-            expanded_video = spectral_expand_dct(
+            expanded_video = spectral_expand(
                 internal_video,
                 next_hw,
                 q,
@@ -390,13 +390,13 @@ def run_repeated_stage_calls(
         old_audio_sigma = time_shift_sigma(q, video_shift, audio_shift)
         new_audio_sigma = time_shift_sigma(new_q, video_shift, audio_shift)
         if config.audio_policy == "carry_preserve":
-            transitioned_audio = carry_preserving_audio_state(
+            transitioned_audio = carry_preserved_audio(
                 internal_audio, q, new_q, old_audio_sigma, new_audio_sigma
             )
         elif config.audio_policy == "clock_reindex":
             if "x0" not in capture:
                 raise RuntimeError("clock_reindex requires an x0 callback from this stage")
-            _, clean_audio = _unpack_tensor(capture["x0"])
+            _, clean_audio = unpack_latent(capture["x0"])
             transitioned_audio = clock_reindex_audio_state(
                 internal_audio,
                 clean_audio,
@@ -415,11 +415,11 @@ def run_repeated_stage_calls(
         )
 
         # Set up re-entry with the aligned boundary + zero latent for the next stage.
-        next_noise = _pack_tensor(
+        next_noise = pack_latent(
             reentry_noise(transitioned_video, new_q),
             reentry_noise(transitioned_audio, new_q),
         )
-        next_zero = _pack_tensor(
+        next_zero = pack_latent(
             torch.zeros_like(transitioned_video),
             torch.zeros_like(transitioned_audio),
         )
@@ -430,7 +430,7 @@ def run_repeated_stage_calls(
         current_sigmas = next_sigmas
 
     # After the final transition, run the last full-res stage over the spliced tail.
-    final_capture, final_callback = _capture()
+    final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,
         stage_start_latent,

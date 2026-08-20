@@ -24,7 +24,7 @@ def _basis(size: int, device: torch.device) -> torch.Tensor:
     return _cached_basis(size, device.type, device.index)
 
 
-def _validate_video_tensor(value: torch.Tensor) -> None:
+def _validate_spatial_tensor(value: torch.Tensor) -> None:
     if value.ndim < 2:
         raise ValueError("DCT input must have at least two spatial axes")
     if value.shape[-2] < 1 or value.shape[-1] < 1:
@@ -32,7 +32,7 @@ def _validate_video_tensor(value: torch.Tensor) -> None:
 
 
 def dct2(value: torch.Tensor) -> torch.Tensor:
-    _validate_video_tensor(value)
+    _validate_spatial_tensor(value)
     work = value.float()
     height_basis = _basis(work.shape[-2], work.device)
     width_basis = _basis(work.shape[-1], work.device)
@@ -42,7 +42,7 @@ def dct2(value: torch.Tensor) -> torch.Tensor:
 
 
 def idct2(coefficients: torch.Tensor) -> torch.Tensor:
-    _validate_video_tensor(coefficients)
+    _validate_spatial_tensor(coefficients)
     work = coefficients.float()
     height_basis = _basis(work.shape[-2], work.device)
     width_basis = _basis(work.shape[-1], work.device)
@@ -62,7 +62,7 @@ def lowpass_dct(value: torch.Tensor, target_hw: tuple[int, int]) -> torch.Tensor
     return idct2(dct2(value)[..., :target_h, :target_w]).to(dtype=original_dtype)
 
 
-def lowpass_filter_dct(value: torch.Tensor, cutoff: float) -> torch.Tensor:
+def lowpass_filter(value: torch.Tensor, cutoff: float) -> torch.Tensor:
     """Shape-preserving lowpass filter in the DCT domain.
 
     Zeroes out coefficients whose frequency index exceeds ``cutoff * full_dim``.
@@ -81,7 +81,7 @@ def lowpass_filter_dct(value: torch.Tensor, cutoff: float) -> torch.Tensor:
     return idct2(coeffs * mask).to(dtype=original_dtype)
 
 
-def spectral_expand_dct_coupled(
+def spectral_expand_coupled(
     value: torch.Tensor,
     full_resolution_noise: torch.Tensor,
     sigma: float,
@@ -101,7 +101,7 @@ def spectral_expand_dct_coupled(
     return idct2(expanded).to(dtype=value.dtype)
 
 
-def spectral_expand_dct(
+def spectral_expand(
     value: torch.Tensor,
     target_hw: tuple[int, int],
     sigma: float,
@@ -175,7 +175,7 @@ def idct_temporal(coefficients: torch.Tensor) -> torch.Tensor:
     return restored.reshape(*leading, t_dim, h_dim, w_dim)
 
 
-def spectral_expand_dct_3d(
+def spectral_expand_3d(
     value: torch.Tensor,           # [..., T_coarse, H_coarse, W_coarse]
     target_thw: tuple[int, int, int],
     sigma: float,
@@ -186,12 +186,12 @@ def spectral_expand_dct_3d(
     Generates full-resolution DCT-domain noise, scales by ``sigma``, embeds the
     source's low-frequency temporal and spatial DCT coefficients into the
     [:source_t, :source_h, :source_w] corner, then inverse-DCTs back to pixel
-    space.  This is the natural extension of :func:`spectral_expand_dct` to
+    space.  This is the natural extension of :func:`spectral_expand` to
     the temporal axis — the temporal spectrum is padded identically.
     """
     target_t, target_h, target_w = (int(target_thw[0]), int(target_thw[1]), int(target_thw[2]))
     if value.ndim < 3:
-        raise ValueError("spectral_expand_dct_3d expects at least 3 dims")
+        raise ValueError("spectral_expand_3d expects at least 3 dims")
     source_t, source_h, source_w = value.shape[-3:]
     if target_t < source_t or target_h < source_h or target_w < source_w:
         raise ValueError(
@@ -223,6 +223,6 @@ def spectral_expand_dct_3d(
     return idct_temporal(idct2(dct_full)).to(dtype=original_dtype)
 
 
-__all__ = ["dct2", "idct2", "lowpass_dct", "lowpass_filter_dct",
-           "spectral_expand_dct", "spectral_expand_dct_coupled",
-           "dct_temporal", "idct_temporal", "spectral_expand_dct_3d"]
+__all__ = ["dct2", "idct2", "lowpass_dct", "lowpass_filter",
+           "spectral_expand", "spectral_expand_coupled",
+           "dct_temporal", "idct_temporal", "spectral_expand_3d"]

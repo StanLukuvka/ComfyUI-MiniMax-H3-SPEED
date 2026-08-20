@@ -7,7 +7,7 @@ from pathlib import Path
 from types import ModuleType
 
 import torch
-from minimax_h3_speed.spectral import lowpass_dct, spectral_expand_dct
+from minimax_h3_speed.spectral import lowpass_dct, spectral_expand
 
 
 def _install_comfy_stubs():
@@ -106,7 +106,7 @@ def test_expand_dct_preserves_energy():
     x = torch.randn(B, C, T, H, W)
     # sigma=0.0 disables the random high-frequency fill so this is pure DCT
     # expansion (no injected noise).
-    y = spectral_expand_dct(x, (H * 2, W * 2), sigma=0.0, seed=0)
+    y = spectral_expand(x, (H * 2, W * 2), sigma=0.0, seed=0)
     assert y.shape == (B, C, T, H * 2, W * 2)
     # DCT basis is orthonormal, so sum_sq should be invariant under forward+backward.
     # Here we just expand once; energy is preserved when we undo with idct, which
@@ -115,12 +115,12 @@ def test_expand_dct_preserves_energy():
 
 
 def test_idct_back_to_original():
-    """spectral_expand_dct (sigma=0) followed by lowpass_dct on the higher-res
+    """spectral_expand (sigma=0) followed by lowpass_dct on the higher-res
     tensor should recover the original (orthonormal DCT)."""
     B, C, T, H, W = 1, 2, 64, 4, 8
     x = torch.randn(B, C, T, H, W)
     # Expand to higher-res with sigma=0 (deterministic, no high-freq noise)
-    y = spectral_expand_dct(x, (H * 4, W * 4), sigma=0.0, seed=0)
+    y = spectral_expand(x, (H * 4, W * 4), sigma=0.0, seed=0)
     # Downsample back (lowpass in the higher-res space, then we compare the
     # original-resolution band against the original via a downscale).
     y_lp = lowpass_dct(y, (H, W))
@@ -132,10 +132,10 @@ def test_idct_back_to_original():
 def test_dct_expand_with_seed_offset_stability():
     """Expanding the same noise twice with the same seed offset must be identical."""
     x = torch.randn(1, 1, 4, 8, 12)
-    y1 = spectral_expand_dct(x, (16, 24), sigma=0.5, seed=99)
-    y2 = spectral_expand_dct(x, (16, 24), sigma=0.5, seed=99)
+    y1 = spectral_expand(x, (16, 24), sigma=0.5, seed=99)
+    y2 = spectral_expand(x, (16, 24), sigma=0.5, seed=99)
     assert torch.equal(y1, y2)
-    y3 = spectral_expand_dct(x, (16, 24), sigma=0.5, seed=100)
+    y3 = spectral_expand(x, (16, 24), sigma=0.5, seed=100)
     assert not torch.equal(y1, y3)
 
 
@@ -179,12 +179,12 @@ def test_spectral_lowpass_dct():
     assert torch.equal(mvp_out, lab_out)
 
 
-def test_spectral_expand_dct():
-    """Compare Lab vs MVP spectral_expand_dct implementation."""
-    from minimax_h3_speed.spectral import spectral_expand_dct as mvp_func
+def test_spectral_expand():
+    """Compare Lab vs MVP spectral_expand implementation."""
+    from minimax_h3_speed.spectral import spectral_expand as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import spectral_expand_dct as lab_func
+    from speed_lab.spectral import spectral_expand as lab_func
 
     video = torch.randn(1, 1, 32, 32)
     target_hw = (64, 64)
@@ -196,12 +196,12 @@ def test_spectral_expand_dct():
         f"expand_dct mismatch (max diff: {(mvp_out - lab_out).abs().max():.6f})"
 
 
-def test_spectral_expand_dct_coupled():
-    """Compare Lab vs MVP spectral_expand_dct_coupled implementation."""
-    from minimax_h3_speed.spectral import dct2, spectral_expand_dct_coupled as mvp_func
+def test_spectral_expand_coupled():
+    """Compare Lab vs MVP spectral_expand_coupled implementation."""
+    from minimax_h3_speed.spectral import dct2, spectral_expand_coupled as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import spectral_expand_dct_coupled as lab_func
+    from speed_lab.spectral import spectral_expand_coupled as lab_func
 
     video = torch.randn(1, 1, 32, 32)
     full_resolution_noise = torch.randn(1, 1, 64, 64)
