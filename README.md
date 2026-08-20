@@ -6,11 +6,9 @@
 
 ## What it does
 
-MiniMax-H3 is a video diffusion model. Instead of running every denoising step at full resolution (which wastes VRAM and time), this node runs the cheap low-res steps first, then steps resolution up at the right moments. Same quality, less memory, faster.
+SPEED (Spectral Progressive Diffusion for Efficient image and video generation) is a technique from the [SPEED paper](https://github.com/howardhx/speed). The idea: instead of running all 20+ denoising steps at full 720p resolution, start at a fraction (say 25%) and only step up to full resolution at preset-determined boundaries. Early denoising steps don't need full resolution — low-frequency structure emerges first — so the coarse stages produce the same result at a fraction of the compute and VRAM.
 
-Audio always runs at full resolution — nothing to configure there.
-
-Replaces KSampler + SamplerCustomAdvanced because those don't handle mid-flight resolution changes.
+This node implements that for MiniMax-H3's nested video+audio latents: each resolution stage is a separate `guider.sample()` call, with a DCT-based spectral expansion to upsample between stages and kappa sigma-alignment at each boundary. The audio track is carried through at full resolution unchanged.
 
 ## Install
 
