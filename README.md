@@ -6,9 +6,11 @@
 
 ## What it does
 
-MiniMax-H3 is a video diffusion model that works best when denoising runs at increasing resolution — low-res first, then step up. The SPEED sampler node does exactly this: it runs each stage as its own ComfyUI guider call, DCT-expanding and re-aligning sigma at every boundary. Audio stays unchanged and runs at full resolution throughout.
+MiniMax-H3 is a video diffusion model. Instead of running every denoising step at full resolution (which wastes VRAM and time), this node runs the cheap low-res steps first, then steps resolution up at the right moments. Same quality, less memory, faster.
 
-This replaces KSampler + SamplerCustomAdvanced for H3 workflows, because neither handles mid-flight resolution changes.
+Audio always runs at full resolution — nothing to configure there.
+
+Replaces KSampler + SamplerCustomAdvanced because those don't handle mid-flight resolution changes.
 
 ## Install
 
@@ -18,38 +20,44 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 # restart ComfyUI
 ```
 
-## Nodes
+## How to use
 
-### MiniMaxH3SPEEDSampler
+Drop `MiniMax H3 SPEED — Sampler` into your ComfyUI graph and wire it like you would a normal sampler:
 
-Takes `(noise, guider, sigmas, latent_image)` and runs the multi-stage SPEED chain. Returns `(output_latent, denoised_latent)`.
+1. **NOISE** — connect `RandomNoise`
+2. **GUIDER** — connect `BasicGuider` (with your H3 model)
+3. **SIGMAS** — connect `BasicScheduler`
+4. **LATENT_IMAGE** — connect your H3 video latent
+5. **PRESET** — pick one:
+   - `half_then_full` — start at 50%, finish full (recommended default)
+   - `quarter_half_full` — start at 25%, step to 50%, finish full
+   - `aggressive` — start at 25%, jump to 75%, finish full
+   - `three_quarter_then_full` — start at 75%, finish full
+6. **TRANSITION_MODE** — `manual_step` (use preset defaults) or `delta_custom` (compute from spectral analysis)
+7. Leave everything else as default unless you're tuning.
 
-**Inputs:**
+## Inputs
 
 | Input | Type | Default | Notes |
 |-------|------|---------|-------|
-| `noise` | NOISE | — | connect RandomNoise |
-| `guider` | GUIDER | — | connect BasicGuider |
-| `sigmas` | SIGMAS | — | connect BasicScheduler |
-| `latent_image` | LATENT | — | connect the H3 latent |
-| `preset` | list | `half_then_full` | one of: `half_then_full`, `quarter_half_full`, `quarter_half_3q_full`, `aggressive`, `three_quarter_then_full` |
+| `noise` | NOISE | — | Standard ComfyUI noise node |
+| `guider` | GUIDER | — | Your H3 model's guider |
+| `sigmas` | SIGMAS | — | Standard ComfyUI scheduler |
+| `latent_image` | LATENT | — | H3 video latent |
+| `preset` | list | `half_then_full` | See table above |
 | `transition_mode` | list | `manual_step` | `manual_step`, `manual_sigma`, `delta_custom` |
-| `noise_policy` | list | `direct_coarse` | `direct_coarse`, `coupled_full_grid` |
-| `delta` | FLOAT | 0.01 | Only used in `delta_custom` mode. Range: 1e-4 to 0.5. |
-| `noise_amplitude` | FLOAT | 150.0 | Power-spectrum amplitude A. Only used in `delta_custom` mode. |
-| `noise_decay_exponent` | FLOAT | 2.0 | Power-law decay beta. Only used in `delta_custom` mode. |
-| `seed_offset` | INT | 10000 | Offset added to the noise seed at each resolution boundary. |
+| `noise_policy` | list | `direct_coarse` | Usually leave as default |
+| `delta` | FLOAT | 0.01 | Only matters in `delta_custom` mode |
+| `noise_amplitude` | FLOAT | 150.0 | Only matters in `delta_custom` mode |
+| `noise_decay_exponent` | FLOAT | 2.0 | Only matters in `delta_custom` mode |
+| `seed_offset` | INT | 10000 | Added to seed at each resolution boundary |
 
-`manual_step` and `manual_sigma` both use the preset's hardcoded transition steps. `delta_custom` computes transitions from `(noise_amplitude, noise_decay_exponent)` using a power-law spectral fit.
+**Output:** `(output_latent, denoised_latent)` — connect `output_latent` to your save node. `denoised_latent` is the clean final result if you need it for further processing.
 
-**Currently:** `sigma_policy` and `audio_policy` are frozen to their canonical defaults in the config — they are not exposed as widget inputs yet.
+## Troubleshooting
 
-## Tests
-
-Run with:
-```bash
-.venv/bin/python -m pytest minimax_h3_speed/tests/ -q
-```
+- **Sigma schedule too short:** If you get a ValueError about sigma schedule length, increase your `BasicScheduler` steps. Each preset needs at least `n_stages * 2` sigmas.
+- **H3 model required:** This sampler requires a real MiniMax-H3 model with `sigma_shift_video` / `sigma_shift_audio` attributes. It won't work with SD, Flux, WAN, or other model types.
 
 ## License
 
