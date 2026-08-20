@@ -125,7 +125,7 @@ def test_harvest_node_runs_native_euler_and_emits_json():
 
     node = cls()
     harvest_json, out_latent, denoised = node.harvest(
-        FakeNoise(), FakeGuider(), sigmas, latent, delta=0.01, capture_every=1
+        FakeNoise(), FakeGuider(), sigmas, latent
     )
     parsed = json.loads(harvest_json)
     assert "harvest_json" in parsed

@@ -14,7 +14,7 @@ The CORRECT path is a SINGLE full-res Euler pass with a FIXED sigma schedule
 (no stage boundaries, no DCT splicing). The harvester node:
 
   1. Takes (noise, guider, sigmas, latent_image) — the same inputs as a native
-     ComfyUI sampler node — plus widget controls (delta, capture_every, etc.).
+     ComfyUI sampler node.
   2. Runs ONE native Euler pass over the FULL sigma schedule using
      `guider.sample()` (not `run_speed_pipeline`).
   3. On each step, residual_snapshots the residual `residual = x - denoised` via the
@@ -62,18 +62,15 @@ class MiniMaxH3HarvestToConfig:
 
     @classmethod
     def INPUT_TYPES(cls):
-        # Same interface as the native sampler — NOT the JSON-only interface.
-        # The harvest node runs the native pass itself; it does not parse JSON.
+        # Native sampler interface — NOT the JSON-only interface.
+        # The harvester runs a single native Euler pass over the full sigma schedule
+        # (no stage boundaries) and records per-step residuals for spectral analysis.
         return {
             "required": {
                 "noise": ("NOISE",),
                 "guider": ("GUIDER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-            },
-            "optional": {
-                "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "capture_every": ("INT", {"default": 1, "min": 1, "max": 20}),
             },
         }
 
@@ -83,8 +80,6 @@ class MiniMaxH3HarvestToConfig:
         guider,
         sigmas,
         latent_image,
-        delta=0.01,
-        capture_every=1,
     ):
         # We run a single native Euler pass. The harvester uses the native
         # sampler object (not the multi-stage SPEED chain) so the sigma schedule
@@ -100,8 +95,6 @@ class MiniMaxH3HarvestToConfig:
         def on_step(step_info):
             # step_info is the dict produced by the native Euler callback:
             #   {"x": x, "i": i, "sigma": sigma, "denoised": denoised}
-            if capture_every > 1 and (step_info.get("i", 0) % capture_every) != 0:
-                return
             sigma_val = float(step_info.get("sigma", 0.0))
             x_current = step_info.get("x")
             denoised_est = step_info.get("denoised")
@@ -238,7 +231,7 @@ class MiniMaxH3HarvestToConfig:
             sigmas_list = [float(sigmas[i]) for i in range(len(sigmas))]
 
         try:
-            rec = recommend_transition_steps(A, beta, sigmas_list, H_full, W_full, delta=float(delta))
+            rec = recommend_transition_steps(A, beta, sigmas_list, H_full, W_full)
         except Exception:
             rec = {}
 
@@ -263,7 +256,7 @@ class MiniMaxH3HarvestToConfig:
             lines.append(
                 f"WARNING: fit is {health.upper()} — beta={beta:.3f} with "
                 f"r²={r2:.4f}. Power is not cleanly decaying. Trust the "
-                f"transition_steps below with caution, or change delta and re-run."
+                f"transition_steps below with caution, or rerun to fit a better spectrum."
             )
         if rec:
             lines.append("Recommended delta-optimal transition_steps (paste into sampler):")
