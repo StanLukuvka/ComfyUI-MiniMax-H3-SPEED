@@ -75,9 +75,10 @@ def _pack_tensor(video, audio):
 def _active_av_shifts(guider):
     """Return (video_shift, audio_shift, audio_scale) from the guider's model.
 
-    ComfyUI exposes the active shifts through ModelSamplingAV. The diffusion
-    model keeps the checkpoint defaults, while transformer options may contain
-    overrides from the MiniMaxH3SigmaShift node.
+    Resolves in priority order:
+        transformer_options['minimax_h3_sigma_shift_video/audio']
+        -> model.sigma_shift_video/audio
+        -> model.diffusion_model.sigma_shift_video/audio
     audio_scale is the constant bridge ratio used by flow.recover_internal_state.
     """
     patcher = getattr(guider, "model_patcher", None)
