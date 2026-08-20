@@ -20,19 +20,11 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 
 ## How to use
 
-Drop `MiniMax H3 SPEED — Sampler` into your ComfyUI graph and wire it like you would a normal sampler:
+1. Install the pack (see below).
+2. In ComfyUI, load the example workflow: `workflows/video_minimax_h3_SPEED.json`.
+3. Wire your H3 model into the guider and hit run.
 
-1. **NOISE** — connect `RandomNoise`
-2. **GUIDER** — connect `BasicGuider` (with your H3 model)
-3. **SIGMAS** — connect `BasicScheduler`
-4. **LATENT_IMAGE** — connect your H3 video latent
-5. **PRESET** — pick one:
-   - `half_then_full` — start at 50%, finish full (recommended default)
-   - `quarter_half_full` — start at 25%, step to 50%, finish full
-   - `aggressive` — start at 25%, jump to 75%, finish full
-   - `three_quarter_then_full` — start at 75%, finish full
-6. **TRANSITION_MODE** — `manual_step` (use preset defaults) or `delta_custom` (compute from spectral analysis)
-7. Leave everything else as default unless you're tuning.
+The workflow is a starter — it has the sampler node and the standard ComfyUI nodes (RandomNoise, BasicGuider, BasicScheduler) already laid out. Adjust the preset and scheduler steps to taste.
 
 ## Inputs
 
