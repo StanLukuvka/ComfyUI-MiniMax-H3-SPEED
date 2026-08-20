@@ -8,9 +8,15 @@
 
 ## What it does
 
-SPEED (Spectral Progressive Diffusion for Efficient image and video generation) is a technique from the [SPEED paper](https://github.com/howardhx/speed). The idea: instead of running all 20+ denoising steps at full 720p resolution, start at a fraction (say 25%) and only step up to full resolution at preset-determined boundaries. Early denoising steps don't need full resolution — low-frequency structure emerges first — so the coarse stages produce the same result at a fraction of the compute and VRAM.
+SPEED (Spectral Progressive Diffusion for Efficient image and video generation) is a technique from the [SPEED paper](https://github.com/howardhx/speed). 
 
-This node implements that for MiniMax-H3's nested video+audio latents: each resolution stage is a separate `guider.sample()` call, with a DCT-based spectral expansion to upsample between stages and kappa sigma-alignment at each boundary. The audio track is carried through at full resolution unchanged.
+The idea: instead of running all 20+ denoising steps at full 720p resolution, start at a fraction (say 25%) and only step up to full resolution at preset-determined boundaries. 
+
+Early denoising steps don't gain anything from full resolution as only low-frequency structure emerges first. So a lower resolution stage produce the same result at a fraction of the compute and VRAM.
+
+This node implements that for MiniMax-H3's nested video+audio latents: each resolution stage is a separate `guider.sample()` call, with a DCT-based spectral expansion to upsample between stages and kappa sigma-alignment at each boundary. Only Euler sampler is supported — other samplers need calibration that hasn't been done.
+
+The audio track is carried through at full resolution unchanged.
 
 ## Install
 
@@ -22,40 +28,36 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 
 ## How to use
 
-1. Install the pack (see below).
+1. Install the pack (see above).
 2. In ComfyUI, load the example workflow: `workflows/video_minimax_h3_SPEED.json`.
 3. Wire your H3 model into the guider and hit run.
 
 The workflow is a starter — it has the sampler node and the standard ComfyUI nodes (RandomNoise, BasicGuider, BasicScheduler) already laid out. Adjust the preset and scheduler steps to taste.
 
-## Inputs
+**Presets** (the `preset` widget):
 
-| Input | Type | Default | Notes |
-|-------|------|---------|-------|
-| `noise` | NOISE | — | Standard ComfyUI noise node |
-| `guider` | GUIDER | — | Your H3 model's guider |
-| `sigmas` | SIGMAS | — | Standard ComfyUI scheduler |
-| `latent_image` | LATENT | — | H3 video latent |
-| `preset` | list | `half_then_full` | See table above |
-| `transition_mode` | list | `manual_step` | `manual_step`, `manual_sigma`, `delta_custom` |
-| `noise_policy` | list | `direct_coarse` | Usually leave as default |
-| `delta` | FLOAT | 0.01 | Only matters in `delta_custom` mode |
-| `noise_amplitude` | FLOAT | 150.0 | Only matters in `delta_custom` mode |
-| `noise_decay_exponent` | FLOAT | 2.0 | Only matters in `delta_custom` mode |
-| `seed_offset` | INT | 10000 | Added to seed at each resolution boundary |
+- `half_then_full` — start at 50%, finish full (recommended default)
+- `quarter_half_full` — start at 25%, step to 50%, finish full
+- `quarter_half_3q_full` — start at 25%, step to 50%, then 75%, finish full
+- `aggressive` — start at 25%, jump to 75%, finish full
+- `three_quarter_then_full` — start at 75%, finish full
 
-**Output:** `(output_latent, denoised_latent)` — connect `output_latent` to your save node. `denoised_latent` is the clean final result if you need it for further processing.
+**Transition mode** (the `transition_mode` widget):
+
+- `manual_step` — use the preset's hardcoded step boundaries (default)
+- `manual_sigma` — same boundaries, resolved by sigma value instead of step index
+- `delta_custom` — compute boundaries at runtime from a power-law spectral fit using `noise_amplitude`, `noise_decay_exponent`, and `delta`. Only for advanced tuning.
+
+Everything else on the node is standard ComfyUI wiring (noise, guider, sigmas, latent). The output is `(output_latent, denoised_latent)` — connect `output_latent` to your save node.
 
 ## Troubleshooting
 
 - **Sigma schedule too short:** If you get a ValueError about sigma schedule length, increase your `BasicScheduler` steps. Each preset needs at least `n_stages * 2` sigmas.
 - **H3 model required:** This sampler requires a real MiniMax-H3 model with `sigma_shift_video` / `sigma_shift_audio` attributes. It won't work with SD, Flux, WAN, or other model types.
 
-## TODO
+## Video and Timings
 
-<!-- Evidence and benchmark times — VRAM usage, generation time, quality
-comparisons vs standard KSampler, per-preset breakdowns. To be filled in
-once real measurements are collected on actual H3 hardware. -->
+TODO
 
 ## License
 
