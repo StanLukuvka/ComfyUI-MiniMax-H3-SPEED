@@ -51,6 +51,12 @@ The workflow is a starter — it has the sampler node and the standard ComfyUI n
 - **Sigma schedule too short:** If you get a ValueError about sigma schedule length, increase your `BasicScheduler` steps. Each preset needs at least `n_stages * 2` sigmas.
 - **H3 model required:** This sampler requires a real MiniMax-H3 model with `sigma_shift_video` / `sigma_shift_audio` attributes. It won't work with SD, Flux, WAN, or other model types.
 
+## TODO
+
+<!-- Evidence and benchmark times — VRAM usage, generation time, quality
+comparisons vs standard KSampler, per-preset breakdowns. To be filled in
+once real measurements are collected on actual H3 hardware. -->
+
 ## License
 
 **PolyForm Noncommercial 1.0.0** — see [LICENSE.md](LICENSE.md). Noncommercial use only.
