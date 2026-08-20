@@ -7,7 +7,7 @@ ordinary multiplication and division are defined.
 from __future__ import annotations
 
 
-def aligned_speed_sigma(sigma: float, resolution_ratio: float) -> tuple[float, float]:
+def aligned_sigma(sigma: float, resolution_ratio: float) -> tuple[float, float]:
     q = float(sigma)
     ratio = float(resolution_ratio)
     if not 0.0 < q < 1.0:
@@ -25,7 +25,7 @@ def time_shift_sigma(sigma, from_shift: float, to_shift: float):
     return to_shift * base / (1.0 + (to_shift - 1.0) * base)
 
 
-def recover_internal_state(video_public, audio_public, sigma: float, audio_scale: float):
+def to_internal_state(video_public, audio_public, sigma: float, audio_scale: float):
     if not 0.0 <= sigma < 1.0:
         raise ValueError("endpoint sigma must be in [0, 1)")
     if audio_scale <= 0.0:
@@ -34,7 +34,7 @@ def recover_internal_state(video_public, audio_public, sigma: float, audio_scale
     return video_public * clean_weight, audio_public * audio_scale * clean_weight
 
 
-def carry_preserving_audio_state(
+def carry_preserved_audio(
     carried_audio,
     old_video_sigma: float,
     new_video_sigma: float,

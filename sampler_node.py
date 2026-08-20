@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import comfy.samplers
 from minimax_h3_speed.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS, SpeedConfig
-from minimax_h3_speed.h3_runtime import run_repeated_stage_calls, _unpack_tensor
+from minimax_h3_speed.h3_runtime import run_speed_pipeline, unpack_latent
 
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
@@ -42,25 +42,25 @@ class MiniMaxH3SPEEDSampler:
                 "guider": ("GUIDER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "explicit_preset": (list(SCALE_PRESETS.keys()),),
+                "preset": (list(SCALE_PRESETS.keys()),),
                 "transition_mode": (["manual_step", "manual_sigma", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "power_A": ("FLOAT", {"default": 150.0, "min": 0.0, "max": 1e6}),
-                "power_beta": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
+                "noise_amplitude": ("FLOAT", {"default": 150.0, "min": 0.0, "max": 1e6}),
+                "noise_decay_exponent": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
             },
         }
 
-    def sample(self, noise, guider, sigmas, latent_image, explicit_preset,
+    def sample(self, noise, guider, sigmas, latent_image, preset,
                transition_mode, noise_policy="direct_coarse",
-               delta=0.01, power_A=150.0, power_beta=2.0,
+               delta=0.01, noise_amplitude=150.0, noise_decay_exponent=2.0,
                seed_offset=10000):
         # Use the calibrated transition steps from the preset config.
         # These are tuned per-preset (e.g. 2_stage_half transitions at step 5
         # out of 20, leaving 15 steps for full-res detail refinement).
-        scales = SCALE_PRESETS[explicit_preset]
-        transition_steps = DEFAULT_TRANSITION_STEPS[explicit_preset]
+        scales = SCALE_PRESETS[preset]
+        transition_steps = DEFAULT_TRANSITION_STEPS[preset]
         n_stages = len(scales)
         n_sigmas = len(sigmas)
         # Need at least 2 sigmas per stage, plus enough room for transition steps.
@@ -70,30 +70,30 @@ class MiniMaxH3SPEEDSampler:
         if n_sigmas < min_required:
             raise ValueError(
                 f"sigma schedule too short: got {n_sigmas} sigmas, need "
-                f"at least {min_required} for preset '{explicit_preset}' with "
+                f"at least {min_required} for preset '{preset}' with "
                 f"transition steps {transition_steps}. "
                 f"Increase steps to >= {min_required - 1}."
             )
         # Delta-custom mode gets (A, β) from a prior SigmaHarvest run; explicit
         # mode uses the manually tuned transition_steps in the config.
-        full_video, _ = _unpack_tensor(latent_image.get("samples"))
+        full_video, _ = unpack_latent(latent_image.get("samples"))
         # Map node-facing transition_mode values to config-internal vocabulary.
         # "manual_step" and "manual_sigma" both produce explicit transition_steps
         # (resolved from the preset); only "delta_custom" uses power-spectrum
         # thresholds. (The deleted Schedule node used to emit the same three values;
         # its vocabulary was folded into this mapping when it was pruned.)
-        MODE_TO_CONFIG = {"manual_step": "explicit",
+        transition_mode_map = {"manual_step": "explicit",
                           "manual_sigma": "explicit",
                           "delta_custom": "delta_custom"}
-        config_mode = MODE_TO_CONFIG.get(transition_mode, "explicit")
+        config_mode = transition_mode_map.get(transition_mode, "explicit")
         config = SpeedConfig(
             scales=scales,
             transition_steps=transition_steps,
             transition_mode=config_mode,
             noise_policy=noise_policy,
             delta=float(delta),
-            power_A=float(power_A),
-            power_beta=float(power_beta),
+            noise_amplitude=float(noise_amplitude),
+            noise_decay_exponent=float(noise_decay_exponent),
             transition_seed_offset=int(seed_offset),
             full_latent_h=int(full_video.shape[-2]),
             full_latent_w=int(full_video.shape[-1]),
@@ -101,7 +101,7 @@ class MiniMaxH3SPEEDSampler:
 
         # Run the multi-stage SPEED diffusion chain. Audio is carried through
         # unchanged; the final-stage x0 (denoised) is surfaced as denoised_output.
-        out, denoised = run_repeated_stage_calls(
+        out, denoised = run_speed_pipeline(
             noise,
             guider,
             sigmas,

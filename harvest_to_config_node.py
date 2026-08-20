@@ -16,15 +16,15 @@ The CORRECT path is a SINGLE full-res Euler pass with a FIXED sigma schedule
   1. Takes (noise, guider, sigmas, latent_image) — the same inputs as a native
      ComfyUI sampler node — plus widget controls (delta, capture_every, etc.).
   2. Runs ONE native Euler pass over the FULL sigma schedule using
-     `guider.sample()` (not `run_repeated_stage_calls`).
-  3. On each step, captures the residual `residual = x - denoised` via the
+     `guider.sample()` (not `run_speed_pipeline`).
+  3. On each step, residual_snapshots the residual `residual = x - denoised` via the
      callback mechanism, tagging it with the live sigma value.
   4. After the pass, fits the radial DCT power spectrum `P = A * |omega|^(-beta)`
      on the accumulated residuals, emits the fitted (A, beta) as `harvest_json`
      (STRING), and prints a human-readable calibration report.
 
 This node produces `harvest_json` for the user to feed back into the SPEED
-sampler's `power_A` / `power_beta` widgets (in `delta_custom` mode) — it does
+sampler's `noise_amplitude` / `noise_decay_exponent` widgets (in `delta_custom` mode) — it does
 NOT call the SPEED chain. The output also includes a passthrough `LATENT` so
 it can be inserted into a ComfyUI workflow graph like any sampler node.
 """
@@ -38,10 +38,10 @@ import numpy as np
 import torch
 
 from minimax_h3_speed.harvest import (
-    radial_power_spectrum,
+    radial_dct_power,
     fit_power_law,
-    _fit_health,
-    recommend_configs,
+    classify_fit_quality,
+    recommend_transition_steps,
 )
 
 
@@ -50,12 +50,12 @@ class MiniMaxH3HarvestToConfig:
 
     DESCRIPTION = (
         "Native Euler sigma harvester. Runs a single full-res Euler pass, "
-        "captures the residual noise spectrum at each step (residual = x - x0), "
+        "residual_snapshots the residual noise spectrum at each step (residual = x - x0), "
         "fits P = A * |omega|^(-beta), and emits harvest_json + calibration report. "
         "Does NOT use the SPEED multi-stage chain — sigma schedule must stay fixed."
     )
     RETURN_TYPES = ("STRING", "LATENT", "LATENT")
-    RETURN_NAMES = ("harvest_json", "output_latent", "denoised_latent")
+    RETURN_NAMES = ("calibration_result", "output_latent", "denoised_latent")
     FUNCTION = "harvest"
     CATEGORY = "sampling/minimax_h3_speed/diagnostics"
     OUTPUT_NODE = False
@@ -95,9 +95,9 @@ class MiniMaxH3HarvestToConfig:
         # Internal collector: records per-step (sigma, residual_video) pairs.
         # Residual = x (current noisy state) - denoised (x0 estimate) at that step.
         # This matches the spectral analysis definition in harvest.py.
-        captures = []
+        residual_snapshots = []
 
-        def harvest_callback(step_info):
+        def on_step(step_info):
             # step_info is the dict produced by the native Euler callback:
             #   {"x": x, "i": i, "sigma": sigma, "denoised": denoised}
             if capture_every > 1 and (step_info.get("i", 0) % capture_every) != 0:
@@ -108,8 +108,8 @@ class MiniMaxH3HarvestToConfig:
             if x_current is not None and denoised_est is not None:
                 # Residual = noise remaining at this sigma = x - x0_approx
                 # We compute it on the video stream only (ignore audio for spectrum).
-                residual = self._compute_video_residual(x_current, denoised_est)
-                captures.append({
+                residual = self.compute_video_residual(x_current, denoised_est)
+                residual_snapshots.append({
                     "step_index": step_info.get("i", 0),
                     "sigma": sigma_val,
                     "residual_video": residual,
@@ -122,7 +122,7 @@ class MiniMaxH3HarvestToConfig:
                 latent_image.get("samples") if hasattr(latent_image, "get") else latent_image,
                 sampler_obj,
                 sigmas,
-                callback=harvest_callback,
+                callback=on_step,
                 disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
                 seed=getattr(noise, "seed", 42),
             )
@@ -140,11 +140,11 @@ class MiniMaxH3HarvestToConfig:
 
         # Fit the spectrum from the captured residuals.
         # We aggregate all per-step residual videos into a single mean profile.
-        # If captures is empty (e.g. callback never fired), we emit an explicit
+        # If residual_snapshots is empty (e.g. callback never fired), we emit an explicit
         # error JSON rather than a fake fit.
-        if not captures:
+        if not residual_snapshots:
             return (
-                '{"error":"no_captures","message":"No per-step residual captures '
+                '{"error":"no_captures","message":"No per-step residual residual_snapshots '
                 'recorded. The native sampler callback did not fire — check ComfyUI '
                 'setup.","n_captures":0}',
                 latent_image,
@@ -155,12 +155,12 @@ class MiniMaxH3HarvestToConfig:
         # Each capture holds the full video tensor; we take the mean over time
         # to get a representative residual field per step, then bin radially.
         freqs_all, profiles_all = [], []
-        for cap in captures:
+        for cap in residual_snapshots:
             residual_video = cap.get("residual_video")
             if residual_video is not None and hasattr(residual_video, "shape"):
                 # Compute radial spectrum for this step's residual.
                 try:
-                    f, prof = radial_power_spectrum(residual_video)
+                    f, prof = radial_dct_power(residual_video)
                     freqs_all.append(f)
                     profiles_all.append(prof)
                 except Exception:
@@ -171,7 +171,7 @@ class MiniMaxH3HarvestToConfig:
             return (
                 '{"error":"no_spectral_profiles","message":"Captured residuals '
                 'produced no valid spectral profiles — residual may be zero or '
-                'non-physical.","n_captures":' + str(len(captures)) + '}',
+                'non-physical.","n_captures":' + str(len(residual_snapshots)) + '}',
                 latent_image,
                 None,
             )
@@ -179,18 +179,18 @@ class MiniMaxH3HarvestToConfig:
         # Aggregate profiles: mean across steps at each radial bin.
         max_r = max(f.max() for f in freqs_all)
         profile_mean = None
-        counts = None
+        bin_counts = None
         for f, prof in zip(freqs_all, profiles_all):
             if profile_mean is None:
                 profile_mean = prof.astype(float).copy()
-                counts = np.ones_like(profile_mean)
+                bin_counts = np.ones_like(profile_mean)
             # Re-bin by radial index (frequencies are the same index vector)
             # For simplicity, we assume radial bins are consistent per capture.
             # We take the mean of the profiles directly since freqs are aligned.
             profile_mean = profile_mean + prof.astype(float)
-            counts += 1.0
-        profile_mean = profile_mean / np.maximum(counts, 1)
-        freqs_mean = freqs_all[0]  # same radial index for all captures
+            bin_counts += 1.0
+        profile_mean = profile_mean / np.maximum(bin_counts, 1)
+        freqs_mean = freqs_all[0]  # same radial index for all residual_snapshots
 
         try:
             fit = fit_power_law(freqs_mean, profile_mean)
@@ -198,7 +198,7 @@ class MiniMaxH3HarvestToConfig:
             return (
                 '{"error":"fit_failed","message":"Power-law fit failed: '
                 + str(exc)
-                + '","n_captures":' + str(len(captures)) + '}',
+                + '","n_captures":' + str(len(residual_snapshots)) + '}',
                 latent_image,
                 None,
             )
@@ -206,7 +206,7 @@ class MiniMaxH3HarvestToConfig:
         A = float(fit["A"])
         beta = float(fit["beta"])
         r2 = float(fit["r_squared"])
-        health = _fit_health(fit)
+        health = classify_fit_quality(fit)
 
         full_video_shape = None
         try:
@@ -238,11 +238,11 @@ class MiniMaxH3HarvestToConfig:
             sigmas_list = [float(sigmas[i]) for i in range(len(sigmas))]
 
         try:
-            rec = recommend_configs(A, beta, sigmas_list, H_full, W_full, delta=float(delta))
+            rec = recommend_transition_steps(A, beta, sigmas_list, H_full, W_full, delta=float(delta))
         except Exception:
             rec = {}
 
-        harvest_json_str = json.dumps({
+        fit_results_json = json.dumps({
             "overall_fit_A": A,
             "overall_fit_beta": beta,
             "overall_fit_r2": r2,
@@ -280,32 +280,32 @@ class MiniMaxH3HarvestToConfig:
         # In a full multi-step harvest this would show per-step fits.
         lines.append(f"Per-sigma velocity fits (diagnostic):  beta={beta:+.3f}  r²={r2:.3f}")
 
-        report_str = "\n".join(lines)
+        report = "\n".join(lines)
 
         # Emit both the structured JSON (for downstream automation) and the
         # human-readable report (for the user to read in ComfyUI).
         # We wrap the report in a JSON field so downstream nodes can parse it.
-        combined_json = json.dumps({
-            "harvest_json": harvest_json_str,
-            "report": report_str,
+        output_json = json.dumps({
+            "harvest_json": fit_results_json,
+            "report": report,
         })
 
-        return (combined_json, result if result is not None else latent_image, None)
+        return (output_json, result if result is not None else latent_image, None)
 
-    def _compute_video_residual(self, x_tensor, denoised_tensor):
+    def compute_video_residual(self, x_tensor, denoised_tensor):
         # Extract video streams from NestedTensor or flat tensor, compute
         # the residual (noise remaining) = current - denoised.
         # This matches the spectral analysis definition in harvest.py.
         import torch
-        def get_video(t):
+        def extract_video_stream(t):
             if hasattr(t, "is_nested") and t.is_nested:
                 vids = [s for s in t.unbind() if s.ndim == 5]
                 return vids[0] if vids else None
             if isinstance(t, torch.Tensor) and t.ndim == 5:
                 return t
             return None
-        x_vid = get_video(x_tensor)
-        d_vid = get_video(denoised_tensor)
+        x_vid = extract_video_stream(x_tensor)
+        d_vid = extract_video_stream(denoised_tensor)
         if x_vid is not None and d_vid is not None:
             return x_vid - d_vid
         return None

@@ -2,11 +2,21 @@
 
 ⚠️ **Noncommercial license** — see [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0).
 
-An experimental ComfyUI node pack that implements [SPEED](https://github.com/howardhx/speed) — Spectral Progressive Diffusion for Efficient Image and Video Generation — for MiniMax-H3 image-to-video latents. The pack's own docstring: it replaces KSampler + SamplerCustomAdvanced because the default sampler does not expect you to change resolution mid-flight — SPEED does exactly that.
+⚠️ **Work in progress.** The pack is functional but not yet stable or fully documented.
 
-## Why
+⚠️ **Text-to-video only.** Image-to-video is not supported yet.
 
-Standard diffusion runs every step at full resolution. SPEED denoises video at low resolution first (cheap steps), then steps the resolution up per preset and continues. Similar quality at lower VRAM and faster generation, because most steps run on smaller buffers. Audio is carried through unchanged at full resolution.
+## What it does
+
+SPEED (Spectral Progressive Diffusion for Efficient image and video generation) is a technique from the [SPEED paper](https://github.com/howardhx/speed). 
+
+The idea: instead of running all 20+ denoising steps at full 720p resolution, start at a fraction (say 25%) and only step up to full resolution at preset-determined boundaries. 
+
+Early denoising steps don't gain anything from full resolution as only low-frequency structure emerges first. So a lower resolution stage produce the same result at a fraction of the compute and VRAM.
+
+This node implements that for MiniMax-H3's nested video+audio latents: each resolution stage is a separate `guider.sample()` call, with a DCT-based spectral expansion to upsample between stages and kappa sigma-alignment at each boundary. Only Euler sampler is supported — other samplers need calibration that hasn't been done.
+
+The audio track is carried through at full resolution unchanged.
 
 ## Install
 
@@ -16,74 +26,38 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 # restart ComfyUI
 ```
 
-Dependencies: `networkx`, `numpy`, `torch` (the pack's own imports — ComfyUI provides `torch`). No ComfyUI version requirement.
+## How to use
 
-## Nodes
+1. Install the pack (see above).
+2. In ComfyUI, load the example workflow: `workflows/video_minimax_h3_SPEED.json`.
+3. Wire your H3 model into the guider and hit run.
 
-There are two, registered flat at the repo root (`__init__.py`):
+The workflow is a starter — it has the sampler node and the standard ComfyUI nodes (RandomNoise, BasicGuider, BasicScheduler) already laid out. Adjust the preset and scheduler steps to taste.
 
-| Node | I/O | Purpose |
-|------|-----|---------|
-| `MiniMaxH3SPEEDSampler` | in: NOISE, GUIDER, SIGMAS, LATENT + 7 preset/params · out: `(LATENT output, LATENT denoised_output)` | Runs the multi-stage SPEED chain with the Euler sampler (hardcoded — the pack says other samplers need calibration it hasn't done). |
-| `MiniMaxH3HarvestToConfig` | in: `harvest_json` (STRING) · out: `(STRING report,)` | Parses a harvest JSON and returns a readable calibration report. |
+**Presets** (the `preset` widget):
 
-The harvest JSON is expected to come from a **native** (single-resolution) pass — the node takes it as raw STRING input and it is **not** produced by the SPEED sampler. In-sampler harvesting is circular: SPEED derives its transitions from `(A, β)`, so you cannot fit `(A, β)` from a SPEED run. Run the harvest elsewhere, read the report, and bake good values into the presets' defaults.
+- `half_then_full` — start at 50%, finish full (recommended default)
+- `quarter_half_full` — start at 25%, step to 50%, finish full
+- `quarter_half_3q_full` — start at 25%, step to 50%, then 75%, finish full
+- `aggressive` — start at 25%, jump to 75%, finish full
+- `three_quarter_then_full` — start at 75%, finish full
 
-## Sampler inputs
+**Transition mode** (the `transition_mode` widget):
 
-All eleven are `required` in `sampler_node.py`:
+- `manual_step` — use the preset's hardcoded step boundaries (default)
+- `manual_sigma` — same boundaries, resolved by sigma value instead of step index
+- `delta_custom` — compute boundaries at runtime from a power-law spectral fit using `noise_amplitude`, `noise_decay_exponent`, and `delta`. Only for advanced tuning.
 
-| Input | Type | Default | Options |
-|-------|------|---------|---------|
-| `noise` | NOISE | — | connect RandomNoise |
-| `guider` | GUIDER | — | connect BasicGuider |
-| `sigmas` | SIGMAS | — | connect BasicScheduler |
-| `latent_image` | LATENT | — | connect the H3 latent |
-| `explicit_preset` | list | `half_then_full` | the five preset keys below |
-| `transition_mode` | list | `manual_step` | `manual_step`, `manual_sigma`, `delta_custom` |
-| `noise_policy` | list | `direct_coarse` | `direct_coarse`, `coupled_full_grid` |
-| `delta` | FLOAT | 0.01 | min 1e-4, max 0.5 |
-| `power_A` | FLOAT | 150.0 | min 0, max 1e6 |
-| `power_beta` | FLOAT | 2.0 | min 0, max 10 |
-| `seed_offset` | INT | 10000 | min 0, max 2³¹−1 |
+Everything else on the node is standard ComfyUI wiring (noise, guider, sigmas, latent). The output is `(output_latent, denoised_latent)` — connect `output_latent` to your save node.
 
-`manual_step` and `manual_sigma` both resolve to the preset's explicit transition steps; only `delta_custom` uses the `(power_A, power_beta)` thresholds.
+## Troubleshooting
 
-## Presets
+- **Sigma schedule too short:** If you get a ValueError about sigma schedule length, increase your `BasicScheduler` steps. Each preset needs at least `n_stages * 2` sigmas.
+- **H3 model required:** This sampler requires a real MiniMax-H3 model with `sigma_shift_video` / `sigma_shift_audio` attributes. It won't work with SD, Flux, WAN, or other model types.
 
-From `minimax_h3_speed/config.py` — transition step boundaries (1-indexed, of the 20-step BasicScheduler default):
+## Video and Timings
 
-| Preset | Scales | Transition steps |
-|--------|--------|-----------------|
-| `half_then_full` | 0.5 → 1.0 | 5 |
-| `quarter_half_full` | 0.25 → 0.5 → 1.0 | 3, 5 |
-| `quarter_half_3q_full` | 0.25 → 0.5 → 0.75 → 1.0 | 3, 5, 8 |
-| `aggressive` | 0.25 → 0.75 → 1.0 | 3, 8 |
-| `three_quarter_then_full` | 0.75 → 1.0 | 10 |
-
-The sampler raises `ValueError` if the sigma schedule is shorter than the preset requires.
-
-## Tests
-
-```bash
-.venv/bin/python -m pytest minimax_h3_speed/tests/ -q
-```
-
-4 files, **42 passing** (test_dct, test_flow, test_sampler, test_spectral).
-
-## Repo layout
-
-```
-__init__.py               — node registration (sampler + harvest_to_config)
-sampler_node.py           — MiniMaxH3SPEEDSampler
-harvest_to_config_node.py — MiniMaxH3HarvestToConfig
-minimax_h3_speed/         — config, flow, h3_runtime, harvest, spectral
-minimax_h3_speed/tests/   — 4 test files
-workflows/
-  video_minimax_h3_SPEED.json
-```
-
-Note: `workflows/video_minimax_h3_SPEED.json` is a **work-in-progress** starter. It currently holds 6 nodes — SaveVideo, three MarkdownNote reference sheets, a ResolutionSelector, and one node whose type is a raw id (`4c314f31…`) that has not been wired to the sampler. Treat it as scratch, not a runnable pipeline.
+TODO
 
 ## License
 

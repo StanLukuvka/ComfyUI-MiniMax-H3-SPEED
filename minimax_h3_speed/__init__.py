@@ -4,5 +4,5 @@ Package layout:
 - config.py     — SpeedConfig, SCALE_PRESETS
 - flow.py       — transition math (scale_ratio alignment)
 - spectral.py   — DCT primitives
-- h3_runtime.py — run_repeated_stage_calls (core loop)
+- h3_runtime.py — run_speed_pipeline (core loop)
 """
