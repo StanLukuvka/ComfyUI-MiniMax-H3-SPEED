@@ -132,7 +132,7 @@ def _active_av_shifts(guider):
     return video_shift, audio_shift, video_shift / audio_shift
 
 
-def _capture(enable_preview: bool = False, model=None):
+def _capture():
     """Build a step callback that records per-step state and drives the
     ComfyUI UI progress bar (ProgressBar.update_absolute).
 
@@ -144,11 +144,6 @@ def _capture(enable_preview: bool = False, model=None):
 
     `total_steps` is forwarded by the k_diffusion callback wrapper and is the
     only reliable count we have at callback construction time.
-
-    `enable_preview` is opt-in (default False to preserve current behavior).
-    When True and `model` is supplied, wraps the callback with
-    `latent_preview.prepare_callback` so the UI shows a decoded latent image
-    each step (the same preview the official SamplerCustomAdvanced draws).
     """
     state = {}
 
@@ -159,22 +154,11 @@ def _capture(enable_preview: bool = False, model=None):
 
     pbar = _comfy_utils.ProgressBar(1) if _comfy_utils is not None else None
 
-    preview_callback = None
-    if enable_preview and model is not None:
-        try:
-            import comfy.latent_preview as _latent_preview  # type: ignore
-            preview_callback = _latent_preview.prepare_callback(model, 1, state)
-        except Exception:
-            preview_callback = None
-
     def callback(step, x0, x, total_steps):
         state["x0"] = x0
         state["x"] = x
         state["step"] = step
         state["total_steps"] = total_steps
-        if preview_callback is not None:
-            # state doubles as the x0_output_dict for latent_preview.
-            preview_callback(step, x0, x, total_steps)
         if pbar is not None:
             pbar.update_absolute(step + 1, total_steps)
 
