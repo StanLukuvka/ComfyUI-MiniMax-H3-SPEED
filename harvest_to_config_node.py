@@ -72,6 +72,9 @@ class MiniMaxH3HarvestToConfig:
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
             },
+            "optional": {
+                "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
+            },
         }
 
     def harvest(
@@ -80,6 +83,7 @@ class MiniMaxH3HarvestToConfig:
         guider,
         sigmas,
         latent_image,
+        delta=0.01,
     ):
         # We run a single native Euler pass. The harvester uses the native
         # sampler object (not the multi-stage SPEED chain) so the sigma schedule
@@ -231,7 +235,7 @@ class MiniMaxH3HarvestToConfig:
             sigmas_list = [float(sigmas[i]) for i in range(len(sigmas))]
 
         try:
-            rec = recommend_transition_steps(A, beta, sigmas_list, H_full, W_full)
+            rec = recommend_transition_steps(A, beta, sigmas_list, H_full, W_full, delta=float(delta))
         except Exception:
             rec = {}
 
