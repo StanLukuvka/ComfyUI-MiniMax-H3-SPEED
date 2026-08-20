@@ -75,9 +75,10 @@ def _pack_tensor(video, audio):
 def _active_av_shifts(guider):
     """Return (video_shift, audio_shift, audio_scale) from the guider's model.
 
-    ComfyUI exposes the active shifts through ModelSamplingAV. The diffusion
-    model keeps the checkpoint defaults, while transformer options may contain
-    overrides from the MiniMaxH3SigmaShift node.
+    Resolves in priority order:
+        transformer_options['minimax_h3_sigma_shift_video/audio']
+        -> model.sigma_shift_video/audio
+        -> model.diffusion_model.sigma_shift_video/audio
     audio_scale is the constant bridge ratio used by flow.recover_internal_state.
     """
     patcher = getattr(guider, "model_patcher", None)
@@ -85,13 +86,13 @@ def _active_av_shifts(guider):
     if model is None:
         raise ValueError("no model_patcher.model on guider")
 
-    # Candidate priority order MUST match the H3 model's own resolution logic
-    # (model.py:527): explicit transformer_options overrides, then the model's
-    # own sigma_shift_video/audio attributes. ComfyUI's generic
-    # ModelSamplingAV.shift is a DIFFERENT quantity (flow-matching shift, often
-    # 1.0) and must only be used as a LAST RESORT fallback — never allowed to
-    # shadow the H3-specific 12.0/3.0 default, or audio_scale collapses and
-    # every audio transition is rescaled ~12x wrong (garbled sound).
+    # PR3 (audio-fix): Candidate priority order MUST match the H3 model's own
+    # resolution logic (model.py:527): explicit transformer_options overrides,
+    # then the model's own sigma_shift_video/audio attributes (default 12.0/3.0).
+    # Assume if the H3-specific 12.0/3.0 default is not present then an error
+    # occurs — do NOT fall back to ComfyUI's generic ModelSamplingAV.shift
+    # (a different quantity, flow-matching shift often 1.0), or audio_scale
+    # collapses and every audio transition is rescaled ~12x wrong (garbled sound).
     candidates = []
 
     model_options = getattr(guider, "model_options", None)
@@ -105,7 +106,7 @@ def _active_av_shifts(guider):
                 transformer_options.get("minimax_h3_sigma_shift_audio"),
             ))
 
-    # H3 model's own authoritative sigma shifts (default 12.0 / 3.0).
+    # PR3 (audio-fix): H3 model's own authoritative sigma shifts (default 12.0 / 3.0). DO NOT TOUCH.
     candidates.append((
         getattr(model, "sigma_shift_video", None),
         getattr(model, "sigma_shift_audio", None),
@@ -117,24 +118,15 @@ def _active_av_shifts(guider):
             getattr(diffusion_model, "sigma_shift_audio", None),
         ))
 
-    # LAST RESORT: ComfyUI's generic ModelSamplingAV.shift / audio_shift.
-    # These are NOT H3-specific and usually differ from sigma_shift_video/audio;
-    # only fall back here if the H3 attributes above are absent.
-    get_model_object = getattr(patcher, "get_model_object", None)
-    if callable(get_model_object):
-        try:
-            model_sampling = get_model_object("model_sampling")
-        except (AttributeError, KeyError):
-            model_sampling = None
-        if model_sampling is not None:
-            candidates.append((
-                getattr(model_sampling, "shift", None),
-                getattr(model_sampling, "audio_shift", None),
-            ))
-
     shifts = next((pair for pair in candidates if all(isinstance(v, (int, float)) for v in pair)), None)
     if shifts is None:
-        raise ValueError("active MiniMax-H3 sigma shifts are unavailable")
+        raise ValueError(
+            "active MiniMax-H3 sigma shifts are unavailable: the loaded model "
+            "does not expose sigma_shift_video/audio (on `model`, `model.diffusion_model`, "
+            "or `model_options['transformer_options']['minimax_h3_sigma_shift_*']`). "
+            "The MiniMax-H3 SPEED sampler requires a real MiniMax-H3 model; loading a "
+            "non-H3 model (SD/Flux/WAN/etc.) is a configuration error."
+        )
     video_shift, audio_shift = map(float, shifts)
     if video_shift <= 0.0 or audio_shift <= 0.0:
         raise ValueError("active MiniMax-H3 shifts must be positive")
@@ -142,13 +134,34 @@ def _active_av_shifts(guider):
 
 
 def _capture():
+    """Build a step callback that records per-step state and drives the
+    ComfyUI UI progress bar (ProgressBar.update_absolute).
+
+    ComfyUI's web UI bar is NOT drawn by k_diffusion's `disable=` flag — it's
+    driven by `comfy.utils.ProgressBar(total).update_absolute(...)` called
+    inside a node's execution context (latent_preview.prepare_callback does
+    this for the official SamplerCustomAdvanced). Our sampler must do the
+    same, otherwise the UI bar never appears regardless of PROGRESS_BAR_ENABLED.
+
+    `total_steps` is forwarded by the k_diffusion callback wrapper and is the
+    only reliable count we have at callback construction time.
+    """
     state = {}
+
+    try:
+        import comfy.utils as _comfy_utils  # type: ignore
+    except Exception:
+        _comfy_utils = None
+
+    pbar = _comfy_utils.ProgressBar(1) if _comfy_utils is not None else None
 
     def callback(step, x0, x, total_steps):
         state["x0"] = x0
         state["x"] = x
         state["step"] = step
         state["total_steps"] = total_steps
+        if pbar is not None:
+            pbar.update_absolute(step + 1, total_steps)
 
     return state, callback
 
@@ -196,8 +209,8 @@ def run_repeated_stage_calls(
     *,
     sampler,
     nested_type,
-    # KEEP THE PROGRESS BAR ON BY DEFAULT. disable_pbar defaults to False (bar
-    # VISIBLE). The SPEED sampler node explicitly passes
+    # PR3 (progress-bar): KEEP THE PROGRESS BAR ON BY DEFAULT. disable_pbar
+    # defaults to False (bar VISIBLE). The SPEED sampler node explicitly passes
     # `disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED` to honor the user's
     # ComfyUI setting. DO NOT change this default back to True — doing so hides
     # the progress bar for every run and is easy to miss (the node still "works").

@@ -33,6 +33,17 @@ def _install_comfy_stubs():
     samplers.sampler_object = lambda name: ("sampler", name)
     utils.PROGRESS_BAR_ENABLED = True
 
+    class _ProgressBar:
+        """No-op stand-in for comfy.utils.ProgressBar in headless tests."""
+        def __init__(self, total, node_id=None):
+            self.total = total
+            self.node_id = node_id
+        def update_absolute(self, value, total=None, preview=None):
+            pass
+        def update(self, value):
+            pass
+    utils.ProgressBar = _ProgressBar
+
     def pack_latents(latents):
         shapes, tensors = [], []
         for t in latents:
@@ -311,6 +322,30 @@ def test_av_shifts_ignore_generic_model_sampling_shift():
     assert v_shift == 12.0, f"expected H3 video_shift=12.0, got {v_shift}"
     assert a_shift == 3.0, f"expected H3 audio_shift=3.0, got {a_shift}"
     assert abs(a_scale - 4.0) < 1e-6, f"expected audio_scale=4.0, got {a_scale}"
+
+
+def test_av_shifts_raise_when_no_h3_attributes_present():
+    """PR3: A model that lacks H3 sigma_shift_video/audio must RAISE, not
+    silently fall back to ComfyUI's generic ModelSamplingAV.shift.
+
+    The 84e61ba bug silently used a generic flow shift (often 1.0) instead of
+    the H3-specific shifts, garbling audio. The fix removes the silent fallback
+    so a non-H3 model surfaces as a configuration error.
+    """
+    import pytest
+    from minimax_h3_speed.h3_runtime import _active_av_shifts
+
+    class FakeGuider:
+        model_patcher = type("MP", (), {
+            "model": type("M", (), {})(),  # no sigma_shift_video/audio
+            "get_model_object": lambda self, name: (
+                type("MS", (), {"shift": 1.0, "audio_shift": 1.0})()
+                if name == "model_sampling" else None
+            ),
+        })()
+
+    with pytest.raises(ValueError, match="active MiniMax-H3 sigma shifts are unavailable"):
+        _active_av_shifts(FakeGuider())
 
 
 def test_sigma_policy_canonical_vs_no_alignment():
