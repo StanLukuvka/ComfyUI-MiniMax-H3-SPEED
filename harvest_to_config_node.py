@@ -38,8 +38,8 @@ import numpy as np
 import torch
 
 from minimax_h3_speed.harvest import (
-    radial_power_spectrum,
-    fit_power_law,
+    radial_power_spectrum_noise_energy,
+    fit_power_law_decay_rate,
     _fit_health,
     recommend_configs,
 )
@@ -160,7 +160,7 @@ class MiniMaxH3HarvestToConfig:
             if residual_video is not None and hasattr(residual_video, "shape"):
                 # Compute radial spectrum for this step's residual.
                 try:
-                    f, prof = radial_power_spectrum(residual_video)
+                    f, prof = radial_power_spectrum_noise_energy(residual_video)
                     freqs_all.append(f)
                     profiles_all.append(prof)
                 except Exception:
@@ -193,7 +193,7 @@ class MiniMaxH3HarvestToConfig:
         freqs_mean = freqs_all[0]  # same radial index for all captures
 
         try:
-            fit = fit_power_law(freqs_mean, profile_mean)
+            fit = fit_power_law_decay_rate(freqs_mean, profile_mean)
         except ValueError as exc:
             return (
                 '{"error":"fit_failed","message":"Power-law fit failed: '

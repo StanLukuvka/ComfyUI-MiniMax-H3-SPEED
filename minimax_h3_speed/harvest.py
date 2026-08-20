@@ -22,7 +22,7 @@ from .h3_runtime import power_spectrum, activation_time
 from .config import SCALE_PRESETS
 
 
-def radial_power_spectrum(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
+def radial_power_spectrum_noise_energy(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     """Mean 2D-DCT power of a video latent [B, C, T, H, W], binned radially.
 
     Returns (frequencies, mean_power) as numpy arrays.
@@ -45,7 +45,7 @@ def radial_power_spectrum(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     return freqs, profile
 
 
-def fit_power_law(freqs: np.ndarray, profile: np.ndarray,
+def fit_power_law_decay_rate(freqs: np.ndarray, profile: np.ndarray,
                   omega_min: float = 0.5) -> dict:
     """Fit P = A * omega^(-beta) on log-log. Returns {A, beta, r_squared, n_bins}."""
     mask = (freqs >= omega_min) & (profile > 0)
@@ -114,6 +114,6 @@ def recommend_configs(
 
 
 __all__ = [
-    "radial_power_spectrum", "fit_power_law", "_fit_health",
+    "radial_power_spectrum_noise_energy", "fit_power_law_decay_rate", "_fit_health",
     "recommend_configs",
 ]
