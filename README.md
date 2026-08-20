@@ -4,6 +4,8 @@
 
 ⚠️ **Work in progress.** The pack is functional but not yet stable or fully documented.
 
+⚠️ **Text-to-video only.** Image-to-video is not supported yet.
+
 ## What it does
 
 SPEED (Spectral Progressive Diffusion for Efficient image and video generation) is a technique from the [SPEED paper](https://github.com/howardhx/speed). The idea: instead of running all 20+ denoising steps at full 720p resolution, start at a fraction (say 25%) and only step up to full resolution at preset-determined boundaries. Early denoising steps don't need full resolution — low-frequency structure emerges first — so the coarse stages produce the same result at a fraction of the compute and VRAM.
