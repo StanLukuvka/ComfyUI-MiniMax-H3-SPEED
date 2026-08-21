@@ -13,8 +13,6 @@ import math
 import torch
 
 from .config import SpeedConfig
-
-log = logging.getLogger(__name__)
 from .flow import (
     aligned_sigma,
     carry_preserved_audio,
@@ -28,6 +26,92 @@ from .spectral import (
     spectral_expand, spectral_expand_3d, spectral_expand_coupled,
     dct_temporal,
 )
+
+log = logging.getLogger(__name__)
+
+
+def _downscale_cond_latents(payload, stage_h, stage_w):
+    """[Level 3] Downscale cond_video_latents to (stage_h, stage_w) if they exceed current stage dims.
+
+    Called by: `_patch_guider_payload_for_stage` (the per-stage I2V fix).
+    Mutates payload dict in-place so the model sees condition latents matching
+    the coarse latent resolution.
+    """
+    conds = payload.get("cond_video_latents", [])
+    if not conds:
+        return
+    for i, z in enumerate(conds):
+        z_h, z_w = z.shape[-2], z.shape[-1]
+        if z_h > stage_h or z_w > stage_w:
+            conds[i] = torch.nn.functional.interpolate(
+                z, size=(stage_h, stage_w), mode="bilinear", align_corners=False,
+            )
+
+
+def _rebuild_layout_for_stage(payload, stage_h, stage_w, stage_t, audio_t, model):
+    """[Level 3] Rebuild PackedLayout for the current stage's latent dimensions.
+
+    Called by: `_patch_guider_payload_for_stage` (the per-stage I2V fix).
+    Replaces `payload["layout"]` so the model's PackedLayout matches what it
+    would build from the coarse latent instead of the full-res condition.
+    """
+    from comfy.ldm.minimax.model import PackedLayout
+    vs = (1, model.cond_dim, stage_t, stage_h, stage_w)
+    payload["layout"] = PackedLayout(
+        vs[1], vs[2], (vs[3] + 1) // 2 * 2, (vs[4] + 1) // 2 * 2,
+        audio_t,
+        keyframes=payload.get("keyframes"),
+        refs=payload.get("refs"),
+        frame_count=payload.get("frame_count"),
+    )
+
+
+def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t):
+    """Per-stage I2V fix (Level 3 helper).
+
+    The condition latents (I2V reference image / keyframes) are full-resolution
+    [B,C,T,H_full,W_full]. SPEED runs each stage at a *coarser* resolution, so the
+    model builds its PackedLayout from the coarse latent dims. If we leave the
+    condition latents at full resolution, `_cond_video_rows` produces 4x more rows
+    than `layout.img_update` allocated -> broadcast shape mismatch at
+    `model.py: all_video_rows[~img_update] = cond_video_rows`.
+
+    Fix (lives in the extension, not base ComfyUI): walk the guider's conds, find
+    the `minimax_payload` CONDConstant, downscale `cond_video_latents` to the
+    current stage dims, and rebuild the PackedLayout so it matches what the model
+    will build from the coarse latent. At the final stage (scale 1.0) the target
+    equals the source, so both ops are no-ops -> T2V and full-res I2V are
+    unaffected.
+
+    MiniMax has no negative prompts, so only the positive cond is patched.
+    """
+    model = guider.model_patcher.model
+    conds = guider.conds
+
+    cond = conds.get("positive", [])
+    payload_holder = cond.get("minimax_payload")
+    # CONDConstant wraps the raw dict in `.cond`
+    payload = getattr(payload_holder, "cond", None)
+    _downscale_cond_latents(payload, stage_h, stage_w)
+    _rebuild_layout_for_stage(payload, stage_h, stage_w, stage_t, audio_t, model)
+
+
+def stage_resolution(config, stage_idx, full_h, full_w, full_t):
+    """[Level 2] Resolve the (h, w, t) a given stage runs at.
+
+    Called by: `run_speed_pipeline` (the main pipeline orchestrator) at each
+    stage iteration and at the final stage. Returns the coarse spatial/temporal
+    dimensions that SPEED stage `stage_idx` will operate at.
+    """
+    scales = config.scales
+    s = scales[stage_idx]
+    h = max(1, round(full_h * s))
+    w = max(1, round(full_w * s))
+    if config.temporal_scales and stage_idx < len(config.temporal_scales):
+        t = max(1, round(full_t * config.temporal_scales[stage_idx]))
+    else:
+        t = full_t
+    return h, w, t
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +412,11 @@ def run_speed_pipeline(
                  list(stage_start_pub.shape) if hasattr(stage_start_pub, 'shape') else stage_start_pub,
                  len(current_sigmas), boundary)
 
+        # I2V per-stage fix: downscale cond_video_latents + rebuild PackedLayout
+        # so they match the coarse latent this stage actually runs at.
+        sh, sw, st = stage_resolution(config, stage_idx, full_h, full_w, full_t)
+        _patch_guider_payload_for_stage(guider, sh, sw, st, full_audio.shape[-1])
+
         # Run the current stage over current_sigmas[:boundary+1].
         capture, callback = _step_capture()
         stage_sigmas = current_sigmas[: boundary + 1]
@@ -453,6 +542,10 @@ def run_speed_pipeline(
     log.info("[SPEED] final stage: latent=%s sigmas=%d",
              list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
              len(current_sigmas))
+    # Final stage is at scale 1.0 (stage n_stages-1) so target == full res -> no-op
+    # downscale/rebuild, keeping T2V and full-res I2V behaviour unchanged.
+    fh, fw, ft = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
+    _patch_guider_payload_for_stage(guider, fh, fw, ft, full_audio.shape[-1])
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,
