@@ -7,11 +7,14 @@ always sees a buffer matching its latent_shapes. Ported from the Lab's
 
 from __future__ import annotations
 
+import logging
 import math
 
 import torch
 
 from .config import SpeedConfig
+
+log = logging.getLogger(__name__)
 from .flow import (
     aligned_sigma,
     carry_preserved_audio,
@@ -234,7 +237,9 @@ def run_speed_pipeline(
     samples = latent.get("samples")
     full_video, full_audio = unpack_latent(samples)
     video_shift, audio_shift, audio_scale = resolve_sigma_shifts(guider)
-    print(f"[SPEED DEBUG] incoming latent  video={list(full_video.shape)} audio={list(full_audio.shape)} nonzero_video={torch.count_nonzero(full_video).item()} nonzero_audio={torch.count_nonzero(full_audio).item()}")
+    log.info("[SPEED] incoming latent  video=%s audio=%s nonzero_video=%s nonzero_audio=%s",
+             list(full_video.shape), list(full_audio.shape),
+             torch.count_nonzero(full_video).item(), torch.count_nonzero(full_audio).item())
     if torch.count_nonzero(full_video) or torch.count_nonzero(full_audio):
         raise ValueError("T2V oracle currently requires an empty H3 latent")
     if sigmas.ndim != 1 or len(sigmas) < 3:
@@ -273,7 +278,8 @@ def run_speed_pipeline(
         coarse_video,
         torch.zeros_like(full_audio),
     )
-    print(f"[SPEED DEBUG] coarse stage 0  target_shape={list(coarse_video.shape)} (full={list(full_video.shape)} scale={scales[0]})")
+    log.info("[SPEED] coarse stage 0  target_shape=%s (full=%s scale=%s)",
+             list(coarse_video.shape), list(full_video.shape), scales[0])
     cur_latent = latent.copy()
     cur_latent["samples"] = coarse_samples
 
@@ -316,7 +322,11 @@ def run_speed_pipeline(
         if boundary < 1:
             raise ValueError("transition step must be inside the sigma schedule")
 
-        print(f"[SPEED DEBUG] stage {stage_idx} start: stage_start_latent shape={list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent}, stage_start_pub shape={list(stage_start_pub.shape) if hasattr(stage_start_pub, 'shape') else stage_start_pub}, current_sigmas_len={len(current_sigmas)}, boundary={boundary}")
+        log.info("[SPEED] stage %d start: latent=%s pub=%s sigmas=%d boundary=%d",
+                 stage_idx,
+                 list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
+                 list(stage_start_pub.shape) if hasattr(stage_start_pub, 'shape') else stage_start_pub,
+                 len(current_sigmas), boundary)
 
         # Run the current stage over current_sigmas[:boundary+1].
         capture, callback = _step_capture()
@@ -333,7 +343,8 @@ def run_speed_pipeline(
         last_public = public
         last_capture = capture
         pub_vid, pub_aud = unpack_latent(public)
-        print(f"[SPEED DEBUG] stage {stage_idx} output: public video={list(pub_vid.shape)} audio={list(pub_aud.shape)} q={float(current_sigmas[boundary]):.4f}")
+        log.info("[SPEED] stage %d output: video=%s audio=%s q=%.4f",
+                 stage_idx, list(pub_vid.shape), list(pub_aud.shape), float(current_sigmas[boundary]))
 
         public_video, public_audio = unpack_latent(public)
         q = float(current_sigmas[boundary])
@@ -429,7 +440,9 @@ def run_speed_pipeline(
             torch.zeros_like(transitioned_video),
             torch.zeros_like(transitioned_audio),
         )
-        print(f"[SPEED DEBUG] stage {stage_idx} → stage {stage_idx+1}: transitioned_video={list(transitioned_video.shape)}, next_zero={list(next_zero.shape)}, new_q={new_q:.4f}")
+        log.info("[SPEED] stage %d → %d: expanded=%s next_zero=%s new_q=%.4f",
+                 stage_idx, stage_idx + 1,
+                 list(transitioned_video.shape), list(next_zero.shape), new_q)
 
         # Advance to the next stage.
         stage_start_pub = next_noise
@@ -437,7 +450,9 @@ def run_speed_pipeline(
         current_sigmas = next_sigmas
 
     # After the final transition, run the last full-res stage over the spliced tail.
-    print(f"[SPEED DEBUG] final stage: stage_start_latent={list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent}, current_sigmas_len={len(current_sigmas)}")
+    log.info("[SPEED] final stage: latent=%s sigmas=%d",
+             list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
+             len(current_sigmas))
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,
