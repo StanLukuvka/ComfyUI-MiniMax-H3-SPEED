@@ -68,25 +68,28 @@ def _downscale_cond_latents(payload, stage_h, stage_w):
             )
 
 
-def _rebuild_layout_for_stage(payload, stage_h, stage_w, stage_t, audio_t, model):
+def _rebuild_layout_for_stage(payload, stage_h, stage_w, stage_t, audio_t):
     """[Level 3] Rebuild PackedLayout for the current stage's latent dimensions.
 
     Called by: `_patch_guider_payload_for_stage` (the per-stage I2V fix).
     Replaces `payload["layout"]` so the model's PackedLayout matches what it
     would build from the coarse latent instead of the full-res condition.
+
+    Preserves text_len from the existing layout (set once in extra_conds via
+    cross_attn.shape[1]); the model rejects layouts whose signature text_len
+    mismatches the actual context tensor.
     """
     from comfy.ldm.minimax.model import PackedLayout
-    vs = (1, model.cond_dim, stage_t, stage_h, stage_w)
+    text_len = payload["layout"].signature[0]
     payload["layout"] = PackedLayout(
-        vs[1], vs[2], (vs[3] + 1) // 2 * 2, (vs[4] + 1) // 2 * 2,
-        audio_t,
+        text_len, stage_t, (stage_h + 1) // 2 * 2, (stage_w + 1) // 2 * 2, audio_t,
         keyframes=payload.get("keyframes"),
         refs=payload.get("refs"),
         frame_count=payload.get("frame_count"),
     )
 
 
-def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t):
+def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, is_final_stage=False):
     """Per-stage I2V fix (Level 3 helper).
 
     The condition latents (I2V reference image / keyframes) are full-resolution
@@ -106,14 +109,20 @@ def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t):
     MiniMax has no negative prompts, so only the positive cond is patched.
     """
     model = guider.model_patcher.model
-    conds = guider.conds
-
-    cond = conds.get("positive", [])
-    payload_holder = cond.get("minimax_payload")
-    # CONDConstant wraps the raw dict in `.cond`
-    payload = getattr(payload_holder, "cond", None)
-    _downscale_cond_latents(payload, stage_h, stage_w)
-    _rebuild_layout_for_stage(payload, stage_h, stage_w, stage_t, audio_t, model)
+    # Guider_Basic/CFGGuider only creates `self.conds` inside inner_sample,
+    # copying from original_conds. Patch original_conds so each stage's
+    # guider.sample() picks up the downscaled payload.
+    for cond in guider.original_conds.get("positive", []):
+        payload_holder = cond.get("minimax_payload")
+        if payload_holder is None:
+            continue
+        # CONDConstant wraps the raw dict in `.cond`
+        payload = getattr(payload_holder, "cond", None)
+        if not isinstance(payload, dict):
+            continue
+        if not is_final_stage:
+            _downscale_cond_latents(payload, stage_h, stage_w)
+        _rebuild_layout_for_stage(payload, stage_h, stage_w, stage_t, audio_t)
 
 
 def stage_resolution(config, stage_idx, full_h, full_w, full_t):
@@ -565,7 +574,7 @@ def run_speed_pipeline(
     # Final stage is at scale 1.0 (stage n_stages-1) so target == full res -> no-op
     # downscale/rebuild, keeping T2V and full-res I2V behaviour unchanged.
     fh, fw, ft = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
-    _patch_guider_payload_for_stage(guider, fh, fw, ft, full_audio.shape[-1])
+    _patch_guider_payload_for_stage(guider, fh, fw, ft, full_audio.shape[-1], is_final_stage=True)
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,
