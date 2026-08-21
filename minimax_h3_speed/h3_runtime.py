@@ -1,8 +1,28 @@
 """MiniMax-H3 SPEED stage runner — self-contained correctness oracle.
 
-Wraps each SPEED stage in a separate `guider.sample()` call so the H3 model
-always sees a buffer matching its latent_shapes. Ported from the Lab's
-`h3_runtime.py`.
+Function-level call hierarchy (depth-first, Level N = depth):
+    Level 0  `MiniMaxH3SPEEDSampler.sample`  (sampler_node.py)
+      │
+      └─ Level 1  `run_speed_pipeline`        ← this file's public entry point
+           │  for each stage:
+           │    ├─ Level 2  `stage_resolution`          (resolve coarse dims)
+           │    └─ Level 3  `_patch_guider_payload_for_stage`  (I2V fix)
+           │         ├─ Level 3  `_downscale_cond_latents`
+           │         └─ Level 3  `_rebuild_layout_for_stage`
+           │    ├─ Level 2  `_step_capture`              (progress bar callback)
+           │    └─ `guider.sample()`                    (runs the stage)
+           │
+           └─ post-run: VAE decode / denoised extraction
+           │
+         └─ helpers (same level, shared by 1–3):
+              `unpack_latent`, `pack_latent`, `resolve_sigma_shifts`,
+              `resolve_transition_steps`, `_find_first_step_below`,
+              `power_at_frequency`, `activation_threshold`
+
+Why this structure: SPEED runs each coarse stage as its own guider.sample()
+call so the H3 model always sees a buffer matching its latent_shapes. The I2V
+fix lives at Level 3 because it touches the guider's private conds to keep
+base ComfyUI untouched.
 """
 
 from __future__ import annotations
@@ -137,7 +157,7 @@ def activation_threshold(P_omega: float, delta: float) -> float:
 
 
 def unpack_latent(samples):
-    """Unpack a NestedTensor into (video, audio) with H3 geometry validation."""
+    """[Level 2] Unpack a NestedTensor into (video, audio) with H3 geometry validation."""
     if not getattr(samples, "is_nested", False):
         raise ValueError("MiniMax-H3 SPEED requires a NestedTensor video/audio latent")
     streams = list(samples.unbind())
@@ -154,13 +174,13 @@ def unpack_latent(samples):
 
 
 def pack_latent(video, audio):
-    """Pack (video, audio) into a NestedTensor."""
+    """[Level 2] Pack (video, audio) into a NestedTensor."""
     from comfy import nested_tensor as default_comfy_nested_tensor
     return default_comfy_nested_tensor.NestedTensor([video, audio])
 
 
 def resolve_sigma_shifts(guider):
-    """Return (video_shift, audio_shift, audio_scale) from the guider's model.
+    """[Level 2] Return (video_shift, audio_shift, audio_scale) from the guider's model.
 
     Resolves in priority order:
         transformer_options['minimax_h3_sigma_shift_video/audio']
@@ -221,7 +241,7 @@ def resolve_sigma_shifts(guider):
 
 
 def _step_capture():
-    """Build a step callback that records per-step state and drives the
+    """[Level 2] Build a step callback that records per-step state and drives the
     ComfyUI UI progress bar (ProgressBar.update_absolute).
 
     ComfyUI's web UI bar is NOT drawn by k_diffusion's `disable=` flag — it's
@@ -254,7 +274,7 @@ def _step_capture():
 
 
 def _find_first_step_below(sigmas, threshold: float) -> int:
-    """First index whose sigma <= threshold; len-1 if none."""
+    """[Level 3] First index whose sigma <= threshold; len-1 if none."""
     vals = [float(s) for s in sigmas]
     n = len(vals) - 1
     for i in range(n):
@@ -266,7 +286,7 @@ def _find_first_step_below(sigmas, threshold: float) -> int:
 def resolve_transition_steps(
     config: SpeedConfig, sigmas, H_full: int | None = None, W_full: int | None = None,
 ) -> tuple[int, ...]:
-    """Resolve per-stage transition steps.
+    """[Level 2] Resolve per-stage transition steps.
 
     Uses delta-optimal power-spectrum thresholds when the config requests it;
     otherwise falls back to the explicit transition_steps in the config.
@@ -304,7 +324,7 @@ def run_speed_pipeline(
     disable_pbar: bool = False,
     output_device=None,
 ):
-    """Run an N-stage progressive-resolution Euler chain (multi-stage SPEED).
+    """[Level 1] Run an N-stage progressive-resolution Euler chain (multi-stage SPEED).
 
     This is intentionally the slow correctness oracle: each public guider call
     performs its own prepare/pre-run/cleanup lifecycle and naturally rebuilds
