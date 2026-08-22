@@ -28,9 +28,58 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
+# Pristine condition-latent snapshots and true-original method handles.
+# Attribute storage (dies with the object) is preferred; the id()-keyed dicts
+# are a fallback for slotted/frozen holders that refuse setattr.
+_PRISTINE_ATTR = "_speed_pristine_cond_video_latents"
+_TRUE_ORIGINAL_ATTR = "_speed_true_cond_video_rows"
+_PRISTINE_STORE: dict[int, list] = {}
+_TRUE_ORIGINALS: dict[int, object] = {}
 
-def _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=False):
-    """[Level 3] Downscale cond_video_latents to (stage_h, stage_w) if they exceed current stage dims.
+
+def _get_pristine(holder):
+    try:
+        return getattr(holder, _PRISTINE_ATTR, None)
+    except Exception:
+        return _PRISTINE_STORE.get(id(holder))
+
+
+def _set_pristine(holder, value):
+    try:
+        setattr(holder, _PRISTINE_ATTR, value)
+    except Exception:
+        _PRISTINE_STORE[id(holder)] = value
+
+
+def _interp_cond(z, h, w):
+    """Per-frame bilinear spatial resize of cond latents ([B,C,H,W] or [B,C,T,H,W]).
+
+    torch.nn.functional.interpolate is 4D-native (size=(h,w) on a 5D tensor
+    raises), so fold the temporal axis into the batch for the resize and fold
+    it back out after — frames are interpolated independently.
+    """
+    if z.ndim == 4:
+        b_, c_, hh, ww = z.shape
+        if hh == h and ww == w:
+            return z
+        resized = torch.nn.functional.interpolate(
+            z, size=(h, w), mode="bilinear", align_corners=False,
+        )
+        return resized.to(dtype=z.dtype)
+    if z.ndim != 5:
+        raise ValueError(f"unsupported cond latent ndim {z.ndim} (want 4 or 5)")
+    b_, c_, t_, hh, ww = z.shape
+    if hh == h and ww == w:
+        return z
+    flattened = z.transpose(1, 2).reshape(b_ * t_, c_, hh, ww)
+    resized = torch.nn.functional.interpolate(
+        flattened, size=(h, w), mode="bilinear", align_corners=False,
+    )
+    return resized.reshape(b_, t_, c_, h, w).transpose(1, 2).to(dtype=z.dtype)
+
+
+def _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=False, pristine=None):
+    """[Level 3] Make cond_video_latents match (stage_h, stage_w); restore pristine on final.
 
     Called by: `_patch_guider_payload_for_stage` (the per-stage I2V fix).
     Mutates payload dict in-place so the model sees condition latents matching
@@ -40,26 +89,34 @@ def _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=False):
         payload: The minimax_payload dict containing cond_video_latents
         stage_h: Target height for this stage
         stage_w: Target width for this stage
-        is_final_stage: If True, skip downscale (latents already at full resolution)
+        is_final_stage: If True, restore the pristine snapshot (full resolution)
+        pristine: Deep snapshot of the original full-res cond tensors
     """
-    conds = payload.get("cond_video_latents", [])
+    conds = payload.get("cond_video_latents")
     if not conds:
-        if is_final_stage:
-            log.info("[SPEED] Final stage - cond_video_latents already at correct resolution, no need to check")
         return
     if is_final_stage:
-        log.info("[SPEED] Final stage - cond_video_latents already at correct resolution, skipping downscale")
+        if pristine is not None:
+            for i, p in enumerate(pristine):
+                conds[i] = p.clone()
+            log.info("[SPEED] Final stage — restored pristine cond_video_latents (%d tensors)", len(pristine))
+        else:
+            log.info("[SPEED] Final stage — no pristine snapshot; leaving cond_video_latents untouched")
         return
     for i, z in enumerate(conds):
-        z_h, z_w = z.shape[-2], z.shape[-1]
-        if z_h > stage_h or z_w > stage_w:
-            conds[i] = torch.nn.functional.interpolate(
-                z, size=(stage_h, stage_w), mode="bilinear", align_corners=False,
-            )
+        src = pristine[i] if pristine is not None else z
+        src_h, src_w = src.shape[-2], src.shape[-1]
+        if src_h != stage_h or src_w != stage_w:
+            conds[i] = _interp_cond(src, stage_h, stage_w)
 
 
 def _wrap_model_cond_video_rows(model, stage_h, stage_w):
-    """[Level 3] Monkey-patch model._cond_video_rows to downscale conditions to stage resolution.
+    """[Level 3] Rebinds model._cond_video_rows so cond rows match (stage_h, stage_w).
+
+    IMPORTANT: every call rebinds over the TRUE original method (cached once),
+    never over a previously installed patch — chained patches nest, and the
+    innermost (smallest, earliest stage) dims would win for every later stage.
+    Models without `_cond_video_rows` (T2V) are skipped.
     
     This guarantees the I2V condition latents match the current stage's coarse
     resolution, fixing the shape mismatch in all_video_rows[~img_update] = cond_video_rows.
@@ -74,36 +131,38 @@ def _wrap_model_cond_video_rows(model, stage_h, stage_w):
         log.info("[SPEED-MONKEY] model %s has no _cond_video_rows — skipping wrap",
                  type(model).__name__)
         return
-    original_method = model._cond_video_rows
-    wrap_id = id(original_method)
-    
-    def _patched_cond_video_rows(payload, device, target_h=None, target_w=None):
-        log.warning("[SPEED-MONKEY] _cond_video_rows CALLED wrap_id=%s target_h=%s target_w=%s payload_keys=%s",
-                    wrap_id, target_h, target_w, list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__)
-        # Downscale condition latents to match stage resolution
-        payload = payload or {}
-        conds = payload.get("cond_video_latents", [])
-        if conds:
-            log.warning("[SPEED-MONKEY] Found %d cond latents before downscale", len(conds))
-            for i, z in enumerate(conds):
-                z_h, z_w = z.shape[-2], z.shape[-1]
-                log.warning("[SPEED-MONKEY] cond[%d] shape=%s stage=(%d,%d) needs_downscale=%s",
-                            i, list(z.shape), stage_h, stage_w, (z_h != stage_h or z_w != stage_w))
-                if z_h != stage_h or z_w != stage_w:
-                    conds[i] = torch.nn.functional.interpolate(
-                        z.float(), size=(stage_h, stage_w),
-                        mode="bilinear", align_corners=False,
-                    )
-                    log.warning("[SPEED-MONKEY] cond[%d] downscaled to %s", i, list(conds[i].shape))
-        else:
-            log.warning("[SPEED-MONKEY] No cond_video_latents in payload")
-        result = original_method(payload, device)
-        log.warning("[SPEED-MONKEY] _cond_video_rows returned shape=%s", list(result.shape) if hasattr(result, 'shape') else type(result).__name__)
-        return result
-    
+    try:
+        true_original = getattr(model, _TRUE_ORIGINAL_ATTR, None)
+    except Exception:
+        true_original = _TRUE_ORIGINALS.get(id(model))
+    if true_original is None:
+        true_original = model._cond_video_rows
+        try:
+            setattr(model, _TRUE_ORIGINAL_ATTR, true_original)
+        except Exception:
+            _TRUE_ORIGINALS[id(model)] = true_original
+
+    def _patched_cond_video_rows(payload, device, *args, **kwargs):
+        if isinstance(payload, dict):
+            _downscale_cond_latents(payload, stage_h, stage_w)
+        return true_original(payload, device, *args, **kwargs)
+
     model._cond_video_rows = _patched_cond_video_rows
-    log.warning("[SPEED-MONKEY] Monkey-patched _cond_video_rows model=%s stage=(%d,%d) wrap_id=%s",
-                type(model).__name__, stage_h, stage_w, wrap_id)
+    log.warning("[SPEED-MONKEY] Monkey-patched _cond_video_rows model=%s stage=(%d,%d)",
+                type(model).__name__, stage_h, stage_w)
+
+
+def _unwrap_model_cond_video_rows(model):
+    """[Level 3] Restore the true original _cond_video_rows (final full-res stage)."""
+    if not hasattr(model, "_cond_video_rows"):
+        return
+    try:
+        true_original = getattr(model, _TRUE_ORIGINAL_ATTR, None)
+    except Exception:
+        true_original = _TRUE_ORIGINALS.get(id(model))
+    if true_original is not None and callable(true_original):
+        model._cond_video_rows = true_original
+        log.warning("[SPEED-MONKEY] Unwrapped _cond_video_rows (final full-res stage)")
 
 
 def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, is_final_stage=False):
@@ -129,9 +188,8 @@ def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, 
         stage_w: Target width for this stage
         stage_t: Target temporal dimension
         audio_t: Audio temporal dimension
-        is_final_stage: If True, skip downscale (latents already at full resolution)
+        is_final_stage: If True, restore pristine conds instead of downscaling
     """
-    model = guider.model_patcher.model
     # Guider_Basic/CFGGuider only creates `self.conds` inside inner_sample,
     # copying from original_conds. Patch original_conds so each stage's
     # guider.sample() picks up the downscaled payload.
@@ -168,7 +226,12 @@ def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, 
         if not isinstance(payload, dict):
             continue
         
-        _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=is_final_stage)
+        pristine = _get_pristine(payload_holder)
+        if pristine is None:
+            pristine = [z.clone() for z in payload.get("cond_video_latents", [])]
+            if pristine:
+                _set_pristine(payload_holder, pristine)
+        _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=is_final_stage, pristine=pristine)
 
 
 def stage_resolution(config, stage_idx, full_h, full_w, full_t):
@@ -439,15 +502,6 @@ def run_speed_pipeline(
              list(coarse_video.shape), list(full_video.shape), scales[0])
     cur_latent = latent.copy()
     cur_latent["samples"] = coarse_samples
-    
-    # I2V fix: wrap model's _cond_video_rows to downscale to coarse stage dims
-    log.warning("[SPEED-MONKEY] STAGE 0 SETUP: Wrapping _cond_video_rows")
-    if hasattr(guider, 'model_patcher') and guider.model_patcher is not None:
-        model = guider.model_patcher.model
-        log.warning("[SPEED-MONKEY] Found model: %s - wrapping _cond_video_rows", type(model).__name__)
-        _wrap_model_cond_video_rows(model, s0_h, s0_w)
-    else:
-        log.warning("[SPEED-MONKEY] NO model_patcher found - cannot wrap coarse stage 0")
 
     full_noise = None
     if config.noise_policy == "coupled_full_grid":
@@ -639,6 +693,8 @@ def run_speed_pipeline(
     # downscale/rebuild, keeping T2V and full-res I2V behaviour unchanged.
     fh, fw, ft = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
     _patch_guider_payload_for_stage(guider, fh, fw, ft, full_audio.shape[-1], is_final_stage=True)
+    if hasattr(guider, "model_patcher") and guider.model_patcher is not None:
+        _unwrap_model_cond_video_rows(guider.model_patcher.model)
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,
