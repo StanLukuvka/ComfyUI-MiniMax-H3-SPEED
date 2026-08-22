@@ -58,6 +58,49 @@ def _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=False):
             )
 
 
+def _wrap_model_cond_video_rows(model, stage_h, stage_w):
+    """[Level 3] Monkey-patch model._cond_video_rows to downscale conditions to stage resolution.
+    
+    This guarantees the I2V condition latents match the current stage's coarse
+    resolution, fixing the shape mismatch in all_video_rows[~img_update] = cond_video_rows.
+    
+    Args:
+        model: The H3 model whose _cond_video_rows method we wrap.
+        stage_h: Target height for this stage.
+        stage_w: Target width for this stage.
+    """
+    original_method = model._cond_video_rows
+    wrap_id = id(original_method)
+    
+    def _patched_cond_video_rows(payload, device, target_h=None, target_w=None):
+        log.warning("[SPEED-MONKEY] _cond_video_rows CALLED wrap_id=%s target_h=%s target_w=%s payload_keys=%s",
+                    wrap_id, target_h, target_w, list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__)
+        # Downscale condition latents to match stage resolution
+        payload = payload or {}
+        conds = payload.get("cond_video_latents", [])
+        if conds:
+            log.warning("[SPEED-MONKEY] Found %d cond latents before downscale", len(conds))
+            for i, z in enumerate(conds):
+                z_h, z_w = z.shape[-2], z.shape[-1]
+                log.warning("[SPEED-MONKEY] cond[%d] shape=%s stage=(%d,%d) needs_downscale=%s",
+                            i, list(z.shape), stage_h, stage_w, (z_h != stage_h or z_w != stage_w))
+                if z_h != stage_h or z_w != stage_w:
+                    conds[i] = torch.nn.functional.interpolate(
+                        z.float(), size=(stage_h, stage_w),
+                        mode="bilinear", align_corners=False,
+                    )
+                    log.warning("[SPEED-MONKEY] cond[%d] downscaled to %s", i, list(conds[i].shape))
+        else:
+            log.warning("[SPEED-MONKEY] No cond_video_latents in payload")
+        result = original_method(payload, device)
+        log.warning("[SPEED-MONKEY] _cond_video_rows returned shape=%s", list(result.shape) if hasattr(result, 'shape') else type(result).__name__)
+        return result
+    
+    model._cond_video_rows = _patched_cond_video_rows
+    log.warning("[SPEED-MONKEY] Monkey-patched _cond_video_rows model=%s stage=(%d,%d) wrap_id=%s",
+                type(model).__name__, stage_h, stage_w, wrap_id)
+
+
 def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, is_final_stage=False):
     """[Level 3] Per-stage I2V fix.
 
