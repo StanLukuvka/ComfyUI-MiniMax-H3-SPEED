@@ -434,6 +434,15 @@ def run_speed_pipeline(
              list(coarse_video.shape), list(full_video.shape), scales[0])
     cur_latent = latent.copy()
     cur_latent["samples"] = coarse_samples
+    
+    # I2V fix: wrap model's _cond_video_rows to downscale to coarse stage dims
+    log.warning("[SPEED-MONKEY] STAGE 0 SETUP: Wrapping _cond_video_rows")
+    if hasattr(guider, 'model_patcher') and guider.model_patcher is not None:
+        model = guider.model_patcher.model
+        log.warning("[SPEED-MONKEY] Found model: %s - wrapping _cond_video_rows", type(model).__name__)
+        _wrap_model_cond_video_rows(model, s0_h, s0_w)
+    else:
+        log.warning("[SPEED-MONKEY] NO model_patcher found - cannot wrap coarse stage 0")
 
     full_noise = None
     if config.noise_policy == "coupled_full_grid":
@@ -484,6 +493,15 @@ def run_speed_pipeline(
         # latent this stage actually runs at.
         sh, sw, st = stage_resolution(config, stage_idx, full_h, full_w, full_t)
         _patch_guider_payload_for_stage(guider, sh, sw, st, full_audio.shape[-1], is_final_stage=False)
+        
+        # Also wrap model's _cond_video_rows to ensure conditions match stage resolution
+        log.warning("[SPEED-MONKEY] INTERIOR STAGE %d: wrapping _cond_video_rows", stage_idx)
+        if hasattr(guider, 'model_patcher') and guider.model_patcher is not None:
+            model = guider.model_patcher.model
+            log.warning("[SPEED-MONKEY] Found model: %s - wrapping _cond_video_rows", type(model).__name__)
+            _wrap_model_cond_video_rows(model, sh, sw)
+        else:
+            log.warning("[SPEED-MONKEY] NO model_patcher found - cannot wrap interior stage %d", stage_idx)
 
         # Run the current stage over current_sigmas[:boundary+1].
         capture, callback = _step_capture()
