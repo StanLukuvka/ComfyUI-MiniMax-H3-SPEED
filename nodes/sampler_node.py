@@ -11,8 +11,8 @@ Audio stays unchanged and done at full resolution.
 from __future__ import annotations
 
 import comfy.samplers
-from minimax_h3_speed.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS, SpeedConfig
-from minimax_h3_speed.h3_runtime import run_speed_pipeline, unpack_latent
+from speed_scripts.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS, SpeedConfig
+from speed_scripts.h3_runtime import run_speed_pipeline, unpack_latent
 
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.

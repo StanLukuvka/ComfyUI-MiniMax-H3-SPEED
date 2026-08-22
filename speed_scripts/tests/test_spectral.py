@@ -45,7 +45,7 @@ def _install_comfy_stubs():
 _install_comfy_stubs()
 
 import pytest
-from minimax_h3_speed.spectral import (
+from speed_scripts.spectral import (
     dct2,
     idct2,
     spectral_expand,

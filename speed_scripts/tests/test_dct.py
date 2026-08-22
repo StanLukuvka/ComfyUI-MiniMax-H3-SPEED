@@ -6,8 +6,9 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 import torch
-from minimax_h3_speed.spectral import lowpass_dct, spectral_expand
+from speed_scripts.spectral import lowpass_dct, spectral_expand
 
 
 def _install_comfy_stubs():
@@ -141,11 +142,13 @@ def test_dct_expand_with_seed_offset_stability():
 
 def test_spectral_dct2():
     """Compare Lab vs MVP dct2 implementation."""
-    from minimax_h3_speed.spectral import dct2 as mvp_func
+    from speed_scripts.spectral import dct2 as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import dct2 as lab_func
-
+    try:
+        from speed_lab.spectral import dct2 as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     mvp_out = mvp_func(video)
     lab_out = lab_func(video)
@@ -154,11 +157,13 @@ def test_spectral_dct2():
 
 def test_spectral_idct2():
     """Compare Lab vs MVP idct2 implementation."""
-    from minimax_h3_speed.spectral import idct2 as mvp_func
+    from speed_scripts.spectral import idct2 as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import idct2 as lab_func
-
+    try:
+        from speed_lab.spectral import idct2 as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     coeffs = torch.randn(1, 1, 32, 32)
     mvp_out = mvp_func(coeffs)
     lab_out = lab_func(coeffs)
@@ -167,11 +172,13 @@ def test_spectral_idct2():
 
 def test_spectral_lowpass_dct():
     """Compare Lab vs MVP lowpass_dct implementation."""
-    from minimax_h3_speed.spectral import lowpass_dct as mvp_func
+    from speed_scripts.spectral import lowpass_dct as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import lowpass_dct as lab_func
-
+    try:
+        from speed_lab.spectral import lowpass_dct as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     target_hw = (16, 16)
     mvp_out = mvp_func(video, target_hw)
@@ -181,11 +188,13 @@ def test_spectral_lowpass_dct():
 
 def test_spectral_expand():
     """Compare Lab vs MVP spectral_expand implementation."""
-    from minimax_h3_speed.spectral import spectral_expand as mvp_func
+    from speed_scripts.spectral import spectral_expand as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import spectral_expand as lab_func
-
+    try:
+        from speed_lab.spectral import spectral_expand as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     target_hw = (64, 64)
     sigma = 0.5
@@ -198,11 +207,13 @@ def test_spectral_expand():
 
 def test_spectral_expand_coupled():
     """Compare Lab vs MVP spectral_expand_coupled implementation."""
-    from minimax_h3_speed.spectral import dct2, spectral_expand_coupled as mvp_func
+    from speed_scripts.spectral import dct2, spectral_expand_coupled as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import spectral_expand_coupled as lab_func
-
+    try:
+        from speed_lab.spectral import spectral_expand_coupled as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     full_resolution_noise = torch.randn(1, 1, 64, 64)
     sigma = 0.5

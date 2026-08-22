@@ -69,6 +69,11 @@ def _wrap_model_cond_video_rows(model, stage_h, stage_w):
         stage_h: Target height for this stage.
         stage_w: Target width for this stage.
     """
+    if not hasattr(model, "_cond_video_rows"):
+        # T2V models have no I2V condition rows; the wrap would crash.
+        log.info("[SPEED-MONKEY] model %s has no _cond_video_rows — skipping wrap",
+                 type(model).__name__)
+        return
     original_method = model._cond_video_rows
     wrap_id = id(original_method)
     
@@ -617,7 +622,9 @@ def run_speed_pipeline(
         )
         log.info("[SPEED] stage %d → %d: expanded=%s next_zero=%s new_q=%.4f",
                  stage_idx, stage_idx + 1,
-                 list(transitioned_video.shape), list(next_zero.shape), new_q)
+                 list(transitioned_video.shape) if hasattr(transitioned_video, "shape") else transitioned_video,
+                 list(next_zero.shape) if hasattr(next_zero, "shape") else next_zero,
+                 new_q)
 
         # Advance to the next stage.
         stage_start_pub = next_noise

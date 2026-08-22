@@ -45,7 +45,7 @@ def _install_comfy_stubs():
 _install_comfy_stubs()
 
 import pytest
-from minimax_h3_speed.flow import aligned_sigma, reentry_noise
+from speed_scripts.flow import aligned_sigma, reentry_noise
 
 
 def test_kappa_formula():

@@ -68,7 +68,7 @@ _install_comfy_stubs()
 def test_harvest_node_inputs_match_native_sampler():
     """The harvest node must take the SAME inputs as a native sampler,
     not a dead harvest_json STRING input."""
-    mod = importlib.import_module("harvest_to_config_node")
+    mod = importlib.import_module("sampler_sigma_harvest_node")
     cls = mod.MiniMaxH3HarvestToConfig
     required = cls.INPUT_TYPES()["required"]
     for key in ("noise", "guider", "sigmas", "latent_image"):
@@ -80,7 +80,7 @@ def test_harvest_node_inputs_match_native_sampler():
 def test_harvest_node_runs_native_euler_and_emits_json():
     """Run the harvester with a synthetic guider and verify it captures
     residuals and emits a valid harvest_json with fitted A/beta."""
-    mod = importlib.import_module("harvest_to_config_node")
+    mod = importlib.import_module("sampler_sigma_harvest_node")
     cls = mod.MiniMaxH3HarvestToConfig
 
     class FakeGuider:
@@ -141,7 +141,7 @@ def test_harvest_node_runs_native_euler_and_emits_json():
 
 def test_harvest_node_no_captures_returns_error_json():
     """If the sampler callback never fires, emit explicit error JSON, not fake fit."""
-    mod = importlib.import_module("harvest_to_config_node")
+    mod = importlib.import_module("sampler_sigma_harvest_node")
     cls = mod.MiniMaxH3HarvestToConfig
 
     class FakeGuiderNoCallback:

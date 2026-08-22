@@ -14,4 +14,4 @@ requires-python = ">=3.10"
 dependencies = ["torch", "numpy", "networkx"]
 
 [tool.setuptools.packages.find]
-include = ["minimax_h3_speed*"]
+include = ["speed_scripts*", "nodes*"]
