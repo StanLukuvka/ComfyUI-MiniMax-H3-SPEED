@@ -87,14 +87,39 @@ def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, 
     # Guider_Basic/CFGGuider only creates `self.conds` inside inner_sample,
     # copying from original_conds. Patch original_conds so each stage's
     # guider.sample() picks up the downscaled payload.
-    for cond in guider.original_conds.get("positive", []):
-        payload_holder = cond.get("minimax_payload")
+    
+    # Handle both dict and non-dict formats for original_conds
+    original_conds = getattr(guider, 'original_conds', {})
+    if not isinstance(original_conds, dict):
+        original_conds = {}
+    
+    positive_conds = original_conds.get("positive", [])
+    if not isinstance(positive_conds, list):
+        positive_conds = []
+    
+    for cond in positive_conds:
+        payload_holder = None
+        
+        # Handle both dict and object (CONDConstant) formats for cond
+        if isinstance(cond, dict):
+            payload_holder = cond.get("minimax_payload")
+        else:
+            # Try attribute access for CONDConstant objects
+            payload_holder = getattr(cond, "minimax_payload", None)
+        
         if payload_holder is None:
             continue
+        
         # CONDConstant wraps the raw dict in `.cond`
         payload = getattr(payload_holder, "cond", None)
+        
+        # If we couldn't get it via .cond, try using payload_holder directly
+        if payload is None and isinstance(payload_holder, dict):
+            payload = payload_holder
+        
         if not isinstance(payload, dict):
             continue
+        
         _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=is_final_stage)
 
 
