@@ -29,15 +29,26 @@ from .spectral import (
 log = logging.getLogger(__name__)
 
 
-def _downscale_cond_latents(payload, stage_h, stage_w):
+def _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=False):
     """[Level 3] Downscale cond_video_latents to (stage_h, stage_w) if they exceed current stage dims.
 
     Called by: `_patch_guider_payload_for_stage` (the per-stage I2V fix).
     Mutates payload dict in-place so the model sees condition latents matching
     the coarse latent resolution.
+    
+    Args:
+        payload: The minimax_payload dict containing cond_video_latents
+        stage_h: Target height for this stage
+        stage_w: Target width for this stage
+        is_final_stage: If True, skip downscale (latents already at full resolution)
     """
     conds = payload.get("cond_video_latents", [])
     if not conds:
+        if is_final_stage:
+            log.info("[SPEED] Final stage - cond_video_latents already at correct resolution, no need to check")
+        return
+    if is_final_stage:
+        log.info("[SPEED] Final stage - cond_video_latents already at correct resolution, skipping downscale")
         return
     for i, z in enumerate(conds):
         z_h, z_w = z.shape[-2], z.shape[-1]
@@ -47,7 +58,7 @@ def _downscale_cond_latents(payload, stage_h, stage_w):
             )
 
 
-def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t):
+def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, is_final_stage=False):
     """[Level 3] Per-stage I2V fix.
 
     The condition latents (I2V reference image / keyframes) are full-resolution
@@ -63,6 +74,14 @@ def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t):
     when it detects a signature mismatch, producing the correct img_update rows.
 
     MiniMax has no negative prompts, so only the positive cond is patched.
+
+    Args:
+        guider: The guider object containing original_conds
+        stage_h: Target height for this stage
+        stage_w: Target width for this stage
+        stage_t: Target temporal dimension
+        audio_t: Audio temporal dimension
+        is_final_stage: If True, skip downscale (latents already at full resolution)
     """
     model = guider.model_patcher.model
     # Guider_Basic/CFGGuider only creates `self.conds` inside inner_sample,
@@ -76,7 +95,7 @@ def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t):
         payload = getattr(payload_holder, "cond", None)
         if not isinstance(payload, dict):
             continue
-        _downscale_cond_latents(payload, stage_h, stage_w)
+        _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=is_final_stage)
 
 
 def stage_resolution(config, stage_idx, full_h, full_w, full_t):
@@ -396,7 +415,7 @@ def run_speed_pipeline(
         # I2V per-stage fix: downscale cond_video_latents so they match the coarse
         # latent this stage actually runs at.
         sh, sw, st = stage_resolution(config, stage_idx, full_h, full_w, full_t)
-        _patch_guider_payload_for_stage(guider, sh, sw, st, full_audio.shape[-1])
+        _patch_guider_payload_for_stage(guider, sh, sw, st, full_audio.shape[-1], is_final_stage=False)
 
         # Run the current stage over current_sigmas[:boundary+1].
         capture, callback = _step_capture()
@@ -526,7 +545,7 @@ def run_speed_pipeline(
     # Final stage is at scale 1.0 (stage n_stages-1) so target == full res -> no-op
     # downscale/rebuild, keeping T2V and full-res I2V behaviour unchanged.
     fh, fw, ft = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
-    _patch_guider_payload_for_stage(guider, fh, fw, ft, full_audio.shape[-1])
+    _patch_guider_payload_for_stage(guider, fh, fw, ft, full_audio.shape[-1], is_final_stage=True)
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,
