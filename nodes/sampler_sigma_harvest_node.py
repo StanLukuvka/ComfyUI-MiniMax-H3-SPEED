@@ -316,7 +316,20 @@ class MiniMaxH3HarvestToConfig:
             }
         )
 
-        return (output_json, result if result is not None else latent_image, None)
+        # guider.sample returns a NestedTensor/tensor, but ComfyUI LATENT is a dict
+        # {"samples": ...}. Wrap it so downstream VAE decode works (otherwise
+        # VAEDecodeAudio does NestedTensor["samples"] -> IndexError).
+        if result is not None:
+            if isinstance(latent_image, dict):
+                output_latent = latent_image.copy()
+                output_latent["samples"] = result
+            elif isinstance(result, dict) and "samples" in result:
+                output_latent = result
+            else:
+                output_latent = {"samples": result}
+        else:
+            output_latent = latent_image
+        return (output_json, output_latent, None)
 
     def compute_video_residual(self, x_tensor, denoised_tensor):
         import torch

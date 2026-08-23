@@ -42,18 +42,25 @@ def test_harvest_node_runs_native_euler_and_emits_json():
 
         def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
             # Unpack the nested latent to a tensor (as ComfyUI's guider does).
+            # Signature must match real ComfyUI: callback(step, denoised, x, total_steps)
             if hasattr(latent_image, "is_nested") and latent_image.is_nested:
                 vid = [s for s in latent_image.unbind() if s.ndim == 5][0]
             else:
                 vid = latent_image
             x = vid.float()
-            for i in range(len(sigmas) - 1):
+            total = len(sigmas) - 1
+            for i in range(total):
                 sigma = sigmas[i]
                 denoised = x * 0.5  # simple model: half the signal is denoised
-                d = (x - denoised) / sigma
+                d = (x - denoised) / float(sigma) if float(sigma) != 0 else (x - denoised)
                 x = x + d * (sigmas[i + 1] - sigma)
                 if callback is not None:
-                    callback({"x": x, "i": i, "sigma": float(sigma), "denoised": denoised})
+                    # Real ComfyUI positional signature: (step, denoised, x, total_steps)
+                    try:
+                        callback(i, denoised, x, total)
+                    except TypeError:
+                        # Fallback for compat shim if test fake still uses dict style
+                        callback({"x": x, "i": i, "sigma": float(sigma), "denoised": denoised})
             return x
 
     class FakeNoise:
