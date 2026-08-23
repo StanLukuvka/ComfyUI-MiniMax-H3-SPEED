@@ -28,29 +28,19 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-# Pristine condition-latent snapshots. Attribute storage (dies with the object)
-# is preferred; the id()-keyed dict is a fallback for slotted/frozen holders
-# that refuse setattr (e.g. plain keyframe dicts).
-_PRISTINE_ATTR = "_speed_pristine_keyframe_latent"
+# Pristine condition-latent snapshots. Holders are always plain keyframe dicts
+# (the walk in _rescale_cond_latents skips non-dicts), and plain dicts refuse
+# setattr, so the id()-keyed module dict is the ONLY store. Entries are popped
+# at the final-stage restore so the full-res clones die with each generation.
 _PRISTINE_STORE: dict[int, object] = {}
 
 
 def _get_pristine(holder):
-    # A plain dict returns None from getattr WITHOUT raising, so check the
-    # id-keyed store first (it is the canonical store for dict/tensor holders
-    # that refuse setattr); attribute storage is a best-effort mirror.
-    v = _PRISTINE_STORE.get(id(holder))
-    if v is not None:
-        return v
-    return getattr(holder, _PRISTINE_ATTR, None)
+    return _PRISTINE_STORE.get(id(holder))
 
 
 def _set_pristine(holder, value):
     _PRISTINE_STORE[id(holder)] = value
-    try:
-        setattr(holder, _PRISTINE_ATTR, value)
-    except Exception:
-        pass
 
 
 def _interp_cond(z, h, w):
@@ -113,7 +103,9 @@ def _patch_guider_conditioning_for_stage(guider, stage_h, stage_w, is_final_stag
     is a no-op; and ``_cond_video_rows``/PackedLayout live on the
     inner diffusion model, not on the wrapper at ``guider.model_patcher.model``.)
 
-    Fix: walk the positive conds, find the keyframes / refs, and rescale each
+    Fix: walk the positive AND negative conds (negative is kept for parity
+    with ComfyUI's own cond handling — MiniMax has no negative prompts in
+    practice), find the keyframes / refs, and rescale each
     stored ``latent`` to the stage's (h, w) — rounded to the model's 2x2
     patch multiple is unnecessary because keyframes share the *target* grid
     (PackedLayout computes it), but resize happens from a pristine full-res
@@ -152,8 +144,9 @@ def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
     SPEED never changes — tensor and allocation stay consistent at every
     stage, at the cost of running ref rows at full res during coarse stages.
 
-    Each keyframe keeps a pristine full-res snapshot (attribute storage,
-    dict-store fallback) so the final stage restores full resolution.
+    Each keyframe keeps a pristine full-res snapshot (id-keyed module dict,
+    popped at the final-stage restore) so the final stage restores full
+    resolution and the snapshot dies with its generation.
 
     Target dims are rounded UP to even (the DiT's 2x2 patch grid): SPEED
     coarse stages can be odd (e.g. 0.25 scale -> w=13), and `patchify_video`
@@ -161,10 +154,9 @@ def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
     to even by `pad_to_patch_size` — matching that grid keeps cond rows equal
     to the layout's frame_rows.
     """
-    def _patch_even(dim):
-        return dim + (dim % 2)
-
     keyframes = cond.get("minimax_keyframes", []) or []
+    th = stage_h + (stage_h % 2)
+    tw = stage_w + (stage_w % 2)
     for kf in keyframes:
         if not isinstance(kf, dict):
             continue
@@ -180,9 +172,10 @@ def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
                 kf["latent"] = pristine.clone()
                 log.info("[SPEED] final stage — restored keyframe latent %s",
                          list(pristine.shape))
-            return
-        th = _patch_even(stage_h)
-        tw = _patch_even(stage_w)
+            # Release the snapshot whether or not a restore was needed, so the
+            # full-res clone dies with this generation instead of accumulating.
+            _PRISTINE_STORE.pop(id(kf), None)
+            continue
         src_h, src_w = pristine.shape[-2], pristine.shape[-1]
         if src_h != th or src_w != tw:
             kf["latent"] = _interp_cond(pristine, th, tw)
@@ -387,7 +380,6 @@ def run_speed_pipeline(
     config: SpeedConfig,
     *,
     sampler,
-    nested_type,
     # PR3 (progress-bar): KEEP THE PROGRESS BAR ON BY DEFAULT. disable_pbar
     # defaults to False (bar VISIBLE). The SPEED sampler node explicitly passes
     # `disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED` to honor the user's
@@ -428,13 +420,13 @@ def run_speed_pipeline(
 
     full_h, full_w = full_video.shape[-2:]
     full_t = full_video.shape[-3]
-    stage_hw = [
-        (max(1, round(full_h * s)), max(1, round(full_w * s))) for s in scales
+    # One resolution source: stage_resolution owns this math (the cond-patching
+    # path also calls it, so a second inline copy here could silently diverge —
+    # exactly the failure mode this pack has a history with).
+    stage_hw_t = [
+        stage_resolution(config, i, full_h, full_w, full_t)
+        for i in range(n_stages)
     ]
-    if config.temporal_scales:
-        stage_t = [max(1, round(full_t * ts)) for ts in config.temporal_scales]
-    else:
-        stage_t = [full_t] * n_stages
 
     # Resolve transition steps (delta-optimal or explicit), using the LIVE full
     # resolution latent dims (matches canonical SPEED x.shape[-2:]) rather than
@@ -447,8 +439,7 @@ def run_speed_pipeline(
             raise ValueError("transition step must be inside the sigma schedule")
 
     # Stage 1: initialize coarse latent + noise at scale[0].
-    s0_h, s0_w = stage_hw[0]
-    s0_t = stage_t[0]
+    s0_h, s0_w, s0_t = stage_hw_t[0]
     coarse_video = full_video.new_zeros(full_video.shape[:-3] + (s0_t, s0_h, s0_w))
     coarse_samples = pack_latent(
         coarse_video,
@@ -510,7 +501,7 @@ def run_speed_pipeline(
         # picks up cond_video_latents matching this stage's coarse latent.
         # (The payload dict from a previous stage is rebuilt from these
         # sources every call, so these sources are the only patch point.)
-        sh, sw, st = stage_resolution(config, stage_idx, full_h, full_w, full_t)
+        sh, sw, _ = stage_resolution(config, stage_idx, full_h, full_w, full_t)
         _patch_guider_conditioning_for_stage(guider, sh, sw, is_final_stage=False)
 
         # Run the current stage over current_sigmas[:boundary+1].
@@ -527,12 +518,10 @@ def run_speed_pipeline(
         )
         last_public = public
         last_capture = capture
-        pub_vid, pub_aud = unpack_latent(public)
-        log.info("[SPEED] stage %d output: video=%s audio=%s q=%.4f",
-                 stage_idx, list(pub_vid.shape), list(pub_aud.shape), float(current_sigmas[boundary]))
-
-        public_video, public_audio = unpack_latent(public)
         q = float(current_sigmas[boundary])
+        public_video, public_audio = unpack_latent(public)
+        log.info("[SPEED] stage %d output: video=%s audio=%s q=%.4f",
+                 stage_idx, list(public_video.shape), list(public_audio.shape), q)
 
         # Recover internal state (public -> carry-representation).
         internal_video, internal_audio = to_internal_state(
@@ -547,8 +536,7 @@ def run_speed_pipeline(
             kappa, new_q = 1.0, q
 
         # DCT-expand the video (coupled or fresh band) and rescale by kappa.
-        next_hw = stage_hw[stage_idx + 1]
-        next_t = stage_t[stage_idx + 1]
+        next_h, next_w, next_t = stage_hw_t[stage_idx + 1]
         if next_t > internal_video.shape[-3]:
             # Temporal expansion needed: use the 3D spectral path.
             if config.noise_policy == "coupled_full_grid":
@@ -568,7 +556,7 @@ def run_speed_pipeline(
             else:
                 expanded_video = spectral_expand_3d(
                     internal_video,
-                    (next_t, *next_hw),
+                    (next_t, next_h, next_w),
                     q,
                     int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
                 )
@@ -582,7 +570,7 @@ def run_speed_pipeline(
         else:
             expanded_video = spectral_expand(
                 internal_video,
-                next_hw,
+                (next_h, next_w),
                 q,
                 int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
             )
@@ -644,7 +632,7 @@ def run_speed_pipeline(
     # Restore the pristine full-res keyframe/ref latents in the original conds
     # (kept since our first downscale) so the final stage runs exactly like
     # the normal full-res I2V path.
-    fh, fw, ft = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
+    fh, fw, _ = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
     _patch_guider_conditioning_for_stage(guider, fh, fw, is_final_stage=True)
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
