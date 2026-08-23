@@ -284,6 +284,27 @@ class MiniMaxH3HarvestToConfig:
                 f"r²={r2:.4f}. Not cleanly decaying. Rerun harvest or use manual preset."
             )
         lines.append(f"Paste into SPEED Sampler: delta={float(delta):.3f}, noise_amplitude={A:.3f}, noise_decay_exponent={beta:.3f} (transition_mode=delta_custom)")
+        # Diagnostic only — not part of the JSON to paste. Shows where delta_custom
+        # will place the two most common reference scales for this sigmas length.
+        # Derived exactly as runtime does: omega = scale * min(H,W)/2 -> P(omega) -> thr -> first step <= thr.
+        try:
+            from speed_scripts.h3_runtime import power_at_frequency, activation_threshold
+            omega_max = min(H_full, W_full) / 2.0
+            # find helper mirrors h3_runtime._find_first_step_below
+            def _first_step_below(thr: float) -> tuple[int, float]:
+                for idx, s in enumerate(sigmas_list[:-1]):
+                    if float(s) <= thr:
+                        return idx, float(s)
+                return len(sigmas_list) - 1, float(sigmas_list[-1]) if sigmas_list else 0.0
+            lines.append(f"Reference (current sigmas, {len(sigmas_list)} levels):")
+            for _scale in (0.50, 0.75):
+                _omega = _scale * omega_max
+                _p = power_at_frequency(_omega, A, beta)
+                _thr = activation_threshold(_p, float(delta))
+                _step, _sig = _first_step_below(_thr)
+                lines.append(f"  {_scale:.2f}x -> sigma~{_sig:.4f} (step {_step})  [thr {_thr:.4f}]")
+        except Exception:
+            pass
         report = "\n".join(lines)
         calibration["report"] = report
 

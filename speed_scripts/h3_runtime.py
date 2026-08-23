@@ -28,20 +28,37 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
+# Distinct-boundary latent wrappers — one Latent per keyframe id (and one
+# RefLatent per ref2va block). Registry is tiny and lives only for one
+# generation; entries are popped at the final-stage restore.
+try:
+    from .latent import Latent, RefLatent  # type: ignore[import]
+except Exception:  # pragma: no cover - import guard for stub tests
+    Latent = RefLatent = None  # type: ignore[assignment,misc]
+
+_LATENT_STORE: dict[int, object] = {}
+
 # Pristine condition-latent snapshots. Holders are always plain keyframe dicts
 # (the walk in _rescale_cond_latents skips non-dicts), and plain dicts refuse
 # setattr, so the id()-keyed module dict is the ONLY store. Entries are popped
 # at the final-stage restore so the full-res clones die with each generation.
+# Kept in sync with _LATENT_STORE for backwards compat — tests import it.
 _PRISTINE_STORE: dict[int, object] = {}
 
-
 def _get_pristine(holder):
+    obj = _LATENT_STORE.get(id(holder))
+    if obj is not None and hasattr(obj, "pristine"):
+        return obj.pristine
     return _PRISTINE_STORE.get(id(holder))
-
 
 def _set_pristine(holder, value):
     _PRISTINE_STORE[id(holder)] = value
-
+    obj = _LATENT_STORE.get(id(holder))
+    if obj is not None and hasattr(obj, "pristine"):
+        try:
+            obj.pristine = value  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
 def _interp_cond(z, h, w):
     """Per-frame bilinear spatial resize of cond latents ([B,C,H,W] or [B,C,T,H,W]).
@@ -68,7 +85,6 @@ def _interp_cond(z, h, w):
         flattened, size=(h, w), mode="bilinear", align_corners=False,
     )
     return resized.reshape(b_, t_, c_, h, w).transpose(1, 2).to(dtype=z.dtype)
-
 
 def _patch_guider_conditioning_for_stage(guider, stage_h, stage_w, is_final_stage=False):
     """[Level 3] Per-stage I2V fix: rescale the *stored* condition sources.
@@ -129,7 +145,6 @@ def _patch_guider_conditioning_for_stage(guider, stage_h, stage_w, is_final_stag
                 continue
             _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=is_final_stage)
 
-
 def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
     """Rescale the fl2va keyframe latents found in one conditioning dict.
 
@@ -139,10 +154,12 @@ def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
     the keyframe's own tensor. Full-res tensor + coarse grid = 4x too many
     rows (in the reported crash: 520 full-res vs 130 stage-0 rows).
 
-    ref2va "minimax_refs" blocks are intentionally NOT touched: their rows
-    are allocated from their own stored latent_h/latent_w metadata, which
-    SPEED never changes — tensor and allocation stay consistent at every
-    stage, at the cost of running ref rows at full res during coarse stages.
+    ref2va "minimax_refs" blocks are handled by RefLatent (intentionally NOT
+    rescaled: their rows are allocated from their own stored latent_h/latent_w
+    metadata, which SPEED never changes — tensor and allocation stay consistent
+    at every stage, at the cost of running ref rows at full res during coarse
+    stages). Keyframe path uses Latent with distinct boundaries:
+    input -> scale_to (downsample) -> restore/upscale_to_inject -> release.
 
     Each keyframe keeps a pristine full-res snapshot (id-keyed module dict,
     popped at the final-stage restore) so the final stage restores full
@@ -154,6 +171,7 @@ def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
     to even by `pad_to_patch_size` — matching that grid keeps cond rows equal
     to the layout's frame_rows.
     """
+    # --- keyframes (fl2va) — rescaled via Latent ---
     keyframes = cond.get("minimax_keyframes", []) or []
     th = stage_h + (stage_h % 2)
     tw = stage_w + (stage_w % 2)
@@ -163,25 +181,122 @@ def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
         z = kf.get("latent")
         if z is None or not hasattr(z, "shape"):
             continue
-        pristine = _get_pristine(kf)
-        if pristine is None:
-            pristine = z.clone()
-            _set_pristine(kf, pristine)
+        # Get or create Latent wrapper (distinct input boundary).
+        latent_obj = _LATENT_STORE.get(id(kf))
+        if latent_obj is None and Latent is not None:
+            try:
+                latent_obj = Latent(kf)
+            except Exception:
+                latent_obj = None
+            if latent_obj is not None:
+                _LATENT_STORE[id(kf)] = latent_obj
+                _PRISTINE_STORE[id(kf)] = latent_obj.pristine
         if is_final_stage:
-            if getattr(z, "shape", None) != getattr(pristine, "shape", None):
-                kf["latent"] = pristine.clone()
-                log.info("[SPEED] final stage — restored keyframe latent %s",
-                         list(pristine.shape))
-            # Release the snapshot whether or not a restore was needed, so the
-            # full-res clone dies with this generation instead of accumulating.
+            # Upsample/inject boundary — restore pristine, then consumed.
+            if latent_obj is not None and hasattr(latent_obj, "restore"):
+                try:
+                    before_shape = getattr(z, "shape", None)
+                    latent_obj.restore()
+                    after_shape = getattr(kf.get("latent"), "shape", None)
+                    if before_shape != after_shape:
+                        log.info("[SPEED] final stage — restored keyframe latent %s",
+                                 list(after_shape) if hasattr(after_shape, "__iter__") else after_shape)
+                    # release + pop
+                    try:
+                        latent_obj.release()
+                    except Exception:
+                        pass
+                except Exception:
+                    # Fallback to legacy path
+                    pristine = _get_pristine(kf)
+                    if pristine is not None and getattr(z, "shape", None) != getattr(pristine, "shape", None):
+                        kf["latent"] = pristine.clone()
+                        log.info("[SPEED] final stage — restored keyframe latent %s", list(pristine.shape))
+            else:
+                # Legacy fallback (no Latent class available)
+                pristine = _get_pristine(kf)
+                if pristine is not None:
+                    if getattr(z, "shape", None) != getattr(pristine, "shape", None):
+                        kf["latent"] = pristine.clone()
+                        log.info("[SPEED] final stage — restored keyframe latent %s", list(pristine.shape))
+            _LATENT_STORE.pop(id(kf), None)
             _PRISTINE_STORE.pop(id(kf), None)
             continue
-        src_h, src_w = pristine.shape[-2], pristine.shape[-1]
-        if src_h != th or src_w != tw:
-            kf["latent"] = _interp_cond(pristine, th, tw)
-            log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
-                     stage_h, stage_w, list(pristine.shape), list(kf["latent"].shape))
+        # Downsample boundary — scale_to from pristine.
+        if latent_obj is not None and hasattr(latent_obj, "scale_to"):
+            try:
+                before_shape = getattr(kf.get("latent"), "shape", None)
+                latent_obj.scale_to(stage_h, stage_w)
+                after_shape = getattr(kf.get("latent"), "shape", None)
+                if before_shape != after_shape:
+                    log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
+                             stage_h, stage_w,
+                             list(latent_obj.pristine.shape) if hasattr(latent_obj.pristine, "shape") else "?",
+                             list(after_shape) if hasattr(after_shape, "__iter__") else after_shape)
+            except RuntimeError:
+                # already injected/consumed — ignore
+                pass
+            except Exception:
+                # Fallback to legacy interpolate
+                pristine = _get_pristine(kf)
+                if pristine is not None:
+                    src_h, src_w = pristine.shape[-2], pristine.shape[-1]
+                    if src_h != th or src_w != tw:
+                        kf["latent"] = _interp_cond(pristine, th, tw)
+                        log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
+                                 stage_h, stage_w, list(pristine.shape), list(kf["latent"].shape))
+        else:
+            # Legacy fallback: direct _interp_cond from pristine.
+            pristine = _get_pristine(kf)
+            if pristine is None:
+                try:
+                    pristine = z.clone()
+                except Exception:
+                    continue
+                _set_pristine(kf, pristine)
+            src_h, src_w = pristine.shape[-2], pristine.shape[-1]
+            if src_h != th or src_w != tw:
+                kf["latent"] = _interp_cond(pristine, th, tw)
+                log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
+                         stage_h, stage_w, list(pristine.shape), list(kf["latent"].shape))
 
+    # --- refs (ref2va) — never rescaled, but lifecycle-tracked via RefLatent ---
+    refs = cond.get("minimax_refs", []) or []
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        z = ref.get("latent")
+        if z is None or not hasattr(z, "shape"):
+            continue
+        ref_obj = _LATENT_STORE.get(id(ref))
+        if ref_obj is None and RefLatent is not None:
+            try:
+                ref_obj = RefLatent(ref)
+            except Exception:
+                ref_obj = None
+            if ref_obj is not None:
+                _LATENT_STORE[id(ref)] = ref_obj
+                _PRISTINE_STORE[id(ref)] = ref_obj.pristine
+        if is_final_stage:
+            if ref_obj is not None and hasattr(ref_obj, "restore"):
+                try:
+                    ref_obj.restore()
+                    try:
+                        ref_obj.release()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            _LATENT_STORE.pop(id(ref), None)
+            _PRISTINE_STORE.pop(id(ref), None)
+            continue
+        if ref_obj is not None and hasattr(ref_obj, "scale_to"):
+            try:
+                ref_obj.scale_to(stage_h, stage_w)
+            except RuntimeError:
+                pass
+            except Exception:
+                pass
 
 def stage_resolution(config, stage_idx, full_h, full_w, full_t):
     """[Level 2] Resolve the (h, w, t) a given stage runs at.
@@ -200,15 +315,12 @@ def stage_resolution(config, stage_idx, full_h, full_w, full_t):
         t = full_t
     return h, w, t
 
-
 # ---------------------------------------------------------------------------
 # Physics helpers
 # ---------------------------------------------------------------------------
-
 def power_at_frequency(omega: float, A: float, beta: float) -> float:
     """Radial power-law spectrum P(omega) = A * |omega|^(-beta). Matches paper Eq. 8."""
     return A * abs(omega) ** (-beta)
-
 
 def activation_threshold(P_omega: float, delta: float) -> float:
     """Activation time for one radial frequency. Matches paper Eq. 9."""
@@ -220,7 +332,6 @@ def activation_threshold(P_omega: float, delta: float) -> float:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 def unpack_latent(samples):
     """[Level 2] Unpack a NestedTensor into (video, audio) with H3 geometry validation."""
     if not getattr(samples, "is_nested", False):
@@ -237,12 +348,10 @@ def unpack_latent(samples):
         raise ValueError("MiniMax-H3 audio latent requires stereo axis size two")
     return video, audio
 
-
 def pack_latent(video, audio):
     """[Level 2] Pack (video, audio) into a NestedTensor."""
     from comfy import nested_tensor as default_comfy_nested_tensor
     return default_comfy_nested_tensor.NestedTensor([video, audio])
-
 
 def resolve_sigma_shifts(guider):
     """[Level 2] Return (video_shift, audio_shift, audio_scale) from the guider's model.
@@ -304,7 +413,6 @@ def resolve_sigma_shifts(guider):
         raise ValueError("active MiniMax-H3 shifts must be positive")
     return video_shift, audio_shift, video_shift / audio_shift
 
-
 def _step_capture():
     """[Level 2] Build a step callback that records per-step state and drives the
     ComfyUI UI progress bar (ProgressBar.update_absolute).
@@ -319,14 +427,11 @@ def _step_capture():
     only reliable count we have at callback construction time.
     """
     state = {}
-
     try:
         import comfy.utils as _comfy_utils  # type: ignore
     except Exception:
         _comfy_utils = None
-
     pbar = _comfy_utils.ProgressBar(1) if _comfy_utils is not None else None
-
     def callback(step, x0, x, total_steps):
         state["x0"] = x0
         state["x"] = x
@@ -334,9 +439,7 @@ def _step_capture():
         state["total_steps"] = total_steps
         if pbar is not None:
             pbar.update_absolute(step + 1, total_steps)
-
     return state, callback
-
 
 def _find_first_step_below(sigmas, threshold: float) -> int:
     """[Level 3] First index whose sigma <= threshold; len-1 if none."""
@@ -346,7 +449,6 @@ def _find_first_step_below(sigmas, threshold: float) -> int:
         if vals[i] <= threshold:
             return i
     return n
-
 
 def resolve_transition_steps(
     config: SpeedConfig, sigmas, H_full: int | None = None, W_full: int | None = None,
@@ -370,7 +472,6 @@ def resolve_transition_steps(
             steps.append(_find_first_step_below(sigmas, thr))
         return tuple(steps)
     return tuple(int(s) for s in config.transition_steps)
-
 
 def run_speed_pipeline(
     noise,
@@ -417,7 +518,6 @@ def run_speed_pipeline(
     n_stages = len(scales)
     if n_stages < 2:
         raise ValueError("need at least two stages (scales ending at 1.0)")
-
     full_h, full_w = full_video.shape[-2:]
     full_t = full_video.shape[-3]
     # One resolution source: stage_resolution owns this math (the cond-patching
