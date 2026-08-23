@@ -19,20 +19,14 @@ import os
 import sys
 import traceback
 
-# Ensure our directory + repo root are importable so `from common import ...`
-# and `from speed_scripts... import ...` resolve when ComfyUI imports this
-# module (it loads sibling modules by flat name, NOT by package path).
+# Ensure our directory + repo root are importable so `from speed_scripts...`
+# and flat node-module imports resolve when ComfyUI imports this module (it
+# loads sibling modules by flat name, NOT by package path).
 _NODE_DIR = os.path.dirname(os.path.abspath(__file__))
 _NODES_DIR = os.path.join(_NODE_DIR, "nodes")
-_REPO_ROOT = os.path.dirname(os.path.abspath(_NODE_DIR))
-if _NODE_DIR != _REPO_ROOT:  # repo root is not the node dir
-    for _p in (_NODE_DIR, _NODES_DIR, _REPO_ROOT):
-        if _p not in sys.path:
-            sys.path.insert(0, _p)
-else:  # repo root IS the node dir
-    for _p in (_NODE_DIR, _NODES_DIR):
-        if _p not in sys.path:
-            sys.path.insert(0, _p)
+for _p in (_NODE_DIR, _NODES_DIR):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 print("MiniMax-H3 SPEED node pack: registering nodes...")
 
