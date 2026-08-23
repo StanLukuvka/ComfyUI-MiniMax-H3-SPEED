@@ -4,7 +4,7 @@ The library package moved from ``minimax_h3_speed/`` to ``speed_scripts/`` and
 the node modules moved from the repo root into ``nodes/``. Put the repo root
 and the ``nodes`` directory on ``sys.path`` before collection so both the
 ``speed_scripts.*`` package imports and the flat node-module imports
-(``sampler_node``, ``sampler_node_manual``, ``sampler_sigma_harvest_node``)
+(``sampler_node``, ``sampler_sigma_harvest_node``)
 resolve.
 
 Also hosts the ONE canonical comfy-stub installer (the superset of what every
