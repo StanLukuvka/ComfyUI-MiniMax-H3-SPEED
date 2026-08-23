@@ -2,44 +2,11 @@
 
 from __future__ import annotations
 
-import sys
-from types import ModuleType
-
 import torch
 
-
-def _install_comfy_stubs():
-    comfy = ModuleType("comfy")
-    samplers = ModuleType("comfy.samplers")
-    utils = ModuleType("comfy.utils")
-    model_mgmt = ModuleType("comfy.model_management")
-    kdiff = ModuleType("comfy.k_diffusion")
-    ksampling = ModuleType("comfy.k_diffusion.sampling")
-    nested_tensor = ModuleType("comfy.nested_tensor")
-
-    class NestedTensor:
-        is_nested = True
-        def __init__(self, tensors):
-            self._tensors = tensors
-        def unbind(self):
-            return self._tensors
-    nested_tensor.NestedTensor = NestedTensor
-
-    samplers.sampler_object = lambda name: ("sampler", name)
-    utils.PROGRESS_BAR_ENABLED = True
-
-    comfy.samplers = samplers
-    comfy.utils = utils
-    comfy.model_management = model_mgmt
-    comfy.k_diffusion = kdiff
-    comfy.k_diffusion.sampling = ksampling
-    comfy.nested_tensor = nested_tensor
-    sys.modules["comfy"] = comfy
-    for name, mod in [("samplers", samplers), ("utils", utils),
-                      ("model_management", model_mgmt),
-                      ("k_diffusion", kdiff), ("k_diffusion.sampling", ksampling),
-                      ("nested_tensor", nested_tensor)]:
-        sys.modules["comfy." + name] = mod
+# One canonical comfy stub installer lives in conftest; import under the old
+# name so the single call site below stays valid.
+from conftest import install_comfy_stubs as _install_comfy_stubs
 
 
 _install_comfy_stubs()
