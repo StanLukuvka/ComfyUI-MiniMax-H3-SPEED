@@ -1,96 +1,23 @@
 """Minimal contract test for the single SPEED sampler node."""
 import importlib
 import math
-import sys
-from pathlib import Path
-from types import ModuleType
 
 import pytest
 import torch
-from minimax_h3_speed.config import SpeedConfig
+from speed_scripts.config import SpeedConfig
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-
-def _install_comfy_stubs():
-    comfy = ModuleType("comfy")
-    samplers = ModuleType("comfy.samplers")
-    utils = ModuleType("comfy.utils")
-    model_mgmt = ModuleType("comfy.model_management")
-    kdiff = ModuleType("comfy.k_diffusion")
-    ksampling = ModuleType("comfy.k_diffusion.sampling")
-    nested_tensor = ModuleType("comfy.nested_tensor")
-
-    class NestedTensor:
-        is_nested = True
-        def __init__(self, tensors):
-            self._tensors = tensors
-        def unbind(self):
-            return self._tensors
-    nested_tensor.NestedTensor = NestedTensor
-
-    samplers.sampler_object = lambda name: ("sampler", name)
-    utils.PROGRESS_BAR_ENABLED = True
-
-    class _ProgressBar:
-        """No-op stand-in for comfy.utils.ProgressBar in headless tests."""
-        def __init__(self, total, node_id=None):
-            self.total = total
-            self.node_id = node_id
-        def update_absolute(self, value, total=None, preview=None):
-            pass
-        def update(self, value):
-            pass
-    utils.ProgressBar = _ProgressBar
-
-    def pack_latents(latents):
-        shapes, tensors = [], []
-        for t in latents:
-            shapes.append(list(t.shape))
-            tensors.append(t.reshape(t.shape[0], 1, -1))
-        return torch.cat(tensors, dim=-1), shapes
-
-    def unpack_latents(combined, shapes):
-        out, work = [], combined
-        for shape in shapes:
-            cut = math.prod(shape[1:])
-            out.append(work[:, :, :cut].reshape([work.shape[0]] + shape[1:]))
-            work = work[:, :, cut:]
-        return out
-
-    utils.pack_latents = pack_latents
-    utils.unpack_latents = unpack_latents
-    model_mgmt.intermediate_device = lambda: "cpu"
-
-    def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None, **kwargs):
-        extra_args = {} if extra_args is None else extra_args
-        for i in range(len(sigmas) - 1):
-            sigma = sigmas[i]
-            denoised = model(x, sigma, **extra_args)
-            d = (x - denoised) / sigma
-            x = x + d * (sigmas[i + 1] - sigmas[i])
-            if callback is not None:
-                callback({"x": x, "i": i, "sigma": sigma, "denoised": denoised})
-        return x
-
-    ksampling.sample_euler = sample_euler
-    comfy.samplers = samplers
-    comfy.utils = utils
-    comfy.model_management = model_mgmt
-    comfy.k_diffusion = kdiff
-    comfy.k_diffusion.sampling = ksampling
-    comfy.nested_tensor = nested_tensor
-    sys.modules["comfy"] = comfy
-    for name, mod in [("samplers", samplers), ("utils", utils),
-                      ("model_management", model_mgmt),
-                      ("k_diffusion", kdiff), ("k_diffusion.sampling", ksampling),
-                      ("nested_tensor", nested_tensor)]:
-        sys.modules["comfy." + name] = mod
+# One canonical comfy stub installer (see conftest) — imported under the old
+# name so existing call sites stay valid.
+from conftest import (
+    install_comfy_stubs as _install_comfy_stubs,
+    make_fake_guider,
+    make_fake_noise,
+    make_nested,
+)
 
 
 # Install comfy stubs at module load so any test that imports `main` or
-# `minimax_h3_speed.h3_runtime` (which now import comfy at top level) works
+# `speed_scripts.h3_runtime` (which now import comfy at top level) works
 # without needing to call _install_comfy_stubs() first.
 _install_comfy_stubs()
 
@@ -122,7 +49,7 @@ def test_input_schema_widgets_and_required_inputs():
 
 def test_sample_runs_multi_stage():
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_speed_pipeline
+    from speed_scripts.h3_runtime import run_speed_pipeline
 
     sample_calls = []
 
@@ -166,7 +93,6 @@ def test_sample_runs_multi_stage():
     out, denoised = run_speed_pipeline(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
-        nested_type=type("NT", (), {"is_nested": True})(),
         disable_pbar=True, output_device=None,
     )
     assert out is not None
@@ -176,7 +102,7 @@ def test_sample_runs_multi_stage():
 def test_coupled_full_grid_noise_policy():
     """coupled_full_grid: full-grid noise is shared across stages."""
     _install_comfy_stubs()
-    from minimax_h3_speed.h3_runtime import run_speed_pipeline
+    from speed_scripts.h3_runtime import run_speed_pipeline
 
     sample_calls = []
     captured_noises = []
@@ -224,7 +150,6 @@ def test_coupled_full_grid_noise_policy():
     out, denoised = run_speed_pipeline(
         FakeNoise(), FakeGuider(), sigmas, latent, config,
         sampler=type("S", (), {"name": "euler"})(),
-        nested_type=type("NT", (), {"is_nested": True})(),
         disable_pbar=True, output_device=None,
     )
     assert out is not None
@@ -234,7 +159,7 @@ def test_coupled_full_grid_noise_policy():
 
 def test_aligned_sigma_math():
     """kappa = r / (1 + (r-1)q); t_tilde = kappa * q. Verify the paper formula."""
-    flow = importlib.import_module("minimax_h3_speed.flow")
+    flow = importlib.import_module("speed_scripts.flow")
     for q, r in [(0.5, 2.0), (0.3, 2.0), (0.8, 4.0 / 3.0)]:
         kappa, t = flow.aligned_sigma(q, r)
         assert abs(kappa - r / (1.0 + (r - 1.0) * q)) < 1e-6
@@ -244,7 +169,7 @@ def test_aligned_sigma_math():
 def test_resolve_transition_steps_explicit_example():
     """Explicit mode places transitions at the flat per-scale default (5)."""
     mod = importlib.import_module("sampler_node")
-    h3_runtime = importlib.import_module("minimax_h3_speed.h3_runtime")
+    h3_runtime = importlib.import_module("speed_scripts.h3_runtime")
     sigmas = torch.linspace(1.0, 0.025, 20)
     explicit_steps = h3_runtime.resolve_transition_steps(
         SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,), transition_mode="explicit"),
@@ -259,7 +184,7 @@ def test_sigma_shifts_returns_audio_scale_from_ratio():
 
     With shift_video=12.0 and shift_audio=3.0, the correct audio_scale is 4.0.
     """
-    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
+    from speed_scripts.h3_runtime import resolve_sigma_shifts
 
     class FakeGuider:
         model_patcher = type("MP", (), {"model": type("M", (), {
@@ -279,7 +204,7 @@ def test_sigma_shifts_returns_audio_scale_from_ratio():
 
 def test_audio_scale_equals_shift_ratio():
     """Verify audio_scale = video_shift / audio_shift, not 1.0."""
-    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
+    from speed_scripts.h3_runtime import resolve_sigma_shifts
 
     class FakeGuider:
         model_patcher = type("MP", (), {"model": type("M", (), {
@@ -300,7 +225,7 @@ def test_sigma_shifts_ignore_generic_comfy_shift():
     instead of 4.0, rescaling every audio transition ~12x wrong (garbled sound).
     The H3 attributes must win.
     """
-    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
+    from speed_scripts.h3_runtime import resolve_sigma_shifts
 
     class FakeModelSampling:
         # Generic ComfyUI flow-matching shift — NOT H3-specific.
@@ -333,7 +258,7 @@ def test_sigma_shifts_raise_without_h3_model():
     so a non-H3 model surfaces as a configuration error.
     """
     import pytest
-    from minimax_h3_speed.h3_runtime import resolve_sigma_shifts
+    from speed_scripts.h3_runtime import resolve_sigma_shifts
 
     class FakeGuider:
         model_patcher = type("MP", (), {
@@ -350,7 +275,7 @@ def test_sigma_shifts_raise_without_h3_model():
 
 def test_sigma_policy_canonical_vs_no_alignment():
     """canonical: apply kappa alignment; no_alignment: no rescaling."""
-    from minimax_h3_speed.h3_runtime import run_speed_pipeline
+    from speed_scripts.h3_runtime import run_speed_pipeline
 
     canonical_calls = []
     no_align_calls = []
@@ -384,7 +309,6 @@ def test_sigma_policy_canonical_vs_no_alignment():
         make_guider(canonical_calls),
         sigmas, latent, config_canon,
         sampler=type("S", (), {"name": "euler"})(),
-        nested_type=type("NT", (), {"is_nested": True})(),
         disable_pbar=True,
     )
     run_speed_pipeline(
@@ -392,7 +316,6 @@ def test_sigma_policy_canonical_vs_no_alignment():
         make_guider(no_align_calls),
         sigmas, latent, config_noalign,
         sampler=type("S", (), {"name": "euler"})(),
-        nested_type=type("NT", (), {"is_nested": True})(),
         disable_pbar=True,
     )
     # Both should run the same number of stages
@@ -428,21 +351,21 @@ def test_transition_steps_count_matches_scales():
 
 def test_reentry_noise_formula():
     """reentry_noise(internal, start_sigma) = internal / start_sigma."""
-    from minimax_h3_speed.flow import reentry_noise
+    from speed_scripts.flow import reentry_noise
     internal = torch.tensor([1.0, 2.0, 3.0])
     result = reentry_noise(internal, 0.5)
     assert torch.allclose(result, internal / 0.5)
 
 
 def test_reentry_noise_raises_on_zero():
-    from minimax_h3_speed.flow import reentry_noise
+    from speed_scripts.flow import reentry_noise
     with pytest.raises(ValueError, match="start_sigma must be positive"):
         reentry_noise(torch.zeros(3), 0.0)
 
 
 def test_kappa_formula():
     """κ = r / (1 + (r-1)t) per Eq. (5)."""
-    from minimax_h3_speed.flow import aligned_sigma
+    from speed_scripts.flow import aligned_sigma
     r = 2.0
     t = 0.5
     kappa, new_q = aligned_sigma(t, r)
@@ -452,7 +375,7 @@ def test_kappa_formula():
 
 def test_time_shift_sigma_raises_on_bad_inputs():
     """time_shift_sigma must reject non-positive shifts."""
-    from minimax_h3_speed.flow import time_shift_sigma
+    from speed_scripts.flow import time_shift_sigma
     with pytest.raises(ValueError):
         time_shift_sigma(0.5, 0.0, 1.0)
     with pytest.raises(ValueError):
@@ -461,14 +384,14 @@ def test_time_shift_sigma_raises_on_bad_inputs():
 
 def test_time_shift_sigma_identity_at_full_res():
     """At q = q_ref (no shift), returns q unchanged."""
-    from minimax_h3_speed.flow import time_shift_sigma
+    from speed_scripts.flow import time_shift_sigma
     result = time_shift_sigma(0.5, 1.0, 1.0)
     assert abs(result - 0.5) < 1e-10
 
 
 def test_flow_time_shift_sigma():
     """time_shift_sigma bridges video→audio sigma space correctly."""
-    from minimax_h3_speed.flow import time_shift_sigma
+    from speed_scripts.flow import time_shift_sigma
     # With video_shift=2.0, audio_shift=1.0, q_video=0.5:
     #   base = 0.5 / (2 + 0.5 * (1-2)) = 0.5 / 1.5 = 1/3
     #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3
@@ -479,8 +402,8 @@ def test_flow_time_shift_sigma():
 def test_resolve_transition_steps_delta_custom_matches_recommend():
     """Given config with transition_mode='delta_custom', the resolved steps
     must equal recommend_transition_steps output for the same parameters."""
-    from minimax_h3_speed.h3_runtime import resolve_transition_steps
-    from minimax_h3_speed.harvest import recommend_transition_steps
+    from speed_scripts.h3_runtime import resolve_transition_steps
+    from speed_scripts.harvest import recommend_transition_steps
     sigmas = torch.linspace(1.0, 0.0, 21)  # 20 steps
     config = SpeedConfig(
         scales=(0.5, 1.0),
@@ -501,7 +424,7 @@ def test_resolve_transition_steps_delta_custom_matches_recommend():
 def test_resolve_transition_steps_explicit_ignores_delta():
     """For 'explicit' mode, resolved steps must equal config.transition_steps,
     regardless of delta/noise_amplitude/noise_decay_exponent values."""
-    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    from speed_scripts.h3_runtime import resolve_transition_steps
     sigmas = torch.linspace(1.0, 0.0, 21)
     config = SpeedConfig(
         scales=(0.5, 1.0),
@@ -519,7 +442,7 @@ def test_resolve_transition_steps_explicit_ignores_delta():
 
 def test_resolve_transition_steps_validation():
     """Transition steps must be in (0, len(sigmas)-1)."""
-    from minimax_h3_speed.h3_runtime import resolve_transition_steps
+    from speed_scripts.h3_runtime import resolve_transition_steps
     sigmas = torch.tensor([1.0, 0.5, 0.0])
     config = SpeedConfig(
         scales=(0.5, 1.0),
@@ -537,7 +460,7 @@ def test_resolve_transition_steps_validation():
 
 def test_activation_time_matches_canonical_formula():
     """Verify activation_threshold against hand-computed values from Eq. 9."""
-    from minimax_h3_speed.h3_runtime import activation_threshold
+    from speed_scripts.h3_runtime import activation_threshold
     import math
     result = activation_threshold(100.0, 0.01)
     expected = 1.0 / (1.0 + math.sqrt(0.01 / (100.0 * (101.0 - 0.01))))
@@ -546,7 +469,7 @@ def test_activation_time_matches_canonical_formula():
 
 def test_flow_time_shift_sigma():
     """time_shift_sigma bridges video→audio sigma space correctly."""
-    from minimax_h3_speed.flow import time_shift_sigma
+    from speed_scripts.flow import time_shift_sigma
     # With video_shift=2.0, audio_shift=1.0, q_video=0.5:
     #   base = 0.5 / (2 + 0.5 * (1-2)) = 0.5 / 1.5 = 1/3
     #   q_audio = 1.0 * (1/3) / (1 + 0 * (1/3)) = 1/3

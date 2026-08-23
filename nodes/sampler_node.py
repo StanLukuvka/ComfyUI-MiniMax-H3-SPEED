@@ -10,9 +10,8 @@ Audio stays unchanged and done at full resolution.
 
 from __future__ import annotations
 
-import comfy.samplers
-from minimax_h3_speed.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS, SpeedConfig
-from minimax_h3_speed.h3_runtime import run_speed_pipeline, unpack_latent
+from speed_scripts.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS
+from speed_scripts.nodes_common import build_config_and_run
 
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
@@ -56,27 +55,10 @@ class MiniMaxH3SPEEDSampler:
                transition_mode, noise_policy="direct_coarse",
                delta=0.01, noise_amplitude=150.0, noise_decay_exponent=2.0,
                seed_offset=10000):
-        # Use the calibrated transition steps from the preset config.
-        # These are tuned per-preset (e.g. 2_stage_half transitions at step 5
-        # out of 20, leaving 15 steps for full-res detail refinement).
         scales = SCALE_PRESETS[preset]
         transition_steps = DEFAULT_TRANSITION_STEPS[preset]
-        n_stages = len(scales)
-        n_sigmas = len(sigmas)
-        # Need at least 2 sigmas per stage, plus enough room for transition steps.
-        # max(transition_steps) is the last boundary index, so we need that + 1
-        # to cover the final stage's sigma slice.
-        min_required = max(n_stages * 2, max(transition_steps) + 1)
-        if n_sigmas < min_required:
-            raise ValueError(
-                f"sigma schedule too short: got {n_sigmas} sigmas, need "
-                f"at least {min_required} for preset '{preset}' with "
-                f"transition steps {transition_steps}. "
-                f"Increase steps to >= {min_required - 1}."
-            )
-        # Delta-custom mode gets (A, β) from a prior SigmaHarvest run; explicit
+        # Delta-custom mode gets (A, beta) from a prior SigmaHarvest run; explicit
         # mode uses the manually tuned transition_steps in the config.
-        full_video, _ = unpack_latent(latent_image.get("samples"))
         # Map node-facing transition_mode values to config-internal vocabulary.
         # "manual_step" and "manual_sigma" both produce explicit transition_steps
         # (resolved from the preset); only "delta_custom" uses power-spectrum
@@ -86,37 +68,17 @@ class MiniMaxH3SPEEDSampler:
                           "manual_sigma": "explicit",
                           "delta_custom": "delta_custom"}
         config_mode = transition_mode_map.get(transition_mode, "explicit")
-        config = SpeedConfig(
+        return build_config_and_run(
+            noise, guider, sigmas, latent_image,
             scales=scales,
             transition_steps=transition_steps,
             transition_mode=config_mode,
             noise_policy=noise_policy,
-            delta=float(delta),
-            noise_amplitude=float(noise_amplitude),
-            noise_decay_exponent=float(noise_decay_exponent),
-            transition_seed_offset=int(seed_offset),
-            full_latent_h=int(full_video.shape[-2]),
-            full_latent_w=int(full_video.shape[-1]),
+            delta=delta,
+            noise_amplitude=noise_amplitude,
+            noise_decay_exponent=noise_decay_exponent,
+            seed_offset=seed_offset,
         )
-
-        # Run the multi-stage SPEED diffusion chain. Audio is carried through
-        # unchanged; the final-stage x0 (denoised) is surfaced as denoised_output.
-        out, denoised = run_speed_pipeline(
-            noise,
-            guider,
-            sigmas,
-            latent_image,
-            config,
-            # NOTE: SPEED's kappa alignment and DCT-boundary semantics are
-            # calibrated for Euler. Supporting other samplers requires calibration and changing the underlying math for kappa alignment.
-            # This has been left as an exercise for the reader.
-            sampler=comfy.samplers.sampler_object("euler"),
-            nested_type=comfy.nested_tensor.NestedTensor,
-            disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
-            output_device=None,
-        )
-
-        return (out, denoised)
 
 
 NODE_CLASS_MAPPINGS = {"MiniMaxH3SPEEDSampler": MiniMaxH3SPEEDSampler}

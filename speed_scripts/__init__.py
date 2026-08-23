@@ -1,4 +1,4 @@
-"""minimax_h3_speed — core SPEED library for MiniMax-H3.
+"""speed_scripts — core SPEED library for MiniMax-H3.
 
 Package layout:
 - config.py     — SpeedConfig, SCALE_PRESETS

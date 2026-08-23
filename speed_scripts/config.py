@@ -29,6 +29,7 @@ DEFAULT_TRANSITION_STEPS: dict[str, tuple[int, ...]] = {
 NOISE_POLICIES = {"direct_coarse", "coupled_full_grid"}
 AUDIO_POLICIES = {"clock_reindex", "carry_preserve", "untouched"}
 SIGMA_POLICIES = {"canonical", "no_alignment"}
+RATIO_MODES = ("steps", "ratio")
 
 
 @dataclass(frozen=True)

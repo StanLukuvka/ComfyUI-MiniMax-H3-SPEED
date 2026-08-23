@@ -37,7 +37,7 @@ import math
 import numpy as np
 import torch
 
-from minimax_h3_speed.harvest import (
+from speed_scripts.harvest import (
     radial_dct_power,
     fit_power_law,
     classify_fit_quality,

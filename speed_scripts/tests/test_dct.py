@@ -1,79 +1,15 @@
 """Pure-torch DCT-expand tests — no ComfyUI dependency needed."""
 from __future__ import annotations
 
-import math
-import sys
 from pathlib import Path
-from types import ModuleType
 
+import pytest
 import torch
-from minimax_h3_speed.spectral import lowpass_dct, spectral_expand
+from speed_scripts.spectral import lowpass_dct, spectral_expand
 
-
-def _install_comfy_stubs():
-    """Mock comfy module so the package __init__.py can be imported."""
-    comfy = ModuleType("comfy")
-    samplers = ModuleType("comfy.samplers")
-    utils = ModuleType("comfy.utils")
-    model_mgmt = ModuleType("comfy.model_management")
-    kdiff = ModuleType("comfy.k_diffusion")
-    ksampling = ModuleType("comfy.k_diffusion.sampling")
-    nested_tensor = ModuleType("comfy.nested_tensor")
-
-    class NestedTensor:
-        is_nested = True
-        def __init__(self, tensors):
-            self._tensors = tensors
-        def unbind(self):
-            return self._tensors
-    nested_tensor.NestedTensor = NestedTensor
-
-    samplers.sampler_object = lambda name: ("sampler", name)
-    utils.PROGRESS_BAR_ENABLED = True
-
-    def pack_latents(latents):
-        shapes, tensors = [], []
-        for t in latents:
-            shapes.append(list(t.shape))
-            tensors.append(t.reshape(t.shape[0], 1, -1))
-        return torch.cat(tensors, dim=-1), shapes
-
-    def unpack_latents(combined, shapes):
-        out, work = [], combined
-        for shape in shapes:
-            cut = math.prod(shape[1:])
-            out.append(work[:, :, :cut].reshape([work.shape[0]] + shape[1:]))
-            work = work[:, :, cut:]
-        return out
-
-    utils.pack_latents = pack_latents
-    utils.unpack_latents = unpack_latents
-    model_mgmt.intermediate_device = lambda: "cpu"
-
-    def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None, **kwargs):
-        extra_args = {} if extra_args is None else extra_args
-        for i in range(len(sigmas) - 1):
-            sigma = sigmas[i]
-            denoised = model(x, sigma, **extra_args)
-            d = (x - denoised) / sigma
-            x = x + d * (sigmas[i + 1] - sigmas[i])
-            if callback is not None:
-                callback({"x": x, "i": i, "sigma": sigma, "denoised": denoised})
-        return x
-
-    ksampling.sample_euler = sample_euler
-    comfy.samplers = samplers
-    comfy.utils = utils
-    comfy.model_management = model_mgmt
-    comfy.k_diffusion = kdiff
-    comfy.k_diffusion.sampling = ksampling
-    comfy.nested_tensor = nested_tensor
-    sys.modules["comfy"] = comfy
-    for name, mod in [("samplers", samplers), ("utils", utils),
-                      ("model_management", model_mgmt),
-                      ("k_diffusion", kdiff), ("k_diffusion.sampling", ksampling),
-                      ("nested_tensor", nested_tensor)]:
-        sys.modules["comfy." + name] = mod
+# Canonical stubs live in conftest; _install_comfy_stubs is the superset
+# (also ships pack_latents/unpack_latents + k_diffusion).
+from conftest import install_comfy_stubs as _install_comfy_stubs
 
 
 _install_comfy_stubs()
@@ -141,11 +77,13 @@ def test_dct_expand_with_seed_offset_stability():
 
 def test_spectral_dct2():
     """Compare Lab vs MVP dct2 implementation."""
-    from minimax_h3_speed.spectral import dct2 as mvp_func
+    from speed_scripts.spectral import dct2 as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import dct2 as lab_func
-
+    try:
+        from speed_lab.spectral import dct2 as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     mvp_out = mvp_func(video)
     lab_out = lab_func(video)
@@ -154,11 +92,13 @@ def test_spectral_dct2():
 
 def test_spectral_idct2():
     """Compare Lab vs MVP idct2 implementation."""
-    from minimax_h3_speed.spectral import idct2 as mvp_func
+    from speed_scripts.spectral import idct2 as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import idct2 as lab_func
-
+    try:
+        from speed_lab.spectral import idct2 as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     coeffs = torch.randn(1, 1, 32, 32)
     mvp_out = mvp_func(coeffs)
     lab_out = lab_func(coeffs)
@@ -167,11 +107,13 @@ def test_spectral_idct2():
 
 def test_spectral_lowpass_dct():
     """Compare Lab vs MVP lowpass_dct implementation."""
-    from minimax_h3_speed.spectral import lowpass_dct as mvp_func
+    from speed_scripts.spectral import lowpass_dct as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import lowpass_dct as lab_func
-
+    try:
+        from speed_lab.spectral import lowpass_dct as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     target_hw = (16, 16)
     mvp_out = mvp_func(video, target_hw)
@@ -181,11 +123,13 @@ def test_spectral_lowpass_dct():
 
 def test_spectral_expand():
     """Compare Lab vs MVP spectral_expand implementation."""
-    from minimax_h3_speed.spectral import spectral_expand as mvp_func
+    from speed_scripts.spectral import spectral_expand as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import spectral_expand as lab_func
-
+    try:
+        from speed_lab.spectral import spectral_expand as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     target_hw = (64, 64)
     sigma = 0.5
@@ -198,11 +142,13 @@ def test_spectral_expand():
 
 def test_spectral_expand_coupled():
     """Compare Lab vs MVP spectral_expand_coupled implementation."""
-    from minimax_h3_speed.spectral import dct2, spectral_expand_coupled as mvp_func
+    from speed_scripts.spectral import dct2, spectral_expand_coupled as mvp_func
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "ComfyUI-MiniMaxH3-SPEED-Lab"))
-    from speed_lab.spectral import spectral_expand_coupled as lab_func
-
+    try:
+        from speed_lab.spectral import spectral_expand_coupled as lab_func
+    except ModuleNotFoundError:
+        pytest.skip("speed_lab sibling repo not present")
     video = torch.randn(1, 1, 32, 32)
     full_resolution_noise = torch.randn(1, 1, 64, 64)
     sigma = 0.5
