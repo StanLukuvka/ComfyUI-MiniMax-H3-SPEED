@@ -28,27 +28,29 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-# Pristine condition-latent snapshots and true-original method handles.
-# Attribute storage (dies with the object) is preferred; the id()-keyed dicts
-# are a fallback for slotted/frozen holders that refuse setattr.
-_PRISTINE_ATTR = "_speed_pristine_cond_video_latents"
-_TRUE_ORIGINAL_ATTR = "_speed_true_cond_video_rows"
-_PRISTINE_STORE: dict[int, list] = {}
-_TRUE_ORIGINALS: dict[int, object] = {}
+# Pristine condition-latent snapshots. Attribute storage (dies with the object)
+# is preferred; the id()-keyed dict is a fallback for slotted/frozen holders
+# that refuse setattr (e.g. plain keyframe dicts).
+_PRISTINE_ATTR = "_speed_pristine_keyframe_latent"
+_PRISTINE_STORE: dict[int, object] = {}
 
 
 def _get_pristine(holder):
-    try:
-        return getattr(holder, _PRISTINE_ATTR, None)
-    except Exception:
-        return _PRISTINE_STORE.get(id(holder))
+    # A plain dict returns None from getattr WITHOUT raising, so check the
+    # id-keyed store first (it is the canonical store for dict/tensor holders
+    # that refuse setattr); attribute storage is a best-effort mirror.
+    v = _PRISTINE_STORE.get(id(holder))
+    if v is not None:
+        return v
+    return getattr(holder, _PRISTINE_ATTR, None)
 
 
 def _set_pristine(holder, value):
+    _PRISTINE_STORE[id(holder)] = value
     try:
         setattr(holder, _PRISTINE_ATTR, value)
     except Exception:
-        _PRISTINE_STORE[id(holder)] = value
+        pass
 
 
 def _interp_cond(z, h, w):
@@ -78,160 +80,114 @@ def _interp_cond(z, h, w):
     return resized.reshape(b_, t_, c_, h, w).transpose(1, 2).to(dtype=z.dtype)
 
 
-def _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=False, pristine=None):
-    """[Level 3] Make cond_video_latents match (stage_h, stage_w); restore pristine on final.
+def _patch_guider_conditioning_for_stage(guider, stage_h, stage_w, is_final_stage=False):
+    """[Level 3] Per-stage I2V fix: rescale the *stored* condition sources.
 
-    Called by: `_patch_guider_payload_for_stage` (the per-stage I2V fix).
-    Mutates payload dict in-place so the model sees condition latents matching
-    the coarse latent resolution.
-    
-    Args:
-        payload: The minimax_payload dict containing cond_video_latents
-        stage_h: Target height for this stage
-        stage_w: Target width for this stage
-        is_final_stage: If True, restore the pristine snapshot (full resolution)
-        pristine: Deep snapshot of the original full-res cond tensors
-    """
-    conds = payload.get("cond_video_latents")
-    if not conds:
-        return
-    if is_final_stage:
-        if pristine is not None:
-            for i, p in enumerate(pristine):
-                conds[i] = p.clone()
-            log.info("[SPEED] Final stage — restored pristine cond_video_latents (%d tensors)", len(pristine))
-        else:
-            log.info("[SPEED] Final stage — no pristine snapshot; leaving cond_video_latents untouched")
-        return
-    for i, z in enumerate(conds):
-        src = pristine[i] if pristine is not None else z
-        src_h, src_w = src.shape[-2], src.shape[-1]
-        if src_h != stage_h or src_w != stage_w:
-            conds[i] = _interp_cond(src, stage_h, stage_w)
+    Normal ComfyUI I2V path (rev 5749 / c2bcbecd):
 
+    1. ``MiniMaxH3ImageToVideo``(fl2va) / ``MiniMaxH3ReferenceToVideo``(ref2va)
+       encode reference frames and stash them on the conditioning via
+       ``conditioning_set_values`` under ``minimax_keyframes`` /
+       ``minimax_refs``. Each keyframe is ``{"resolved_frame_index": i,
+       "latent": z}``; each ref block is ``{"kind": ..., "latent": z, ...}``.
+    2. ``CFGGuider.inner_set_conds`` -> ``sampler_helpers.convert_cond`` stores
+       that (plus uuid) in ``guider.original_conds["positive"]``. The latents
+       are FULL-resolution [B,C,T,H,W] tenors.
+    3. On every stage's ``guider.sample()``, ``inner_sample`` copies
+       ``original_conds`` into ``self.conds`` and ``process_conds`` calls
+       ``model.extra_conds``, which builds ``minimax_payload``::
+           payload["cond_video_latents"] = [kf["latent"] for kf in keyframes]
+       (model_base.py ~2168-2175)
+    4. In ``MiniMaxH3Model._forward`` the live latent's coarse dims drive
+       ``PackedLayout`` (``frame_rows`` per keyframe), then
+       ``all_video_rows[~img_update] = self._cond_video_rows(payload, device)``
+       scatters the condition rows. The layout also gets recreated if the
+       signature changed; anything that keeps the condition latents full-res
+       while the grid shrinks makes ``cond_video_rows`` 4x too long -> the
+       [520,96] vs [130,96] broadcast error.
 
-def _wrap_model_cond_video_rows(model, stage_h, stage_w):
-    """[Level 3] Rebinds model._cond_video_rows so cond rows match (stage_h, stage_w).
+    So the ONLY inputs under our control that end up in ``cond_video_latents``
+    are the stored keyframe/ref ``"latent"`` tensors, still full-res inside
+    ``original_conds``. (Two traps we fell into previously: the payload dict
+    is rebuilt from *these* sources on every guider.sample(), so mutating it
+    is a no-op; and ``_cond_video_rows``/PackedLayout live on the
+    inner diffusion model, not on the wrapper at ``guider.model_patcher.model``.)
 
-    IMPORTANT: every call rebinds over the TRUE original method (cached once),
-    never over a previously installed patch — chained patches nest, and the
-    innermost (smallest, earliest stage) dims would win for every later stage.
-    Models without `_cond_video_rows` (T2V) are skipped.
-    
-    This guarantees the I2V condition latents match the current stage's coarse
-    resolution, fixing the shape mismatch in all_video_rows[~img_update] = cond_video_rows.
-    
-    Args:
-        model: The H3 model whose _cond_video_rows method we wrap.
-        stage_h: Target height for this stage.
-        stage_w: Target width for this stage.
-    """
-    if not hasattr(model, "_cond_video_rows"):
-        # T2V models have no I2V condition rows; the wrap would crash.
-        log.info("[SPEED-MONKEY] model %s has no _cond_video_rows — skipping wrap",
-                 type(model).__name__)
-        return
-    try:
-        true_original = getattr(model, _TRUE_ORIGINAL_ATTR, None)
-    except Exception:
-        true_original = _TRUE_ORIGINALS.get(id(model))
-    if true_original is None:
-        true_original = model._cond_video_rows
-        try:
-            setattr(model, _TRUE_ORIGINAL_ATTR, true_original)
-        except Exception:
-            _TRUE_ORIGINALS[id(model)] = true_original
-
-    def _patched_cond_video_rows(payload, device, *args, **kwargs):
-        if isinstance(payload, dict):
-            _downscale_cond_latents(payload, stage_h, stage_w)
-        return true_original(payload, device, *args, **kwargs)
-
-    model._cond_video_rows = _patched_cond_video_rows
-    log.warning("[SPEED-MONKEY] Monkey-patched _cond_video_rows model=%s stage=(%d,%d)",
-                type(model).__name__, stage_h, stage_w)
-
-
-def _unwrap_model_cond_video_rows(model):
-    """[Level 3] Restore the true original _cond_video_rows (final full-res stage)."""
-    if not hasattr(model, "_cond_video_rows"):
-        return
-    try:
-        true_original = getattr(model, _TRUE_ORIGINAL_ATTR, None)
-    except Exception:
-        true_original = _TRUE_ORIGINALS.get(id(model))
-    if true_original is not None and callable(true_original):
-        model._cond_video_rows = true_original
-        log.warning("[SPEED-MONKEY] Unwrapped _cond_video_rows (final full-res stage)")
-
-
-def _patch_guider_payload_for_stage(guider, stage_h, stage_w, stage_t, audio_t, is_final_stage=False):
-    """[Level 3] Per-stage I2V fix.
-
-    The condition latents (I2V reference image / keyframes) are full-resolution
-    [B,C,T,H_full,W_full]. SPEED runs each stage at a *coarser* resolution, so
-    the model builds its PackedLayout from the coarse latent dims. If we leave
-    the condition latents at full resolution, `_cond_video_rows` produces 4x more
-    rows than `layout.img_update` allocated -> broadcast shape mismatch at
-    `model.py: all_video_rows[~img_update] = cond_video_rows`.
-
-    Fix (lives in the extension, not base ComfyUI): walk the guider's original_conds,
-    find the `minimax_payload` CONDConstant, downscale `cond_video_latents` to the
-    current stage dims. The model at model.py:520-524 auto-rebuilds its PackedLayout
-    when it detects a signature mismatch, producing the correct img_update rows.
-
-    MiniMax has no negative prompts, so only the positive cond is patched.
+    Fix: walk the positive conds, find the keyframes / refs, and rescale each
+    stored ``latent`` to the stage's (h, w) — rounded to the model's 2x2
+    patch multiple is unnecessary because keyframes share the *target* grid
+    (PackedLayout computes it), but resize happens from a pristine full-res
+    snapshot so progressive stages never degrade the source.
 
     Args:
-        guider: The guider object containing original_conds
-        stage_h: Target height for this stage
-        stage_w: Target width for this stage
-        stage_t: Target temporal dimension
-        audio_t: Audio temporal dimension
-        is_final_stage: If True, restore pristine conds instead of downscaling
+        guider: The guider object holding original_conds.
+        stage_h: Target height for this stage. If None, restore pristine.
+        stage_w: Target width for this stage. If None, restore pristine.
+        is_final_stage: If True, restore pristine (full-res) instead of downscaling.
     """
-    # Guider_Basic/CFGGuider only creates `self.conds` inside inner_sample,
-    # copying from original_conds. Patch original_conds so each stage's
-    # guider.sample() picks up the downscaled payload.
-    
-    # Handle both dict and non-dict formats for original_conds
-    original_conds = getattr(guider, 'original_conds', {})
+    original_conds = getattr(guider, 'original_conds', None)
     if not isinstance(original_conds, dict):
-        original_conds = {}
-    
-    positive_conds = original_conds.get("positive", [])
-    if not isinstance(positive_conds, list):
-        positive_conds = []
-    
-    for cond in positive_conds:
-        payload_holder = None
-        
-        # Handle both dict and object (CONDConstant) formats for cond
-        if isinstance(cond, dict):
-            payload_holder = cond.get("minimax_payload")
-        else:
-            # Try attribute access for CONDConstant objects
-            payload_holder = getattr(cond, "minimax_payload", None)
-        
-        if payload_holder is None:
+        return
+    for key in ("positive", "negative"):
+        conds = original_conds.get(key)
+        if not isinstance(conds, list):
             continue
-        
-        # CONDConstant wraps the raw dict in `.cond`
-        payload = getattr(payload_holder, "cond", None)
-        
-        # If we couldn't get it via .cond, try using payload_holder directly
-        if payload is None and isinstance(payload_holder, dict):
-            payload = payload_holder
-        
-        if not isinstance(payload, dict):
+        for cond in conds:
+            if not isinstance(cond, dict):
+                continue
+            _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=is_final_stage)
+
+
+def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
+    """Rescale the fl2va keyframe latents found in one conditioning dict.
+
+    This is the ONLY cond source that can produce the row-mismatch:
+    PackedLayout allocates one "cond" segment per keyframe using the LIVE
+    target grid (the coarse stage dims), while `_cond_video_rows` patchifies
+    the keyframe's own tensor. Full-res tensor + coarse grid = 4x too many
+    rows (in the reported crash: 520 full-res vs 130 stage-0 rows).
+
+    ref2va "minimax_refs" blocks are intentionally NOT touched: their rows
+    are allocated from their own stored latent_h/latent_w metadata, which
+    SPEED never changes — tensor and allocation stay consistent at every
+    stage, at the cost of running ref rows at full res during coarse stages.
+
+    Each keyframe keeps a pristine full-res snapshot (attribute storage,
+    dict-store fallback) so the final stage restores full resolution.
+
+    Target dims are rounded UP to even (the DiT's 2x2 patch grid): SPEED
+    coarse stages can be odd (e.g. 0.25 scale -> w=13), and `patchify_video`
+    reshape would crash on odd dims while the live video gets circular-padded
+    to even by `pad_to_patch_size` — matching that grid keeps cond rows equal
+    to the layout's frame_rows.
+    """
+    def _patch_even(dim):
+        return dim + (dim % 2)
+
+    keyframes = cond.get("minimax_keyframes", []) or []
+    for kf in keyframes:
+        if not isinstance(kf, dict):
             continue
-        
-        pristine = _get_pristine(payload_holder)
+        z = kf.get("latent")
+        if z is None or not hasattr(z, "shape"):
+            continue
+        pristine = _get_pristine(kf)
         if pristine is None:
-            pristine = [z.clone() for z in payload.get("cond_video_latents", [])]
-            if pristine:
-                _set_pristine(payload_holder, pristine)
-        _downscale_cond_latents(payload, stage_h, stage_w, is_final_stage=is_final_stage, pristine=pristine)
+            pristine = z.clone()
+            _set_pristine(kf, pristine)
+        if is_final_stage:
+            if getattr(z, "shape", None) != getattr(pristine, "shape", None):
+                kf["latent"] = pristine.clone()
+                log.info("[SPEED] final stage — restored keyframe latent %s",
+                         list(pristine.shape))
+            return
+        th = _patch_even(stage_h)
+        tw = _patch_even(stage_w)
+        src_h, src_w = pristine.shape[-2], pristine.shape[-1]
+        if src_h != th or src_w != tw:
+            kf["latent"] = _interp_cond(pristine, th, tw)
+            log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
+                     stage_h, stage_w, list(pristine.shape), list(kf["latent"].shape))
 
 
 def stage_resolution(config, stage_idx, full_h, full_w, full_t):
@@ -548,19 +504,14 @@ def run_speed_pipeline(
                  list(stage_start_pub.shape) if hasattr(stage_start_pub, 'shape') else stage_start_pub,
                  len(current_sigmas), boundary)
 
-        # I2V per-stage fix: downscale cond_video_latents so they match the coarse
-        # latent this stage actually runs at.
+        # I2V per-stage fix: rescale the STORED keyframe/ref latents in
+        # guider.original_conds so the per-stage guider.sample() ->
+        # process_conds -> model.extra_conds rebuild of minimax_payload
+        # picks up cond_video_latents matching this stage's coarse latent.
+        # (The payload dict from a previous stage is rebuilt from these
+        # sources every call, so these sources are the only patch point.)
         sh, sw, st = stage_resolution(config, stage_idx, full_h, full_w, full_t)
-        _patch_guider_payload_for_stage(guider, sh, sw, st, full_audio.shape[-1], is_final_stage=False)
-        
-        # Also wrap model's _cond_video_rows to ensure conditions match stage resolution
-        log.warning("[SPEED-MONKEY] INTERIOR STAGE %d: wrapping _cond_video_rows", stage_idx)
-        if hasattr(guider, 'model_patcher') and guider.model_patcher is not None:
-            model = guider.model_patcher.model
-            log.warning("[SPEED-MONKEY] Found model: %s - wrapping _cond_video_rows", type(model).__name__)
-            _wrap_model_cond_video_rows(model, sh, sw)
-        else:
-            log.warning("[SPEED-MONKEY] NO model_patcher found - cannot wrap interior stage %d", stage_idx)
+        _patch_guider_conditioning_for_stage(guider, sh, sw, is_final_stage=False)
 
         # Run the current stage over current_sigmas[:boundary+1].
         capture, callback = _step_capture()
@@ -689,12 +640,12 @@ def run_speed_pipeline(
     log.info("[SPEED] final stage: latent=%s sigmas=%d",
              list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
              len(current_sigmas))
-    # Final stage is at scale 1.0 (stage n_stages-1) so target == full res -> no-op
-    # downscale/rebuild, keeping T2V and full-res I2V behaviour unchanged.
+    # Final stage is at scale 1.0 (stage n_stages-1) so target == full res.
+    # Restore the pristine full-res keyframe/ref latents in the original conds
+    # (kept since our first downscale) so the final stage runs exactly like
+    # the normal full-res I2V path.
     fh, fw, ft = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
-    _patch_guider_payload_for_stage(guider, fh, fw, ft, full_audio.shape[-1], is_final_stage=True)
-    if hasattr(guider, "model_patcher") and guider.model_patcher is not None:
-        _unwrap_model_cond_video_rows(guider.model_patcher.model)
+    _patch_guider_conditioning_for_stage(guider, fh, fw, is_final_stage=True)
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,
