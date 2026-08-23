@@ -42,7 +42,7 @@ class MiniMaxH3SPEEDSampler:
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
                 "preset": (list(SCALE_PRESETS.keys()),),
-                "transition_mode": (["manual_step", "manual_sigma", "delta_custom"],),
+                "transition_mode": (["explicit", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
                 "noise_amplitude": ("FLOAT", {"default": 150.0, "min": 0.0, "max": 1e6}),
@@ -64,9 +64,11 @@ class MiniMaxH3SPEEDSampler:
         # (resolved from the preset); only "delta_custom" uses power-spectrum
         # thresholds. (The deleted Schedule node used to emit the same three values;
         # its vocabulary was folded into this mapping when it was pruned.)
-        transition_mode_map = {"manual_step": "explicit",
-                          "manual_sigma": "explicit",
-                          "delta_custom": "delta_custom"}
+        transition_mode_map = {"explicit": "explicit",
+                          "delta_custom": "delta_custom",
+                          # backwards compat for old workflows
+                          "manual_step": "explicit",
+                          "manual_sigma": "explicit"}
         config_mode = transition_mode_map.get(transition_mode, "explicit")
         return build_config_and_run(
             noise, guider, sigmas, latent_image,

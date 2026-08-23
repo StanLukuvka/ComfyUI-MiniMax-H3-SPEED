@@ -40,7 +40,6 @@ from speed_scripts.harvest import (
     radial_dct_power,
     fit_power_law,
     classify_fit_quality,
-    recommend_transition_steps,
 )
 
 
@@ -53,8 +52,8 @@ class MiniMaxH3HarvestToConfig:
         "fits P = A * |omega|^(-beta), and emits harvest_json + calibration report. "
         "Does NOT use the SPEED multi-stage chain — sigma schedule must stay fixed."
     )
-    RETURN_TYPES = ("STRING", "LATENT", "LATENT")
-    RETURN_NAMES = ("calibration_result", "output_latent", "denoised_latent")
+    RETURN_TYPES = ("STRING", "LATENT")
+    RETURN_NAMES = ("calibration", "diagnostic_latent")
     FUNCTION = "harvest"
     CATEGORY = "sampling/minimax_h3_speed/diagnostics"
     OUTPUT_NODE = False
@@ -180,7 +179,6 @@ class MiniMaxH3HarvestToConfig:
                 + str(exc).replace('"', "'")
                 + '","fix":"Run the native Euler sampler outside this pack and feed the result back in."}',
                 latent_image,
-                None,
             )
 
         if not residual_snapshots:
@@ -189,7 +187,6 @@ class MiniMaxH3HarvestToConfig:
                 'recorded. The native sampler callback did not fire — check ComfyUI '
                 'setup.","n_captures":0}',
                 latent_image,
-                None,
             )
 
         freqs_all, profiles_all = [], []
@@ -209,7 +206,6 @@ class MiniMaxH3HarvestToConfig:
                 'produced no valid spectral profiles — residual may be zero or '
                 'non-physical.","n_captures":' + str(len(residual_snapshots)) + '}',
                 latent_image,
-                None,
             )
 
         max_len = max(len(p) for p in profiles_all)
@@ -234,7 +230,6 @@ class MiniMaxH3HarvestToConfig:
                 + str(exc).replace('"', "'")
                 + '","n_captures":' + str(len(residual_snapshots)) + '}',
                 latent_image,
-                None,
             )
 
         A = float(fit["A"])
@@ -262,59 +257,37 @@ class MiniMaxH3HarvestToConfig:
         else:
             H_full, W_full = 64, 64
 
+        # sigmas_list not needed for plug-and-play, but keep for debugging if needed
         try:
             sigmas_list = [float(s) for s in sigmas]
         except Exception:
             sigmas_list = [float(sigmas[i]) for i in range(len(sigmas))]
 
-        try:
-            rec = recommend_transition_steps(A, beta, sigmas_list, H_full, W_full, delta=float(delta))
-        except Exception:
-            rec = {}
+        # Plug-and-play for SPEED's delta_custom: just feed A/beta into
+        # noise_amplitude / noise_decay_exponent + delta. No per-preset
+        # transition_steps table — SPEED computes it via resolve_transition_steps.
+        calibration = {
+            "noise_amplitude": A,
+            "noise_decay_exponent": beta,
+            "delta": float(delta),
+            "r2": r2,
+            "health": health,
+        }
 
-        fit_results_json = json.dumps(
-            {
-                "overall_fit_A": A,
-                "overall_fit_beta": beta,
-                "overall_fit_r2": r2,
-                "fit_mode": "delta_custom",
-                "fit_health": health,
-                "n_sigma_levels": len(sigmas_list) - 1,
-                "sigma_levels": sigmas_list,
-                "recommended_config": rec,
-            }
-        )
-
+        # Human-readable report — just the plug-and-play values
         lines = [
-            f"Calibrated: A={A:.3f}  beta={beta:.3f}  r²={r2:.4f}  "
-            f"(fit_mode=delta_custom, health={health})",
+            f"Calibrated: noise_amplitude={A:.3f}  noise_decay_exponent={beta:.3f}  r²={r2:.4f}  health={health}",
         ]
         if health in ("suspect", "weak", "invalid"):
             lines.append(
                 f"WARNING: fit is {health.upper()} — beta={beta:.3f} with "
-                f"r²={r2:.4f}. Power is not cleanly decaying. Trust the "
-                f"transition_steps below with caution, or rerun to fit a better spectrum."
+                f"r²={r2:.4f}. Not cleanly decaying. Rerun harvest or use manual preset."
             )
-        if rec:
-            lines.append("Recommended delta-optimal transition_steps (paste into sampler):")
-            for name, preset in rec.items():
-                lines.append(
-                    f"  {name}: scales={preset['scales']}  "
-                    f"transition_steps={preset['transition_steps']}"
-                )
-        else:
-            lines.append("(no recommended_config — harvest did not include per-preset steps)")
-
-        lines.append(f"Per-sigma velocity fits (diagnostic):  beta={beta:+.3f}  r²={r2:.3f}")
-
+        lines.append(f"Paste into SPEED Sampler: delta={float(delta):.3f}, noise_amplitude={A:.3f}, noise_decay_exponent={beta:.3f} (transition_mode=delta_custom)")
         report = "\n".join(lines)
+        calibration["report"] = report
 
-        output_json = json.dumps(
-            {
-                "harvest_json": fit_results_json,
-                "report": report,
-            }
-        )
+        output_json = json.dumps(calibration)
 
         # guider.sample returns a NestedTensor/tensor, but ComfyUI LATENT is a dict
         # {"samples": ...}. Wrap it so downstream VAE decode works (otherwise
@@ -329,7 +302,7 @@ class MiniMaxH3HarvestToConfig:
                 output_latent = {"samples": result}
         else:
             output_latent = latent_image
-        return (output_json, output_latent, None)
+        return (output_json, output_latent)
 
     def compute_video_residual(self, x_tensor, denoised_tensor):
         import torch

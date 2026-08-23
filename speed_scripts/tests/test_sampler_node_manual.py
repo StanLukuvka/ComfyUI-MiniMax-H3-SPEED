@@ -1,4 +1,4 @@
-"""Contract tests for the manual step-through sampler node."""
+"""Contract tests for the manual (DEPRECATED - brittle, prefer delta_custom) step-through sampler node."""
 import importlib
 
 import pytest
