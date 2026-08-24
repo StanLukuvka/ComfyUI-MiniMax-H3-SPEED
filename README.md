@@ -28,27 +28,28 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 
 ## How to use
 
-1. Install the pack (see above).
-2. In ComfyUI, load the example workflow: `workflows/video_minimax_h3_SPEED.json`.
-3. Wire your H3 model into the guider and hit run.
+Three nodes:
 
-The workflow is a starter — it has the sampler node and the standard ComfyUI nodes (RandomNoise, BasicGuider, BasicScheduler) already laid out. Adjust the preset and scheduler steps to taste.
+**1. MiniMax H3 SPEED — Sampler (Automatic)** — the default. `preset` picks the scale ladder, `Tolerance (Delta)` + `noise_amplitude`/`noise_decay_exponent` auto-compute step boundaries from the power spectrum (`P=A·ω^-β`, `thr=1/(1+√(δ/(P(1+P-δ))))`). Baked calibration is `A7.394 β0.62 δ0.01` from a 0.6MP 40-step harvest (β0.59-0.62 stable across 0.5→0.6MP, 20/40 steps). Just pick a preset and go.
 
-**Presets** (the `preset` widget):
+**2. MiniMax H3 SPEED — Sampler (Manual Step-Through)** — explicit control. No `Tolerance`/`A`/`β` (those are for auto). Set `ratio_mode steps` (step indices) or `ratio` (fraction of schedule) and up to four `(goal, resolution)` pairs — `goal 0` disables that stage. Needs at least two active stages ending at `1.0`.
 
-- `half_then_full` — start at 50%, finish full (recommended default)
-- `quarter_half_full` — start at 25%, step to 50%, finish full
-- `quarter_half_3q_full` — start at 25%, step to 50%, then 75%, finish full
-- `aggressive` — start at 25%, jump to 75%, finish full
-- `three_quarter_then_full` — start at 75%, finish full
+**3. MiniMax H3 SPEED — Sigma Harvest (Native Euler)** — calibrates `A/β` for the automatic sampler. Wire `noise`/`guider`/`sigmas`/`latent_image` + `Tolerance (Delta)`, run a native full-res generation, copy `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r²`, `health`) into the Automatic sampler. Report includes plug-and-play line and diagnostic `Reference 0.50x/0.75x → sigma~X [thr Y]`. Use `simple` scheduler, 28-32 steps for a clean `r²>0.6`.
 
-**Transition mode** (the `transition_mode` widget):
+Load the example workflow: `workflows/video_minimax_h3_SPEED.json`.
 
-- `manual_step` — use the preset's hardcoded step boundaries (default)
-- `manual_sigma` — same boundaries, resolved by sigma value instead of step index
-- `delta_custom` — compute boundaries at runtime from a power-law spectral fit using `noise_amplitude`, `noise_decay_exponent`, and `delta`. Only for advanced tuning.
+**Presets** (the `preset` widget, both samplers use the same scale ladders):
+- `half_then_full` — 0.5 → 1.0
+- `quarter_half_full` — 0.25 → 0.5 → 1.0
+- `quarter_half_3q_full` — 0.25 → 0.5 → 0.75 → 1.0
+- `aggressive` — 0.25 → 0.75 → 1.0
+- `three_quarter_then_full` — 0.75 → 1.0
 
-Everything else on the node is standard ComfyUI wiring (noise, guider, sigmas, latent). The output is `(output_latent, denoised_latent)` — connect `output_latent` to your save node.
+**Noise policy** (`noise_policy` on both samplers):
+- `direct_coarse` (default) — fresh DCT noise per stage, lowest VRAM
+- `coupled_full_grid` — one full-res noise grid reused across stages (DCT-coupled), slightly better temporal consistency at upscale, higher VRAM
+
+Everything else is standard ComfyUI wiring (noise, guider, sigmas, latent). Output is `(output_latent, denoised_latent)` — connect `output_latent` to save/decode.
 
 ## Troubleshooting
 
