@@ -45,15 +45,15 @@ class MiniMaxH3SPEEDSampler:
                 "transition_mode": (["explicit", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "noise_amplitude": ("FLOAT", {"default": 150.0, "min": 0.0, "max": 1e6}),
-                "noise_decay_exponent": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
+                "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6}),
+                "noise_decay_exponent": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 10.0}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
             },
         }
 
     def sample(self, noise, guider, sigmas, latent_image, preset,
                transition_mode, noise_policy="direct_coarse",
-               noise_amplitude=150.0, noise_decay_exponent=2.0,
+               noise_amplitude=7.394, noise_decay_exponent=0.62,
                seed_offset=10000, **kwargs):
         # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
         delta = kwargs.get("Tolerance (Delta)",
