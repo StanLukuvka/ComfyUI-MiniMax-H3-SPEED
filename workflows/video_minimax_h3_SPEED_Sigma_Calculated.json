@@ -1,8 +1,8 @@
 {
   "id": "e3f2b845-8f2c-4b5a-9caf-eac1029d3e7e",
   "revision": 0,
-  "last_node_id": 123,
-  "last_link_id": 254,
+  "last_node_id": 125,
+  "last_link_id": 270,
   "nodes": [
     {
       "id": 92,
@@ -13,7 +13,7 @@
       ],
       "size": [
         1070,
-        692.4444444444445
+        106
       ],
       "flags": {},
       "order": 5,
@@ -32,7 +32,10 @@
           "links": null
         }
       ],
-      "properties": {},
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.32.0"
+      },
       "widgets_values": [
         "video/MiniMax_H3",
         "auto",
@@ -144,11 +147,13 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.32.0",
         "Node name for S&R": "ResolutionSelector"
       },
       "widgets_values": [
         "16:9 (Widescreen)",
-        0.4,
+        0.5,
         32
       ]
     },
@@ -224,14 +229,16 @@
         }
       ],
       "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.32.0",
         "previewExposures": []
       },
       "widgets_values": [
-        "Realistic live-action cinematic look, action movie trailer: practical film photography style, a post-rain dusk metropolis, anamorphic lens, shallow depth of field, film grain, city volumetric fog, flying-car traffic between the towers, restrained grading for a premium feel, powerful natural movement.\n\nScene overview: at dusk on a cluster of skyscrapers, the protagonist is being chased, sprinting and leaping across rooftops, jumping from one building's roof to the next with pursuers closing in behind. This is the escape sequence of an action movie trailer: every leap is life-or-death, thrilling and fluid.\n\nStoryboard (each shot a separate scene, rapid cuts, all landing on the musical beats):\n[0s-1.5s] Shot 1: high side angle: the protagonist sprinting at the roof edge, pursuers appearing in the rooftop doorway behind him, wind catching his coat.\n[1s-2.5s] Shot 2: the protagonist leaps across the gap between buildings, body stretching mid-air, towers and flying-car light trails behind him, a slight slow-motion feel.\n[2.5s-4s] Shot 3: he lands, rolls and rises, low-angle shot, tower shadows and fog behind him, he keeps running.\n[4s-5s] Shot 4: freeze: the instant he hits the edge of the next roof and launches into the jump, silhouette, holding.\n\nCamera: each shot its own angle, cuts clean and hard, no dissolves, a slight frame jitter on the jumps.\n\nAudio: wind, rapid footsteps, city ambience, low score underneath, an accent hit on each leap, the score bursting at 4s, closing the last 1s.\n\nNo text, subtitles, logos or watermarks of any kind, no animation or cartoon rendering, no overly-CG look, keep the live-action texture.",
+        "integrated_multimodal_description: [Shot 1] Live-action, mockumentary, a medium-wide static shot frames a dull open-plan office under flat fluorescent light — desks with monitors, sticky notes, a large window with closed blinds in the background. A young man in his late 20s with tousled brown hair, wearing a light blue button-down shirt and loosened dark tie (S1), stands in the aisle holding up a white ceramic mug reading \"World's Most Mediocre Boss\" toward the camera with both hands, looking straight into the lens with forced confidence. The camera holds a static shot. The young man with an earnest, slightly nasal voice at a quick, nervous rate (S1) says: <d>[English] You know what? I've decided to aim higher.</d>\n[Shot 2] At 00:03.000, the camera pushes in with small amplitude at slow speed toward him as he sneers at the window, winds up with his right arm, and hurls the mug reading \"World's Most Mediocre Boss\" toward the office window. The young man (S1) says: <d>[English] Watch this.</d>\n[Shot 3] At 00:05.800, the camera holds a static shot as the mug hits the reinforced window glass with a dull clunk, fails to break it, and bounces straight back in a slow arc toward him, spinning in the air.\n[Shot 4] At 00:07.200, the camera tilts down at slow speed as the mug smacks him squarely in the forehead, he keeps a perfectly deadpan, eyes-wide expression for a beat, then falls stiff as a plank straight backwards onto the thin office carpet with his arms pinned at his sides, the mug clattering beside him while two coworkers in the background freeze and stare.\n\noverall_soundscape: Low office ambience with faint keyboard clatter, air conditioning hum, and distant phones. A sharp whoosh as the mug is thrown, a dull clunk on the window glass, a second sharper thwack as it hits his forehead, then a soft thud as he hits the carpet followed by the mug clattering and stifled gasps and short, shocked laughter from coworkers.\n\nnon_diegetic_music: N/A",
         1344,
         768,
-        5,
-        217443059670542,
+        10,
+        778390949854462,
         "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
         "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
         "minimax_h3_video_vae_fp16.safetensors",
@@ -273,8 +280,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 4,
-          "lastNodeId": 123,
-          "lastLinkId": 254,
+          "lastNodeId": 125,
+          "lastLinkId": 270,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -463,7 +470,7 @@
               70
             ],
             "flags": {},
-            "order": 4,
+            "order": 3,
             "mode": 0,
             "inputs": [
               {
@@ -488,6 +495,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "VAELoader",
               "models": [
                 {
@@ -513,7 +522,7 @@
               70
             ],
             "flags": {},
-            "order": 9,
+            "order": 8,
             "mode": 0,
             "inputs": [
               {
@@ -537,6 +546,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "VAELoader",
               "models": [
                 {
@@ -564,14 +575,14 @@
             "flags": {
               "collapsed": false
             },
-            "order": 8,
+            "order": 7,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "samples",
                 "name": "samples",
                 "type": "LATENT",
-                "link": 251
+                "link": 270
               },
               {
                 "localized_name": "vae",
@@ -591,6 +602,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "VAEDecodeAudio"
             },
             "widgets_values": []
@@ -607,7 +620,7 @@
               120
             ],
             "flags": {},
-            "order": 5,
+            "order": 4,
             "mode": 0,
             "inputs": [
               {
@@ -631,6 +644,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "CLIPLoader",
               "models": [
                 {
@@ -658,7 +673,7 @@
               110
             ],
             "flags": {},
-            "order": 10,
+            "order": 9,
             "mode": 0,
             "inputs": [
               {
@@ -686,6 +701,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "CreateVideo"
             },
             "widgets_values": [
@@ -707,7 +724,7 @@
             "flags": {
               "collapsed": false
             },
-            "order": 12,
+            "order": 11,
             "mode": 0,
             "inputs": [
               {
@@ -749,6 +766,8 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "ComfyMathExpression"
             },
             "widgets_values": [
@@ -767,7 +786,7 @@
               70
             ],
             "flags": {},
-            "order": 13,
+            "order": 12,
             "mode": 0,
             "inputs": [
               {
@@ -792,6 +811,8 @@
             ],
             "title": "Float (duration)",
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "PrimitiveFloat"
             },
             "widgets_values": [
@@ -812,14 +833,14 @@
             "flags": {
               "collapsed": false
             },
-            "order": 3,
+            "order": 2,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "samples",
                 "name": "samples",
                 "type": "LATENT",
-                "link": 250
+                "link": 269
               },
               {
                 "localized_name": "vae",
@@ -839,9 +860,64 @@
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "VAEDecode"
             },
             "widgets_values": []
+          },
+          {
+            "id": 6,
+            "type": "UNETLoader",
+            "pos": [
+              -2020,
+              4630
+            ],
+            "size": [
+              640,
+              90
+            ],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "unet_name",
+                "name": "unet_name",
+                "type": "COMBO",
+                "widget": {
+                  "name": "unet_name"
+                },
+                "link": 221
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "MODEL",
+                "name": "MODEL",
+                "type": "MODEL",
+                "links": [
+                  5,
+                  254
+                ]
+              }
+            ],
+            "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
+              "Node name for S&R": "UNETLoader",
+              "models": [
+                {
+                  "name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+                  "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+                  "directory": "diffusion_models"
+                }
+              ]
+            },
+            "widgets_values": [
+              "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+              "default"
+            ]
           },
           {
             "id": 15,
@@ -855,7 +931,7 @@
               90
             ],
             "flags": {},
-            "order": 6,
+            "order": 5,
             "mode": 0,
             "inputs": [
               {
@@ -874,87 +950,18 @@
                 "name": "NOISE",
                 "type": "NOISE",
                 "links": [
-                  246
+                  265
                 ]
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "RandomNoise"
             },
             "widgets_values": [
               1,
               "randomize"
-            ]
-          },
-          {
-            "id": 17,
-            "type": "KSamplerSelect",
-            "pos": [
-              -790,
-              4910
-            ],
-            "size": [
-              370,
-              70
-            ],
-            "flags": {},
-            "order": 0,
-            "mode": 0,
-            "inputs": [],
-            "outputs": [
-              {
-                "localized_name": "SAMPLER",
-                "name": "SAMPLER",
-                "type": "SAMPLER",
-                "links": []
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "KSamplerSelect"
-            },
-            "widgets_values": [
-              "res_multistep"
-            ]
-          },
-          {
-            "id": 9,
-            "type": "BasicScheduler",
-            "pos": [
-              -790,
-              5030
-            ],
-            "size": [
-              370,
-              130
-            ],
-            "flags": {},
-            "order": 2,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "model",
-                "name": "model",
-                "type": "MODEL",
-                "link": 5
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "SIGMAS",
-                "name": "SIGMAS",
-                "type": "SIGMAS",
-                "links": [
-                  248
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "BasicScheduler"
-            },
-            "widgets_values": [
-              "simple",
-              20,
-              1
             ]
           },
           {
@@ -969,7 +976,7 @@
               510
             ],
             "flags": {},
-            "order": 11,
+            "order": 10,
             "mode": 0,
             "inputs": [
               {
@@ -1049,11 +1056,13 @@
                 "name": "LATENT",
                 "type": "LATENT",
                 "links": [
-                  249
+                  268
                 ]
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "MiniMaxH3ImageToVideo"
             },
             "widgets_values": [
@@ -1064,18 +1073,61 @@
             ]
           },
           {
+            "id": 9,
+            "type": "BasicScheduler",
+            "pos": [
+              -809.1159303945695,
+              4937.744655024317
+            ],
+            "size": [
+              370,
+              130
+            ],
+            "flags": {},
+            "order": 1,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "model",
+                "name": "model",
+                "type": "MODEL",
+                "link": 5
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "SIGMAS",
+                "name": "SIGMAS",
+                "type": "SIGMAS",
+                "links": [
+                  267
+                ]
+              }
+            ],
+            "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
+              "Node name for S&R": "BasicScheduler"
+            },
+            "widgets_values": [
+              "simple",
+              20,
+              1
+            ]
+          },
+          {
             "id": 16,
             "type": "BasicGuider",
             "pos": [
-              -797.179096373199,
-              4790.391914334935
+              -803.828154238337,
+              4798.703204961301
             ],
             "size": [
               360,
               60
             ],
             "flags": {},
-            "order": 7,
+            "order": 6,
             "mode": 0,
             "inputs": [
               {
@@ -1097,53 +1149,55 @@
                 "name": "GUIDER",
                 "type": "GUIDER",
                 "links": [
-                  253
+                  266
                 ]
               }
             ],
             "properties": {
+              "cnr_id": "comfy-core",
+              "ver": "0.32.0",
               "Node name for S&R": "BasicGuider"
             },
             "widgets_values": []
           },
           {
-            "id": 123,
+            "id": 125,
             "type": "MiniMaxH3SPEEDSampler",
             "pos": [
-              -404.9035117060441,
-              4392.491273062913
+              -393.84890084171724,
+              4776.034932271737
             ],
             "size": [
-              303.8833374023437,
-              262
+              304.81667175292966,
+              238
             ],
             "flags": {},
-            "order": 14,
+            "order": 13,
             "mode": 0,
             "inputs": [
               {
                 "localized_name": "noise",
                 "name": "noise",
                 "type": "NOISE",
-                "link": 246
+                "link": 265
               },
               {
                 "localized_name": "guider",
                 "name": "guider",
                 "type": "GUIDER",
-                "link": 253
+                "link": 266
               },
               {
                 "localized_name": "sigmas",
                 "name": "sigmas",
                 "type": "SIGMAS",
-                "link": 248
+                "link": 267
               },
               {
                 "localized_name": "latent_image",
                 "name": "latent_image",
                 "type": "LATENT",
-                "link": 249
+                "link": 268
               }
             ],
             "outputs": [
@@ -1152,8 +1206,8 @@
                 "name": "output",
                 "type": "LATENT",
                 "links": [
-                  250,
-                  251
+                  269,
+                  270
                 ]
               },
               {
@@ -1164,67 +1218,17 @@
               }
             ],
             "properties": {
+              "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
+              "ver": "75471c83417236300edcf4c6dfc7515cf7772c75",
               "Node name for S&R": "MiniMaxH3SPEEDSampler"
             },
             "widgets_values": [
-              "half_then_full",
-              "manual_step",
+              2,
               "direct_coarse",
               0.01,
-              219.48,
-              2.42,
+              7.394,
+              0.62,
               10000
-            ]
-          },
-          {
-            "id": 6,
-            "type": "UNETLoader",
-            "pos": [
-              -2020,
-              4630
-            ],
-            "size": [
-              640,
-              90
-            ],
-            "flags": {},
-            "order": 1,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "unet_name",
-                "name": "unet_name",
-                "type": "COMBO",
-                "widget": {
-                  "name": "unet_name"
-                },
-                "link": 221
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "MODEL",
-                "name": "MODEL",
-                "type": "MODEL",
-                "links": [
-                  5,
-                  254
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "UNETLoader",
-              "models": [
-                {
-                  "name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-                  "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-                  "directory": "diffusion_models"
-                }
-              ]
-            },
-            "widgets_values": [
-              "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-              "default"
             ]
           }
         ],
@@ -1456,60 +1460,60 @@
             "type": "COMBO"
           },
           {
-            "id": 246,
-            "origin_id": 15,
-            "origin_slot": 0,
-            "target_id": 123,
-            "target_slot": 0,
-            "type": "NOISE"
-          },
-          {
-            "id": 248,
-            "origin_id": 9,
-            "origin_slot": 0,
-            "target_id": 123,
-            "target_slot": 2,
-            "type": "SIGMAS"
-          },
-          {
-            "id": 249,
-            "origin_id": 104,
-            "origin_slot": 1,
-            "target_id": 123,
-            "target_slot": 3,
-            "type": "LATENT"
-          },
-          {
-            "id": 250,
-            "origin_id": 123,
-            "origin_slot": 0,
-            "target_id": 10,
-            "target_slot": 0,
-            "type": "LATENT"
-          },
-          {
-            "id": 251,
-            "origin_id": 123,
-            "origin_slot": 0,
-            "target_id": 23,
-            "target_slot": 0,
-            "type": "LATENT"
-          },
-          {
-            "id": 253,
-            "origin_id": 16,
-            "origin_slot": 0,
-            "target_id": 123,
-            "target_slot": 1,
-            "type": "GUIDER"
-          },
-          {
             "id": 254,
             "origin_id": 6,
             "origin_slot": 0,
             "target_id": 16,
             "target_slot": 0,
             "type": "MODEL"
+          },
+          {
+            "id": 265,
+            "origin_id": 15,
+            "origin_slot": 0,
+            "target_id": 125,
+            "target_slot": 0,
+            "type": "NOISE"
+          },
+          {
+            "id": 266,
+            "origin_id": 16,
+            "origin_slot": 0,
+            "target_id": 125,
+            "target_slot": 1,
+            "type": "GUIDER"
+          },
+          {
+            "id": 267,
+            "origin_id": 9,
+            "origin_slot": 0,
+            "target_id": 125,
+            "target_slot": 2,
+            "type": "SIGMAS"
+          },
+          {
+            "id": 268,
+            "origin_id": 104,
+            "origin_slot": 1,
+            "target_id": 125,
+            "target_slot": 3,
+            "type": "LATENT"
+          },
+          {
+            "id": 269,
+            "origin_id": 125,
+            "origin_slot": 0,
+            "target_id": 10,
+            "target_slot": 0,
+            "type": "LATENT"
+          },
+          {
+            "id": 270,
+            "origin_id": 125,
+            "origin_slot": 0,
+            "target_id": 23,
+            "target_slot": 0,
+            "type": "LATENT"
           }
         ],
         "extra": {}
@@ -1518,16 +1522,16 @@
   },
   "config": {},
   "extra": {
-    "frontendVersion": "1.47.12",
+    "frontendVersion": "1.48.7",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,
     "VHS_KeepIntermediate": true,
     "ds": {
-      "scale": 0.820351750972763,
+      "scale": 0.5131581182307067,
       "offset": [
-        1781.6862738959826,
-        -4146.604555121944
+        2695.285725555493,
+        -4379.900065196832
       ]
     }
   },

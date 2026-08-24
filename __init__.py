@@ -33,19 +33,22 @@ print("MiniMax-H3 SPEED node pack: registering nodes...")
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
-def _register(_name, _mod, _dbg):
+def _register(_mod, _name):
     _mappings = getattr(_mod, "NODE_CLASS_MAPPINGS", {})
     _display = getattr(_mod, "NODE_DISPLAY_NAME_MAPPINGS", {})
     NODE_CLASS_MAPPINGS.update(_mappings)
     NODE_DISPLAY_NAME_MAPPINGS.update(_display)
-    print("Registered %-28s %s" % (_dbg, ", ".join(sorted(_mappings)) or "(nothing exported)"))
+    print("Registered %-28s %s" % (_name, ", ".join(sorted(_mappings)) or "(nothing exported)"))
 
 
 # All nodes — flat files under nodes/.
 _NODE_MODULES = (
     "sampler_node",
+    "sampler_node_manual",
     "sampler_sigma_harvest_node",
 )
+# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
+# sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
 
 for _name in _NODE_MODULES:
     try:
@@ -53,7 +56,7 @@ for _name in _NODE_MODULES:
     except Exception:
         print("FAILED to import %s:\n%s" % (_name, traceback.format_exc()))
         continue
-    _register(_name, _mod, _name)
+    _register(_mod, _name)
 
 print("MiniMax-H3 SPEED registration complete: %d node(s)" % len(NODE_CLASS_MAPPINGS))
 

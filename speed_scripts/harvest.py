@@ -32,7 +32,7 @@ def radial_dct_power(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     power = coeffs.abs() ** 2
     power = power.mean(dim=(0, 1, 2))  # [H, W]
 
-    cx, cy = W // 2, H // 2
+    cx, cy = 0, 0
     yy, xx = np.mgrid[0:H, 0:W]
     radial = np.round(np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)).astype(int)
     max_r = radial.max()

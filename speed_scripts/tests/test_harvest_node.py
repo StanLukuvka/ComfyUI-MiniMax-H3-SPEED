@@ -25,6 +25,8 @@ def test_harvest_node_inputs_match_native_sampler():
         assert key in required, f"harvest node missing native input: {key}"
     assert "harvest_json" not in required, "harvest node must NOT take a harvest_json STRING input"
     assert cls.RETURN_TYPES[0] == "STRING"
+    assert cls.RETURN_TYPES == ("STRING", "LATENT")
+    assert cls.RETURN_NAMES == ("calibration", "diagnostic_latent")
 
 
 def test_harvest_node_runs_native_euler_and_emits_json():
@@ -42,18 +44,25 @@ def test_harvest_node_runs_native_euler_and_emits_json():
 
         def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
             # Unpack the nested latent to a tensor (as ComfyUI's guider does).
+            # Signature must match real ComfyUI: callback(step, denoised, x, total_steps)
             if hasattr(latent_image, "is_nested") and latent_image.is_nested:
                 vid = [s for s in latent_image.unbind() if s.ndim == 5][0]
             else:
                 vid = latent_image
             x = vid.float()
-            for i in range(len(sigmas) - 1):
+            total = len(sigmas) - 1
+            for i in range(total):
                 sigma = sigmas[i]
                 denoised = x * 0.5  # simple model: half the signal is denoised
-                d = (x - denoised) / sigma
+                d = (x - denoised) / float(sigma) if float(sigma) != 0 else (x - denoised)
                 x = x + d * (sigmas[i + 1] - sigma)
                 if callback is not None:
-                    callback({"x": x, "i": i, "sigma": float(sigma), "denoised": denoised})
+                    # Real ComfyUI positional signature: (step, denoised, x, total_steps)
+                    try:
+                        callback(i, denoised, x, total)
+                    except TypeError:
+                        # Fallback for compat shim if test fake still uses dict style
+                        callback({"x": x, "i": i, "sigma": float(sigma), "denoised": denoised})
             return x
 
     class FakeNoise:
@@ -74,19 +83,22 @@ def test_harvest_node_runs_native_euler_and_emits_json():
     sigmas = torch.linspace(1.0, 0.025, 20)
 
     node = cls()
-    harvest_json, out_latent, denoised = node.harvest(
+    calibration_json, out_latent = node.harvest(
         FakeNoise(), FakeGuider(), sigmas, latent, delta=0.01
     )
-    parsed = json.loads(harvest_json)
-    assert "harvest_json" in parsed
-    inner = json.loads(parsed["harvest_json"])
-    assert "overall_fit_A" in inner
-    assert "overall_fit_beta" in inner
-    assert "overall_fit_r2" in inner
-    assert "recommended_config" in inner
+    parsed = json.loads(calibration_json)
+    # Plug-and-play calibration: flat JSON with noise_amplitude/beta
+    assert "noise_amplitude" in parsed
+    assert "noise_decay_exponent" in parsed
+    assert "delta" in parsed
+    assert "r2" in parsed
+    assert "health" in parsed
+    assert "report" in parsed
     # The fit should be a float in a reasonable range
-    assert 0.0 < float(inner["overall_fit_A"]) < 1e6
-    assert -5.0 <= float(inner["overall_fit_beta"]) < 10.0
+    assert 0.0 < float(parsed["noise_amplitude"]) < 1e6
+    assert -5.0 <= float(parsed["noise_decay_exponent"]) < 10.0
+    # diagnostic_latent must be a LATENT dict, not bare tensor
+    assert isinstance(out_latent, dict) and "samples" in out_latent
 
 
 def test_harvest_node_no_captures_returns_error_json():
@@ -121,9 +133,10 @@ def test_harvest_node_no_captures_returns_error_json():
     sigmas = torch.linspace(1.0, 0.025, 20)
 
     node = cls()
-    harvest_json, out_latent, denoised = node.harvest(
+    calibration_json, out_latent = node.harvest(
         FakeNoise(), FakeGuiderNoCallback(), sigmas, latent
     )
-    parsed = json.loads(harvest_json)
+    parsed = json.loads(calibration_json)
     assert "error" in parsed
     assert parsed["error"] == "no_captures"
+    assert isinstance(out_latent, dict)

@@ -44,10 +44,10 @@ class SpeedConfig:
     transition_seed_offset: int = 10_000
     transition_mode: str = "explicit"  # "explicit" uses transition_steps; "delta_custom" computes from power spectrum
     delta: float = 0.01
-    # Initial estimates for MiniMax-H3 (not WAN 2.1). Replace after running
-    # harvest calibration on a real H3 model — see harvest.py / SigmaHarvest node.
-    noise_amplitude: float = 150.0
-    noise_decay_exponent: float = 2.0
+    # Calibrated on H3 0.6MP 40-step harvest (β0.59-0.62, r² fair-good) — 0.6MP sweep stable, see 0.6MP txt
+    # Previous placeholder 150/2.0 was WAN 2.1, not H3.
+    noise_amplitude: float = 7.394
+    noise_decay_exponent: float = 0.62
     full_latent_h: int = 45
     full_latent_w: int = 80
     certification: str = "requires_h3_gpu_validation"

@@ -9,3 +9,7 @@ build/
 AGENTS.md
 uv.lock
 .finisher/
+
+# evidence mp4s are source, gifs are committed for markdown
+evidence/*.mp4
+evidence/**/*.mp4

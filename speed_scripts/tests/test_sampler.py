@@ -37,14 +37,18 @@ def test_input_schema_widgets_and_required_inputs():
     inputs = mod.MiniMaxH3SPEEDSampler.INPUT_TYPES()
     required = inputs["required"]
     for key in ("noise", "guider", "sigmas", "latent_image",
-                "preset", "transition_mode"):
+                "stages",):
         assert key in required, f"missing required input: {key}"
+    # automatic node is delta_custom only — no preset/transition_mode (explicit lives on Manual)
+    assert "preset" not in required
+    assert "transition_mode" not in required
     # delta_custom path is enabled with sigma-harvest calibration
-    assert "delta" in required
+    assert "Tolerance (Delta)" in required or "delta" in required
     assert "noise_amplitude" in required
     assert "noise_decay_exponent" in required
     assert "seed_offset" in required
-    assert required["preset"][0][0] == "half_then_full"
+    assert required["stages"][0] == "INT"
+    assert required["stages"][1]["default"] == 3
 
 
 def test_sample_runs_multi_stage():
