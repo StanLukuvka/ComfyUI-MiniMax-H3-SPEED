@@ -38,10 +38,12 @@ Three nodes:
 
 Load the example workflow: `workflows/video_minimax_h3_SPEED.json`.
 
-**Stages** (the `stages` widget on Automatic — 2 to 4, evenly spaced):
+**Stages** (the `stages` widget on Automatic):
 - `2` — 0.5 → 1.0
-- `3` — 0.33 → 0.66 → 1.0 (default, balanced)
-- `4` — 0.25 → 0.5 → 0.75 → 1.0 (safest, high-res)
+- `3` — 0.33 → 0.66 → 1.0 (default)
+- `4` — 0.25 → 0.5 → 0.75 → 1.0
+
+2 is fastest, 4 is slowest/most conservative. Steps within each stage are auto-placed from `Tolerance (Delta)` + `A/β` via `thr=1/(1+√(δ/(P(1+P-δ))))` (continuous sigma, quantized to your `sigmas`).
 
 *Old workflows with `preset` (half_then_full etc) still load — mapped to stages (2→2, quarter_half_full/aggressive→3, quarter_half_3q_full→4).*
 
@@ -60,7 +62,14 @@ Everything else is standard ComfyUI wiring (noise, guider, sigmas, latent). Outp
 
 ## Video and Timings
 
-TODO
+10s 0.5MP Office mug clip (same seed, `Δ0.01 A7.394 β0.62`):
+
+- Native: 833s (cold)
+- 2-stage `direct` 651s cold, `coupled` 608s — minor quality delta, prompt intact
+- 3-stage `direct` 415s — notably blurry, `coupled` 616s — quality restored (text `Mediocre` correct), but slower than direct
+- 4-stage 608s — quality there, prompt adherence drifts (too many hops)
+
+`direct_coarse` is fastest; `coupled_full_grid` is ~30-50% slower but preserves high-ω text on 3-stage. See `evidence/` for mp4s.
 
 ## License
 
