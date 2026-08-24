@@ -28,7 +28,7 @@ Three nodes:
 
 **1. MiniMax H3 SPEED — Sampler (Automatic)** — the default. `stages` picks how many resolution stages (2-4, evenly spaced), `Tolerance (Delta)` + `noise_amplitude`/`noise_decay_exponent` auto-compute step boundaries from the power spectrum (`P=A·ω^-β`, `thr=1/(1+√(δ/(P(1+P-δ))))`). Baked calibration is `A7.394 β0.62 δ0.01` from a 0.6MP 40-step harvest (β0.59-0.62 stable across 0.5→0.6MP, 20/40 steps). Just set stages=3 and go.
 
-**2. MiniMax H3 SPEED — Sampler (Manual Step-Through)** — explicit control. No `Tolerance`/`A`/`β` (those are for auto). Set `ratio_mode steps` (step indices) or `ratio` (fraction of schedule) and up to four `(goal, resolution)` pairs — `goal 0` disables that stage. Needs at least two active stages ending at `1.0`.
+**2. MiniMax H3 SPEED — Sampler (Manual Step-Through)** — explicit control. No `Tolerance`/`A`/`β` (those are for auto). Set `ratio_mode steps` (step indices) or `ratio` (fraction of schedule) and up to four `(goal, resolution)` pairs — `goal 0` or `resolution 0` disables that stage. Needs at least two active stages ending at `1.0`.
 
 **3. MiniMax H3 SPEED — Sigma Harvest (Native Euler)** — calibrates `A/β` for the automatic sampler. Wire `noise`/`guider`/`sigmas`/`latent_image` + `Tolerance (Delta)`, run a native full-res generation, copy `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r²`, `health`) into the Automatic sampler. Report includes plug-and-play line and diagnostic `Reference 0.50x/0.75x → sigma~X [thr Y]`. Use `simple` scheduler, 28-32 steps for a clean `r²>0.6`.
 
@@ -67,9 +67,11 @@ Everything else is standard ComfyUI wiring (noise, guider, sigmas, latent). Outp
 | 2-stage `coupled` | 608s | good, slightly sharper | `Mediocre` correct vs `Medlooae` on direct |
 | 3-stage `direct` | 415s | **blurry** | notably destroys, fastest but unusable |
 | 3-stage `coupled` | 616s | **restored** | quality back, but slower than direct |
+| 4-stage `direct` | 262s | **unusable** | heavy blur |
 | 4-stage `coupled` | 608s | sharp but prompt drifts | too many hops, not worth it |
+| *Alt Δ0.005* `A12.45 β0.819`* | — | — | `3-stage 540s really good, 4-stage 400s usable+halo, 2-stage 672s` — paste `Tolerance 0.005` to try (`r²0.70 good`, more conservative) |
 
-`direct_coarse` = fastest, lowest VRAM. `coupled_full_grid` = ~30-50% slower, holds high-ω text on 3-stage. See [`evidence/README.md`](evidence/README.md) for side-by-side GIFs and mp4s. Pending: `Δ0.005 A12.45 β0.819 r²0.70 good` (more conservative, may hold on `direct`).
+`direct_coarse` = fastest, lowest VRAM. `coupled_full_grid` = ~30-50% slower, holds high-ω text on 3-stage. See [`evidence/README.md`](evidence/README.md) for side-by-side GIFs and mp4s. See alt fit `Δ0.005` rows below. 4-stage halo = sigma is continuous (paper exercise).
 
 ## License
 
