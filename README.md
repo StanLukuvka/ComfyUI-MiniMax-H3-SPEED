@@ -2,10 +2,6 @@
 
 ⚠️ **Noncommercial license** — see [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0).
 
-⚠️ **Work in progress.** The pack is functional but not yet stable or fully documented.
-
-⚠️ **Text-to-video only.** Image-to-video is not supported yet.
-
 ## What it does
 
 SPEED (Spectral Progressive Diffusion for Efficient image and video generation) is a technique from the [SPEED paper](https://github.com/howardhx/speed). 
@@ -62,14 +58,18 @@ Everything else is standard ComfyUI wiring (noise, guider, sigmas, latent). Outp
 
 ## Video and Timings
 
-10s 0.5MP Office mug clip (same seed, `Δ0.01 A7.394 β0.62`):
+10s 0.5MP Office mug clip (same seed, `Δ0.01 A7.394 β0.62`, baked default):
 
-- Native: 833s (cold)
-- 2-stage `direct` 651s cold, `coupled` 608s — minor quality delta, prompt intact
-- 3-stage `direct` 415s — notably blurry, `coupled` 616s — quality restored (text `Mediocre` correct), but slower than direct
-- 4-stage 608s — quality there, prompt adherence drifts (too many hops)
+| Mode | Time | Quality | Notes |
+|------|------|---------|-------|
+| Native | 833s (cold) | reference | full-res Euler |
+| 2-stage `direct` | 651s cold | good | prompt intact |
+| 2-stage `coupled` | 608s | good, slightly sharper | `Mediocre` correct vs `Medlooae` on direct |
+| 3-stage `direct` | 415s | **blurry** | notably destroys, fastest but unusable |
+| 3-stage `coupled` | 616s | **restored** | quality back, but slower than direct |
+| 4-stage `coupled` | 608s | sharp but prompt drifts | too many hops, not worth it |
 
-`direct_coarse` is fastest; `coupled_full_grid` is ~30-50% slower but preserves high-ω text on 3-stage. See `evidence/` for mp4s.
+`direct_coarse` = fastest, lowest VRAM. `coupled_full_grid` = ~30-50% slower, holds high-ω text on 3-stage. See `evidence/` for mp4s. Pending test: `Δ0.005 A12.45 β0.819 r²0.70 good` (more conservative, may hold on `direct` without `coupled` tax).
 
 ## License
 
