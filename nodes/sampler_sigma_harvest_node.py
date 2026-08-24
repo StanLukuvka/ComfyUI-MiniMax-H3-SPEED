@@ -47,10 +47,11 @@ class MiniMaxH3HarvestToConfig:
     """Sigma harvester — native Euler pass with per-step residual capture."""
 
     DESCRIPTION = (
-        "Native Euler sigma harvester. Runs a single full-res Euler pass, "
-        "snapshots the residual noise spectrum at each step (residual = x - x0), "
-        "fits P = A * |omega|^(-beta), and emits harvest_json + calibration report. "
-        "Does NOT use the SPEED multi-stage chain — sigma schedule must stay fixed."
+        "Sigma Harvest — run this ONCE on a full-res native Euler generation to "
+        "calibrate the Automatic sampler. It measures how noise falls off with "
+        "frequency (P = A·|ω|^-beta) and gives you A/beta to paste into the "
+        "Automatic node. Does NOT use SPEED — it must run at full res with a "
+        "fixed sigma schedule."
     )
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")

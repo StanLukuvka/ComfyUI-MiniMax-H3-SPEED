@@ -1,11 +1,6 @@
-"""ComfyUI node definitions for MiniMax-H3 SPEED.
+"""Automatic SPEED sampler — simple English.
 
-Replaced Ksampler + SamplerCustomAdvanced. SPEED is only developed with euler and SamplerCustomAdvanced only supports one iteration of latent settings at a time.
-TLDR: Default sampler didnt expect you to change the resolution mid flight cause why would it?
-
-SPEED basics: denoise video as low res at low steps as no value is given from making fancy noise at high resolution.
-Then we step increase resolution depending on preset and continue. 
-Audio stays unchanged and done at full resolution. 
+Picks 2-4 resolution stages (0.5→1.0, 0.33→0.66→1.0, 0.25→0.5→0.75→1.0). Starts cheap at low-res and upsamples when needed. Steps are placed automatically from Tolerance + A/beta.
 """
 
 from __future__ import annotations
@@ -39,10 +34,12 @@ class MiniMaxH3SPEEDSampler:
     """
 
     DESCRIPTION = (
-        "SPEED progressive-resolution diffusion for MiniMax-H3 packed latents. "
-        "Runs each stage as its own guider.sample() call. low res first until we reach point where information generated matters. then increase resolution"
-        "first preset scale, then DCT-expand + scale-ratio-aligned boundary sigma,"
-        "then full-res pass. Audio is carried through unchanged."
+        "Automatic SPEED sampler — just pick how many stages (2, 3 or 4) and go. "
+        "It starts the video at low resolution (cheap), then automatically upsamples "
+        "to full resolution when the detail actually matters. Set Tolerance (1% = 0.01) "
+        "to allow a little blur for speed, or lower for quality. Uses baked A/beta; "
+        "re-calibrate with the Harvest node if you change checkpoint. Audio is passed "
+        "through at full-res."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")

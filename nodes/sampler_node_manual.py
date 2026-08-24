@@ -16,7 +16,7 @@ directly: up to four (transition_goal, transition_resolution) widget pairs.
 
 Semantics:
 
-- ``transition_goal_N == 0`` disables stage N (and every later stage).
+- ``transition_goal_N == 0`` or ``transition_resolution_N == 0`` disables stage N.
 - ``ratio_mode == "steps"`` (default): goal is a STEP INDEX (position in the
   sigma schedule) at which stage N ends; resolution is that stage's scale.
   The final active stage's goal is unused — it runs to the end of the
@@ -42,7 +42,7 @@ def CALCULATE_SCALES(transitions, ratio_mode):
     """
     scales = []
     for goal, resolution in transitions:
-        if goal == 0:
+        if goal == 0 or resolution == 0:
             continue  # Skips this stage; later stages remain active.
         if ratio_mode == "steps":
             scales.append(resolution)
@@ -64,11 +64,10 @@ class MiniMaxH3SPEEDSamplerManual:
     """
 
     DESCRIPTION = (
-        "SPEED progressive-resolution diffusion for MiniMax-H3 packed latents. "
-        "Manual step-through schedule: up to four (goal, resolution) pairs "
-        "define the progression by step index (or ratio); a goal of 0 disables "
-        "the stage. Low res first, then increase resolution. Audio is carried "
-        "through unchanged."
+        "Manual SPEED sampler — you set the stages by hand. Give up to four "
+        "(goal, resolution) pairs: goal = step where that stage ends, resolution = "
+        "scale (0.25 = quarter). Set goal or resolution to 0 to skip that stage. "
+        "Use this to copy exact paper schedules or to test custom ladders."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
@@ -131,7 +130,7 @@ class MiniMaxH3SPEEDSamplerManual:
 
         total_steps = len(sigmas) - 1
         # Every active pair produced one scale, so goals and stages align 1:1.
-        goals = [g for g, _ in transitions if g > 0]
+        goals = [g for g, r in transitions if g > 0 and r != 0]
 
         # Boundary step for each active stage except the last (the last stage
         # runs to the end of the schedule, so its goal carries no boundary).
