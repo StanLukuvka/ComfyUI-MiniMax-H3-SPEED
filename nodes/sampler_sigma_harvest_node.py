@@ -68,7 +68,7 @@ class MiniMaxH3HarvestToConfig:
                 "latent_image": ("LATENT",),
             },
             "optional": {
-                "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
             },
         }
 
@@ -78,9 +78,17 @@ class MiniMaxH3HarvestToConfig:
         guider,
         sigmas,
         latent_image,
-        delta=0.01,
+        **kwargs,
     ):
+
         import comfy.samplers
+
+        # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
+        delta = kwargs.get("Tolerance (Delta)",
+                kwargs.get("Tolerance",
+                kwargs.get("tolerance",
+                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
+        delta = float(delta)
 
         sampler_obj = comfy.samplers.sampler_object("euler")
 
@@ -283,7 +291,7 @@ class MiniMaxH3HarvestToConfig:
                 f"WARNING: fit is {health.upper()} — beta={beta:.3f} with "
                 f"r²={r2:.4f}. Not cleanly decaying. Rerun harvest or use manual preset."
             )
-        lines.append(f"Paste into SPEED Sampler: delta={float(delta):.3f}, noise_amplitude={A:.3f}, noise_decay_exponent={beta:.3f} (transition_mode=delta_custom)")
+        lines.append(f"Paste into SPEED Sampler: Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.3f}, noise_decay_exponent={beta:.3f} (transition_mode=delta_custom)")
         # Diagnostic only — not part of the JSON to paste. Shows where delta_custom
         # will place the two most common reference scales for this sigmas length.
         # Derived exactly as runtime does: omega = scale * min(H,W)/2 -> P(omega) -> thr -> first step <= thr.

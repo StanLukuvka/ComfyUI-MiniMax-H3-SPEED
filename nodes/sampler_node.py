@@ -44,7 +44,7 @@ class MiniMaxH3SPEEDSampler:
                 "preset": (list(SCALE_PRESETS.keys()),),
                 "transition_mode": (["explicit", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
-                "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
                 "noise_amplitude": ("FLOAT", {"default": 150.0, "min": 0.0, "max": 1e6}),
                 "noise_decay_exponent": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
@@ -53,8 +53,14 @@ class MiniMaxH3SPEEDSampler:
 
     def sample(self, noise, guider, sigmas, latent_image, preset,
                transition_mode, noise_policy="direct_coarse",
-               delta=0.01, noise_amplitude=150.0, noise_decay_exponent=2.0,
-               seed_offset=10000):
+               noise_amplitude=150.0, noise_decay_exponent=2.0,
+               seed_offset=10000, **kwargs):
+        # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
+        delta = kwargs.get("Tolerance (Delta)",
+                kwargs.get("Tolerance",
+                kwargs.get("tolerance",
+                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
+        delta = float(delta)
         scales = SCALE_PRESETS[preset]
         transition_steps = DEFAULT_TRANSITION_STEPS[preset]
         # Delta-custom mode gets (A, beta) from a prior SigmaHarvest run; explicit

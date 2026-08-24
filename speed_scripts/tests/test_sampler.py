@@ -40,7 +40,7 @@ def test_input_schema_widgets_and_required_inputs():
                 "preset", "transition_mode"):
         assert key in required, f"missing required input: {key}"
     # delta_custom path is enabled with sigma-harvest calibration
-    assert "delta" in required
+    assert "Tolerance (Delta)" in required or "delta" in required
     assert "noise_amplitude" in required
     assert "noise_decay_exponent" in required
     assert "seed_offset" in required
