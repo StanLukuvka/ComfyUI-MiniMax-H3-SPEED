@@ -23,5 +23,3 @@ Alt fit `Δ0.005 A12.45 β0.819 r²0.70 good` (more conservative, still baked as
 | 4-stage `direct` 0.25→0.5→0.75→1.0 | 400s | ![4 0.005](gifs/delta%200.005%204%20stage.gif) |
 
 Paste `Tolerance=0.005, noise_amplitude=12.454, noise_decay_exponent=0.819` into Automatic to try the alt fit.
-
-Raw mp4s are in this folder. See `TIMINGS.txt` for log.
