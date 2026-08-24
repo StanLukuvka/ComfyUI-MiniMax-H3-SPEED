@@ -69,7 +69,7 @@ Everything else is standard ComfyUI wiring (noise, guider, sigmas, latent). Outp
 | 3-stage `coupled` | 616s | **restored** | quality back, but slower than direct |
 | 4-stage `coupled` | 608s | sharp but prompt drifts | too many hops, not worth it |
 
-`direct_coarse` = fastest, lowest VRAM. `coupled_full_grid` = ~30-50% slower, holds high-ω text on 3-stage. See `evidence/` for mp4s. Pending test: `Δ0.005 A12.45 β0.819 r²0.70 good` (more conservative, may hold on `direct` without `coupled` tax).
+`direct_coarse` = fastest, lowest VRAM. `coupled_full_grid` = ~30-50% slower, holds high-ω text on 3-stage. See [`evidence/README.md`](evidence/README.md) for side-by-side GIFs and mp4s. Pending: `Δ0.005 A12.45 β0.819 r²0.70 good` (more conservative, may hold on `direct`).
 
 ## License
 
