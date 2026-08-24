@@ -2,6 +2,8 @@
 
 ⚠️ **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0)
 
+> *"Why make big noise when little noise do trick?"*
+
 Make MiniMax-H3 video faster without re-training. Starts the denoise at low resolution (cheap), then upsamples to full resolution when detail actually matters. Same prompt, same seed — just fewer full-res steps.
 
 > **Only Euler, only MiniMax-H3.** Audio is always full-resolution.
