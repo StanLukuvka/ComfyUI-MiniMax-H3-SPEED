@@ -37,8 +37,10 @@ def test_input_schema_widgets_and_required_inputs():
     inputs = mod.MiniMaxH3SPEEDSampler.INPUT_TYPES()
     required = inputs["required"]
     for key in ("noise", "guider", "sigmas", "latent_image",
-                "preset", "transition_mode"):
+                "preset",):
         assert key in required, f"missing required input: {key}"
+    # automatic node is delta_custom only — no transition_mode widget (explicit lives on Manual)
+    assert "transition_mode" not in required
     # delta_custom path is enabled with sigma-harvest calibration
     assert "Tolerance (Delta)" in required or "delta" in required
     assert "noise_amplitude" in required

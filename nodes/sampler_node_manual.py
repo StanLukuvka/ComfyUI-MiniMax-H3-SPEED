@@ -84,9 +84,9 @@ class MiniMaxH3SPEEDSamplerManual:
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
-                "delta": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "noise_amplitude": ("FLOAT", {"default": 150.0, "min": 0.0, "max": 1e6}),
-                "noise_decay_exponent": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6}),
+                "noise_decay_exponent": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 10.0}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
                 "ratio_mode": (list(RATIO_MODES), {"default": "steps"}),
                 "transition_goal_1": ("FLOAT", {"default": 3, "min": 0, "max": 1000}),
@@ -102,13 +102,19 @@ class MiniMaxH3SPEEDSamplerManual:
 
     def sample(self, noise, guider, sigmas, latent_image,
                noise_policy="direct_coarse",
-               delta=0.01, noise_amplitude=150.0, noise_decay_exponent=2.0,
+               noise_amplitude=7.394, noise_decay_exponent=0.62,
                seed_offset=10000,
                ratio_mode="steps",
                transition_goal_1=3, transition_resolution_1=0.25,
                transition_goal_2=5, transition_resolution_2=0.5,
                transition_goal_3=8, transition_resolution_3=0.75,
-               transition_goal_4=15, transition_resolution_4=1.0):
+               transition_goal_4=15, transition_resolution_4=1.0, **kwargs):
+        # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
+        delta = kwargs.get("Tolerance (Delta)",
+                kwargs.get("Tolerance",
+                kwargs.get("tolerance",
+                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
+        delta = float(delta)
 
         transitions = [
             (float(transition_goal_1), float(transition_resolution_1)),

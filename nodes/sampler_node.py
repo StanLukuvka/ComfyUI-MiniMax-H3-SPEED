@@ -42,7 +42,6 @@ class MiniMaxH3SPEEDSampler:
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
                 "preset": (list(SCALE_PRESETS.keys()),),
-                "transition_mode": (["explicit", "delta_custom"],),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
                 "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6}),
@@ -52,7 +51,7 @@ class MiniMaxH3SPEEDSampler:
         }
 
     def sample(self, noise, guider, sigmas, latent_image, preset,
-               transition_mode, noise_policy="direct_coarse",
+               noise_policy="direct_coarse",
                noise_amplitude=7.394, noise_decay_exponent=0.62,
                seed_offset=10000, **kwargs):
         # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
@@ -63,19 +62,11 @@ class MiniMaxH3SPEEDSampler:
         delta = float(delta)
         scales = SCALE_PRESETS[preset]
         transition_steps = DEFAULT_TRANSITION_STEPS[preset]
-        # Delta-custom mode gets (A, beta) from a prior SigmaHarvest run; explicit
-        # mode uses the manually tuned transition_steps in the config.
-        # Map node-facing transition_mode values to config-internal vocabulary.
-        # "manual_step" and "manual_sigma" both produce explicit transition_steps
-        # (resolved from the preset); only "delta_custom" uses power-spectrum
-        # thresholds. (The deleted Schedule node used to emit the same three values;
-        # its vocabulary was folded into this mapping when it was pruned.)
-        transition_mode_map = {"explicit": "explicit",
-                          "delta_custom": "delta_custom",
-                          # backwards compat for old workflows
-                          "manual_step": "explicit",
-                          "manual_sigma": "explicit"}
-        config_mode = transition_mode_map.get(transition_mode, "explicit")
+        # Automatic node is delta_custom only — transition steps are auto-computed
+        # from A/beta + Tolerance at runtime. Preset only chooses the scale ladder.
+        # Old workflows that saved transition_mode=explicit on this node will still
+        # load (kwarg) but are forced to delta_custom — explicit belongs on Manual.
+        config_mode = "delta_custom"
         return build_config_and_run(
             noise, guider, sigmas, latent_image,
             scales=scales,

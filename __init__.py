@@ -44,11 +44,11 @@ def _register(_mod, _name):
 # All nodes — flat files under nodes/.
 _NODE_MODULES = (
     "sampler_node",
+    "sampler_node_manual",
     "sampler_sigma_harvest_node",
 )
-# NOTE: sampler_node_manual exists on disk but is not registered — brittle
-# manual (transition_goal_N / ratio_mode) setup deprecated in favor of
-# delta_custom (A/beta auto). File kept for backwards import compat only.
+# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
+# sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
 
 for _name in _NODE_MODULES:
     try:
