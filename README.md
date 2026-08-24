@@ -30,7 +30,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 
 Three nodes:
 
-**1. MiniMax H3 SPEED — Sampler (Automatic)** — the default. `preset` picks the scale ladder, `Tolerance (Delta)` + `noise_amplitude`/`noise_decay_exponent` auto-compute step boundaries from the power spectrum (`P=A·ω^-β`, `thr=1/(1+√(δ/(P(1+P-δ))))`). Baked calibration is `A7.394 β0.62 δ0.01` from a 0.6MP 40-step harvest (β0.59-0.62 stable across 0.5→0.6MP, 20/40 steps). Just pick a preset and go.
+**1. MiniMax H3 SPEED — Sampler (Automatic)** — the default. `stages` picks how many resolution stages (2-4, evenly spaced), `Tolerance (Delta)` + `noise_amplitude`/`noise_decay_exponent` auto-compute step boundaries from the power spectrum (`P=A·ω^-β`, `thr=1/(1+√(δ/(P(1+P-δ))))`). Baked calibration is `A7.394 β0.62 δ0.01` from a 0.6MP 40-step harvest (β0.59-0.62 stable across 0.5→0.6MP, 20/40 steps). Just set stages=3 and go.
 
 **2. MiniMax H3 SPEED — Sampler (Manual Step-Through)** — explicit control. No `Tolerance`/`A`/`β` (those are for auto). Set `ratio_mode steps` (step indices) or `ratio` (fraction of schedule) and up to four `(goal, resolution)` pairs — `goal 0` disables that stage. Needs at least two active stages ending at `1.0`.
 
@@ -38,12 +38,14 @@ Three nodes:
 
 Load the example workflow: `workflows/video_minimax_h3_SPEED.json`.
 
-**Presets** (the `preset` widget, both samplers use the same scale ladders):
-- `half_then_full` — 0.5 → 1.0
-- `quarter_half_full` — 0.25 → 0.5 → 1.0
-- `quarter_half_3q_full` — 0.25 → 0.5 → 0.75 → 1.0
-- `aggressive` — 0.25 → 0.75 → 1.0
-- `three_quarter_then_full` — 0.75 → 1.0
+**Stages** (the `stages` widget on Automatic — 2 to 4, evenly spaced):
+- `2` — 0.5 → 1.0
+- `3` — 0.33 → 0.66 → 1.0 (default, balanced)
+- `4` — 0.25 → 0.5 → 0.75 → 1.0 (safest, high-res)
+
+*Old workflows with `preset` (half_then_full etc) still load — mapped to stages (2→2, quarter_half_full/aggressive→3, quarter_half_3q_full→4).*
+
+**Manual scales** — set via `ratio_mode` + 4× `(goal, resolution)` pairs on Manual (explicit), not preset.
 
 **Noise policy** (`noise_policy` on both samplers):
 - `direct_coarse` (default) — fresh DCT noise per stage, lowest VRAM
@@ -53,7 +55,7 @@ Everything else is standard ComfyUI wiring (noise, guider, sigmas, latent). Outp
 
 ## Troubleshooting
 
-- **Sigma schedule too short:** If you get a ValueError about sigma schedule length, increase your `BasicScheduler` steps. Each preset needs at least `n_stages * 2` sigmas.
+- **Sigma schedule too short:** If you get a ValueError about sigma schedule length, increase your `BasicScheduler` steps. Each stages setting needs at least `n_stages * 2` sigmas.
 - **H3 model required:** This sampler requires a real MiniMax-H3 model with `sigma_shift_video` / `sigma_shift_audio` attributes. It won't work with SD, Flux, WAN, or other model types.
 
 ## Video and Timings

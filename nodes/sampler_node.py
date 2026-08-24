@@ -10,8 +10,24 @@ Audio stays unchanged and done at full resolution.
 
 from __future__ import annotations
 
-from speed_scripts.config import SCALE_PRESETS, DEFAULT_TRANSITION_STEPS
 from speed_scripts.nodes_common import build_config_and_run
+
+# Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
+# 2: 0.5 → 1.0, 3: 0.33 → 0.66 → 1.0, 4: 0.25 → 0.5 → 0.75 → 1.0
+# Matches the paper's discrete scales but named by count, not the old half_then_full aliases.
+STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
+    2: (0.5, 1.0),
+    3: (0.3333333333, 0.6666666667, 1.0),
+    4: (0.25, 0.5, 0.75, 1.0),
+}
+# Backwards compat: old preset names -> stages (for workflows saved before the rename)
+PRESET_TO_STAGES: dict[str, int] = {
+    "half_then_full": 2,
+    "three_quarter_then_full": 2,
+    "quarter_half_full": 3,
+    "aggressive": 3,
+    "quarter_half_3q_full": 4,
+}
 
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
@@ -41,7 +57,7 @@ class MiniMaxH3SPEEDSampler:
                 "guider": ("GUIDER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "preset": (list(SCALE_PRESETS.keys()),),
+                "stages": ("INT", {"default": 3, "min": 2, "max": 4}),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
                 "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6}),
@@ -50,7 +66,7 @@ class MiniMaxH3SPEEDSampler:
             },
         }
 
-    def sample(self, noise, guider, sigmas, latent_image, preset,
+    def sample(self, noise, guider, sigmas, latent_image, stages=3,
                noise_policy="direct_coarse",
                noise_amplitude=7.394, noise_decay_exponent=0.62,
                seed_offset=10000, **kwargs):
@@ -60,12 +76,20 @@ class MiniMaxH3SPEEDSampler:
                 kwargs.get("tolerance",
                 kwargs.get("delta", kwargs.get("Delta", 0.01)))))
         delta = float(delta)
-        scales = SCALE_PRESETS[preset]
-        transition_steps = DEFAULT_TRANSITION_STEPS[preset]
-        # Automatic node is delta_custom only — transition steps are auto-computed
-        # from A/beta + Tolerance at runtime. Preset only chooses the scale ladder.
-        # Old workflows that saved transition_mode=explicit on this node will still
-        # load (kwarg) but are forced to delta_custom — explicit belongs on Manual.
+        # Backwards compat: old workflows saved preset=half_then_full etc — map to stages
+        if "preset" in kwargs:
+            preset = kwargs.pop("preset")
+            stages = PRESET_TO_STAGES.get(preset, stages)
+        # Also accept stages as string from old INT widget serialization
+        try:
+            stages = int(stages)
+        except Exception:
+            stages = 3
+        stages = max(2, min(4, stages))
+        scales = STAGES_TO_SCALES[stages]
+        # Dummy steps — validated then overridden by delta_custom power-spectrum thresholds in h3_runtime
+        transition_steps = tuple(range(1, len(scales)))
+        # Automatic node is delta_custom only — steps auto-computed from A/beta + Tolerance via thr formula
         config_mode = "delta_custom"
         return build_config_and_run(
             noise, guider, sigmas, latent_image,
