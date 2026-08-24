@@ -58,7 +58,7 @@ Everything else is standard ComfyUI wiring (noise, guider, sigmas, latent). Outp
 
 ## Video and Timings
 
-10s 0.5MP Office mug clip (same seed, `Δ0.01 A7.394 β0.62`, baked default):
+10s 0.5MP Office mug clip on 1× RTX 5080 (16GB) + 128GB RAM (same seed, `Δ0.01 A7.394 β0.62`, baked default):
 
 | Mode | Time | Quality | Notes |
 |------|------|---------|-------|
