@@ -1,6 +1,6 @@
 # SPEED Evidence — 10s 0.5MP Office Mug Clip
 
-Same seed, `Δ0.01 A7.394 β0.62` unless noted. All at `960×544`, 24fps. Full 10s clips at 12fps, 480p — loop to see high-ω text and prompt.
+Same seed, `Δ0.01 A7.394 β0.62` unless noted. All at `960×544`, 24fps. Full 10s clips at 12fps, 360p (embedded) — loop to see high-ω text and prompt.
 
 Native is full-res Euler (no SPEED). `direct` = `direct_coarse`, `coupled` = `coupled_full_grid`.
 
