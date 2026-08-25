@@ -13,3 +13,8 @@ uv.lock
 # evidence mp4s are source, gifs are committed for markdown
 evidence/*.mp4
 evidence/**/*.mp4
+
+# plans/notes stay local, never in the repo
+NEXT.md
+NAMES.md
+.hermes/plans/
