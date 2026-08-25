@@ -87,11 +87,11 @@ Workflow wires are the same for all three: `noise` → `guider` → `sigmas` →
 
 It measures how noise power falls with frequency on a full-res run: `P(ω) = A·|ω|^-β` (β ~0.6 for MiniMax-H3). For each scale `s`, `ω = s·min(H,W)/2`, `P = A·ω^-β`, then `thr = 1/(1+√(δ/(P·(1+P-δ))))` (δ = Tolerance, 0.01 = 1% allowed error). The first `sigmas[i] ≤ thr` is where that stage ends. Continuous sigma, just quantized to your sigma schedule.
 
-Baked default `A7.394 β0.62 δ0.01` came from a 0.6MP 40-step `simple` harvest (`r²0.60 fair`, stable across 0.5→0.6MP). More conservative fit `A12.45 β0.819 δ0.005 r²0.70 good` available if text wobbles. Re-calibrate with the Harvest node if you change checkpoint: wire `noise/guider/sigmas/latent + Tolerance`, run a native Euler generation at 28-32 steps `simple`, copy `calibration` JSON into Automatic's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
+Re-calibrate with the Harvest node if you change checkpoint: wire `noise/guider/sigmas/latent + Tolerance`, run a native Euler generation at 28-32 steps `simple`, copy `calibration` JSON into Automatic's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
 
-Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`. Old `preset` names (`half_then_full` etc) still load and map to stages.
+Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`.
 
-`seed_offset` decorrelates the per-stage high-frequency fill from your starting noise — leave at 10000 unless you want a different fill pattern for the same seed. `ratio_mode steps` = goal is a step index, `ratio` = goal is 0-1 fraction.
+`seed_offset` changes the per-stage high-frequency fill pattern — leave at 10000 unless you want a different one for the same seed. `ratio_mode steps` = goal is a step index, `ratio` = goal is 0-1 fraction.
 
 </details>
 

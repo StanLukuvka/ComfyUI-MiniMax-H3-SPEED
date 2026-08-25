@@ -10,17 +10,13 @@ The pack ships exactly three ComfyUI nodes:
 
 2. **`MiniMaxH3SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `ratio_mode steps` = goal is a step index, `ratio` = goal is a 0-1 fraction of the schedule. Used to copy paper schedules or test custom ladders.
 
-3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs ONE native full-res Euler pass (NOT the SPEED chain) with a fixed sigma schedule, captures `residual = x - denoised` per step, fits the radial DCT power spectrum `P = A·|ω|^-β`, and emits a flat `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the Automatic node. Run it once when you change checkpoint, or when using Loras/addons that influence the model.
+3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-res Euler pass (NOT the SPEED chain) with a fixed sigma schedule, captures `residual = x - denoised` per step, fits the radial DCT power spectrum `P = A·|ω|^-β`, and emits a flat `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the Automatic node. Run it once when you change checkpoint, or when using Loras/addons that influence the model.
 
-> **Why three nodes, not more:** everything else (Schedule, SigmaHarvest, Oracle, inspect, the in-SPEED harvest hook) was deleted because it pretended to wire into generation but actually couldn't. The SPEED sampler takes raw widget values, not a config object — a node that emits `SpeedConfig` is a dead-end. Do NOT resurrect them.
+## Sigma Harvest: Native Euler only
 
-## Sigma Harvest: Native Euler Only
+`MiniMaxH3HarvestToConfig` wraps the **native** Euler sampler (`guider.sample()`), NOT `run_speed_pipeline`. It must run on a single full-res native Euler pass with a fixed sigma schedule.
 
-The pack does NOT harvest from inside the SPEED chain. `MiniMaxH3HarvestToConfig` wraps the **native** Euler sampler (`guider.sample()`), NOT `run_speed_pipeline`. The SPEED sampler splices/re-aligns sigmas at every stage boundary, which corrupts per-step sigma labels — you CANNOT harvest a meaningful spectrum mid-SPEED-chain (circular contamination + broken step indexing; this is why the old in-SPEED hook was deleted).
-
-**Correct path:** run the Harvest node at full-res with a fixed sigma schedule (28-32 steps `simple`), read the `calibration` JSON, paste `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the Automatic node.
-
-**Wrong path:** trying to harvest from inside `MiniMaxH3SPEEDSampler` — no hook for it, and resurrecting one re-introduces the circularity and step-indexing bugs.
+**How to use it:** run the Harvest node at full-res with a fixed sigma schedule (28-32 steps `simple`), read the `calibration` JSON, paste `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the Automatic node.
 
 ## Development Conventions
 

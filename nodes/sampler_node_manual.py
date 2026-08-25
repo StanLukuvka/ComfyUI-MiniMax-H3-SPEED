@@ -1,18 +1,7 @@
-"""ComfyUI node definitions for MiniMax-H3 SPEED — manual step-through variant.
+"""Manual step-through SPEED sampler — explicit transition schedule.
 
-Replaced Ksampler + SamplerCustomAdvanced. SPEED is only developed with euler
-and SamplerCustomAdvanced only supports one iteration of latent settings at a
-time. TLDR: Default sampler didnt expect you to change the resolution mid
-flight cause why would it?
-
-SPEED basics: denoise video as low res at low steps as no value is given from
-making fancy noise at high resolution. Then we step increase resolution
-depending on preset and continue. Audio stays unchanged and done at full
-resolution.
-
-Unlike ``sampler_node`` (which resolves scales + transition_steps from a named
-``preset`` widget), this manual variant exposes the transition schedule
-directly: up to four (transition_goal, transition_resolution) widget pairs.
+Exposes the transition schedule directly: up to four
+(transition_goal, transition_resolution) widget pairs.
 
 Semantics:
 
