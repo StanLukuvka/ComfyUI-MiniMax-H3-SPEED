@@ -51,15 +51,23 @@ Workflow wires are the same for all three: `noise` → `guider` → `sigmas` →
 
 10s 0.5MP Office "world's most mediocre boss" mug clip, same seed:
 
+**Default fit (`Δ0.01 A7.394 β0.62`):**
 | Mode | Time | Quality |
 |------|------|---------|
 | Native (no SPEED) | 833s cold | reference |
 | 2-stage `direct` | 651s cold | good — prompt intact |
 | 2-stage `coupled` | 608s | good, slightly sharper text |
-| 3-stage `direct` | 415s | **blurry** — fastest but destroys |
+| 3-stage `direct` | 415s | **blurry** — needs `coupled` |
 | 3-stage `coupled` | 616s | sharp again, but no faster than 2-stage |
 | 4-stage `direct` | 262s | **unusable** |
 | 4-stage `coupled` | 608s | sharp but prompt drifts |
+
+**Conservative fit (`Δ0.005 A12.454 β0.819`, optional):**
+| Mode | Time | Quality |
+|------|------|---------|
+| 2-stage `direct` | 672s | good — prompt intact |
+| 3-stage `direct` | 540s | good — quality holds without `coupled` |
+| 4-stage `direct` | 400s | usable, slight halo |
 
 `direct_coarse` = fastest, lowest VRAM. `coupled_full_grid` = ~30-50% slower, can rescue 3-stage text. See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and mp4s.
 
@@ -79,7 +87,7 @@ Workflow wires are the same for all three: `noise` → `guider` → `sigmas` →
 
 It measures how noise power falls with frequency on a full-res run: `P(ω) = A·|ω|^-β` (β ~0.6 for MiniMax-H3). For each scale `s`, `ω = s·min(H,W)/2`, `P = A·ω^-β`, then `thr = 1/(1+√(δ/(P·(1+P-δ))))` (δ = Tolerance, 0.01 = 1% allowed error). The first `sigmas[i] ≤ thr` is where that stage ends. Continuous sigma, just quantized to your sigma schedule.
 
-Baked default `A7.394 β0.62 δ0.01` came from a 0.6MP 40-step `simple` harvest (`r²0.60 fair`, stable across 0.5→0.6MP). Pending more conservative fit `A12.45 β0.819 δ0.005 r²0.70 good` — may hold on `direct` without `coupled` tax. Re-calibrate with the Harvest node if you change checkpoint: wire `noise/guider/sigmas/latent + Tolerance`, run a native Euler generation at 28-32 steps `simple`, copy `calibration` JSON into Automatic's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
+Baked default `A7.394 β0.62 δ0.01` came from a 0.6MP 40-step `simple` harvest (`r²0.60 fair`, stable across 0.5→0.6MP). More conservative fit `A12.45 β0.819 δ0.005 r²0.70 good` available if text wobbles. Re-calibrate with the Harvest node if you change checkpoint: wire `noise/guider/sigmas/latent + Tolerance`, run a native Euler generation at 28-32 steps `simple`, copy `calibration` JSON into Automatic's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
 
 Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`. Old `preset` names (`half_then_full` etc) still load and map to stages.
 

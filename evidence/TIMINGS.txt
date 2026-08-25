@@ -1,0 +1,14 @@
+Times for 10 second 0.5 MP video on given hardware
+
+Native: 832.83 Seconds
+course.
+2 Stage: 651.29 Seconds (Session Models were loading)
+3 Stage: 415.97 Seconds
+4 stage: 261.64 Seconds
+
+
+coupled full grid
+2 stage: 608.56 Seconds
+3 stage: 616.16 seconds?
+4 stage: 608.49 Seconds
+
