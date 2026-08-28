@@ -4,13 +4,6 @@ Each I2V keyframe latent is wrapped so its lifecycle is explicit and
 cannot be accidentally re-used. The H3 runtime keeps one Latent per
 keyframe id (and one RefLatent per ref2va block) in a tiny registry;
 all resizes are driven from the *pristine* full-res clone.
-
-Fixes the recurring failure mode where per-stage code mutated the live
-tensor and progressively degraded it (second coarse stage resized the
-first resize, not the source).
-
-See .hermes/latent-boundaries-idea.md and h3_runtime._rescale_cond_latents
-for the call sites.
 """
 
 from __future__ import annotations

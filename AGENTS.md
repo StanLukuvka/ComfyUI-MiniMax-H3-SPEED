@@ -2,38 +2,27 @@
 
 This file is the source of truth for how this pack is intended to be used, developed, and maintained.
 
-## Two Nodes
+## Three Nodes
 
-The pack ships exactly two ComfyUI nodes:
+The pack ships exactly three ComfyUI nodes:
 
-1. **`MiniMaxH3SPEEDSampler`** — the generator. Replaces KSampler + SamplerCustomAdvanced for MiniMax-H3 by running a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res).
+1. **`MiniMaxH3SPEEDSampler`** (Automatic) — the generator. Replaces KSampler + SamplerCustomAdvanced for MiniMax-H3 by running a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res). Picks `stages` (2-4), auto-computes the transition steps from `Tolerance (Delta)` + `noise_amplitude` + `noise_decay_exponent` via the power-spectrum threshold (`delta_custom` mode). Baked defaults: `Δ0.01 A7.394 β0.62` (balanced). Conservative `Δ0.005 A12.454 β0.819` available for sharper text.
 
-2. **`MiniMaxH3HarvestToConfig`** — harvest consumer. Parses a `harvest_json` STRING (produced by a **native** sampler pass, *not* by `MiniMaxH3SPEEDSampler`) into a human-readable calibration report.
+2. **`MiniMaxH3SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `ratio_mode steps` = goal is a step index, `ratio` = goal is a 0-1 fraction of the schedule. Used to copy paper schedules or test custom ladders.
 
-> **Why this is two nodes, not more:** everything else (Schedule, SigmaHarvest) was deleted because it pretends to wire into generation but actually can't. The SPEED sampler takes raw widget values (`power_A`, `power_beta`, `transition_mode`, etc.), not a config object — so a node that emits `SpeedConfig` is a dead-end.
+3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-res Euler pass (NOT the SPEED chain) with a fixed sigma schedule, captures `residual = x - denoised` per step, fits the radial DCT power spectrum `P = A·|ω|^-β`, and emits a flat `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the Automatic node. Run it once when you change checkpoint, or when using Loras/addons that influence the model.
 
-## Sigma Harvest: External Only
+## Sigma Harvest: Native Euler only
 
-The pack does NOT harvest. The `harvest_json` STRING input on
-`MiniMaxH3HarvestToConfig` is meant to come from a **native** Euler pass run
-outside this pack (a workflow the user builds themselves, or another tool).
-Nothing in this pack produces `harvest_json`, and the `diagnostics="JSON"` hook
-that once instrumented the sampler has been deleted — it was circular (measured
-the spectrum *inside* the SPEED sampler, contaminating the residual with
-DCT artifacts) and broke step indexing across stages.
+`MiniMaxH3HarvestToConfig` wraps the **native** Euler sampler (`guider.sample()`), NOT `run_speed_pipeline`. It must run on a single full-res native Euler pass with a fixed sigma schedule.
 
-**Correct path:** run a **native** full-res Euler pass elsewhere with whatever
-harvest tooling you prefer, then feed the resulting JSON into
-`MiniMaxH3HarvestToConfig` to read the fitted `power_A` / `power_beta` and bake
-those into the SPEED sampler's widget defaults (or hardcode them in the workflow).
-
-**Wrong path:** trying to harvest from inside `MiniMaxH3SPEEDSampler` — there is
-no hook for it anymore, and resurrecting one would re-introduce the circularity
-and step-indexing bugs that got it deleted.
+**How to use it:** run the Harvest node at full-res with a fixed sigma schedule (28-32 steps `simple`), read the `calibration` JSON, paste `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the Automatic node.
 
 ## Development Conventions
 
 - SPEED calibrates on **Euler** only. Other samplers require re-deriving the kappa-alignment math.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
-- Calibration happens offline; the baked defaults live in the node's widget defaults in `sampler_node.py`.
+- Calibration happens offline; the baked defaults live in the node's widget defaults in `nodes/sampler_node.py` and `speed_scripts/config.py` (`SpeedConfig`).
+- Latent boundaries: `speed_scripts/latent.py` (`Latent` / `RefLatent` / `LatentStage`) — pristine-only resize, even-round dims, id-keyed store synced with `_PRISTINE_STORE` in `h3_runtime.py`. `minimax_refs` are `RefLatent` (never scaled).
 - No random configuration, no silent randomization in config paths.
+- Tests: `speed_scripts/tests/` — `54 passed, 5 skipped` (5 skips are `speed_lab` sibling deselected).

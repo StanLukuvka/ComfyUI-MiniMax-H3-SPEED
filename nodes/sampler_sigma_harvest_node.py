@@ -1,32 +1,13 @@
-"""HarvestToConfig node — sigma harvester + calibration report emitter.
+"""Sigma harvester + calibration report emitter.
 
-CRITICAL DESIGN NOTE — why this wraps the NATIVE sampler, NOT the SPEED sampler:
+Runs one native full-res Euler pass over the full sigma schedule using
+`guider.sample()` (not the SPEED chain), snapshots `residual = x - denoised`
+on each step, fits the radial DCT power spectrum `P = A * |omega|^(-beta)`,
+and emits a flat `calibration` JSON (noise_amplitude, noise_decay_exponent,
+delta, r2, health, report) to paste back into the Automatic node.
 
-You CANNOT sigma-harvest when actively changing sigmas. The SPEED sampler
-(`MiniMaxH3SPEEDSampler`) splices and re-aligns the sigma schedule at every
-stage boundary (low-res → mid-res → full-res). After each boundary the sigma
-labels no longer index a monotonically-decreasing schedule, so any residual
-field (x - x0) captured mid-chain has the wrong sigma attached to it and is
-contaminated with DCT boundary artifacts. This is exactly why the old
-in-SPEED harvest hook was deleted — it produced a mislabeled, garbage spectrum.
-
-The CORRECT path is a SINGLE full-res Euler pass with a FIXED sigma schedule
-(no stage boundaries, no DCT splicing). The harvester node:
-
-  1. Takes (noise, guider, sigmas, latent_image) — the same inputs as a native
-     ComfyUI sampler node.
-  2. Runs ONE native Euler pass over the FULL sigma schedule using
-     `guider.sample()` (not `run_speed_pipeline`).
-  3. On each step, snapshots the residual `residual = x - denoised` via the
-     callback mechanism, tagging it with the live sigma value.
-  4. After the pass, fits the radial DCT power spectrum `P = A * |omega|^(-beta)`
-     on the accumulated residuals, emits the fitted (A, beta) as `harvest_json`
-     (STRING), and prints a human-readable calibration report.
-
-This node produces `harvest_json` for the user to feed back into the SPEED
-sampler's `noise_amplitude` / `noise_decay_exponent` widgets (in `delta_custom` mode) — it does
-NOT call the SPEED chain. The output also includes a passthrough `LATENT` so
-it can be inserted into a ComfyUI workflow graph like any sampler node.
+Inputs are the same as any native sampler node (noise, guider, sigmas,
+latent_image). Outputs: calibration STRING + passthrough LATENT.
 """
 
 from __future__ import annotations

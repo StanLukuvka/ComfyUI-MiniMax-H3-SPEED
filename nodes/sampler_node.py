@@ -9,7 +9,6 @@ from speed_scripts.nodes_common import build_config_and_run
 
 # Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
 # 2: 0.5 → 1.0, 3: 0.33 → 0.66 → 1.0, 4: 0.25 → 0.5 → 0.75 → 1.0
-# Matches the paper's discrete scales but named by count, not the old half_then_full aliases.
 STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
     2: (0.5, 1.0),
     3: (0.3333333333, 0.6666666667, 1.0),

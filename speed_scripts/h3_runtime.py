@@ -520,9 +520,8 @@ def run_speed_pipeline(
         raise ValueError("need at least two stages (scales ending at 1.0)")
     full_h, full_w = full_video.shape[-2:]
     full_t = full_video.shape[-3]
-    # One resolution source: stage_resolution owns this math (the cond-patching
-    # path also calls it, so a second inline copy here could silently diverge —
-    # exactly the failure mode this pack has a history with).
+    # One resolution source — stage_resolution owns this math; the cond-patching
+    # path also calls it, so a second inline copy here could silently diverge.
     stage_hw_t = [
         stage_resolution(config, i, full_h, full_w, full_t)
         for i in range(n_stages)
