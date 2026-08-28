@@ -1,9 +1,9 @@
-"""Automatic SPEED sampler — uses LatentClass directly (no build_config_and_run).
+"""Automatic SPEED sampler — uses LatentWalker directly (no build_config_and_run.
 
 Picks 2-4 resolution stages (0.5→1.0, 0.33→0.66→1.0, 0.25→0.5→0.75→1.0).
 Steps are placed automatically from Tolerance + A/beta via the power-spectrum
-threshold. The cond-patching is done via LatentClass.walk_guider — the latent
-lifecycle is owned by LatentClass, not embedded in h3_runtime.
+threshold. The cond-patching is done via LatentWalker — the latent lifecycle is
+owned by the walker, not embedded in h3_runtime.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from speed_scripts.h3_runtime import (
     run_speed_pipeline,
     unpack_latent,
 )
-from speed_scripts.latent_class import LatentClass
+from speed_scripts.latent_class import LatentWalker
 
 
 # Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
@@ -110,9 +110,9 @@ class MiniMaxH3SPEEDSamplerClass:
         )
 
         # Snapshot pristine for every keyframe/ref on the guider before the
-        # first stage boundary. The runtime will call walk_guider again at
+        # first stage boundary. The runtime will call apply_stage again at
         # every boundary (via the h3_runtime shim) to do the actual resize.
-        LatentClass.prime(guider)
+        LatentWalker(guider)
 
         return run_speed_pipeline(
             noise,

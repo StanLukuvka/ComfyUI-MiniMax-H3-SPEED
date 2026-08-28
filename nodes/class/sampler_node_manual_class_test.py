@@ -10,7 +10,7 @@ import comfy.samplers
 
 from speed_scripts.config import RATIO_MODES, SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline, unpack_latent
-from speed_scripts.latent_class import LatentClass
+from speed_scripts.latent_class import LatentWalker
 from speed_scripts.nodes_common import validate_transition_steps
 
 
@@ -117,7 +117,7 @@ class MiniMaxH3SPEEDSamplerManualClassTest:
             full_latent_w=int(full_video.shape[-1]),
         )
 
-        LatentClass.prime(guider)
+        LatentWalker(guider)
 
         return run_speed_pipeline(
             noise,

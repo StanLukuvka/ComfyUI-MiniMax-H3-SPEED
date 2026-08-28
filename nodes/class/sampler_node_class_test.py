@@ -15,7 +15,7 @@ from speed_scripts.h3_runtime import (
     run_speed_pipeline,
     unpack_latent,
 )
-from speed_scripts.latent_class import LatentClass
+from speed_scripts.latent_class import LatentWalker
 
 
 STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
@@ -100,7 +100,7 @@ class MiniMaxH3SPEEDSamplerClassTest:
             full_latent_w=int(full_video.shape[-1]),
         )
 
-        LatentClass.prime(guider)
+        LatentWalker(guider)
 
         return run_speed_pipeline(
             noise,

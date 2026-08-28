@@ -28,76 +28,37 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-# Latent lifecycle now lives in LatentClass (speed_scripts/latent_class.py).
-# Re-export the old module names so existing test imports keep working.
-from .latent_class import LatentClass, LatentStage
+from .latent_class import LatentClass, LatentStage, LatentWalker
 
 
-# _PRISTINE_STORE is a backwards-compat shim that maps id(holder) -> pristine tensor.
-# Tests call _PRISTINE_STORE.get(id(kf)) and expect a tensor with .shape.
-# We intercept .get() to pull lcl_pristine from the underlying LatentClass registry.
-class _PristineStore(dict):
-    """Backwards-compat shim — _PRISTINE_STORE[id(holder)] returns the pristine tensor.
-
-    Tests also check `len(_PRISTINE_STORE)` and `_PRISTINE_STORE.clear()`, so we
-    delegate to the underlying LatentClass registry for those operations.
-    """
-    def get(self, pgcs_key, pgcs_default=None):
-        pgcs_lc = LatentClass._registry.get(pgcs_key)
-        if pgcs_lc is not None:
-            return pgcs_lc.pristine
-        return pgcs_default
-
-    def __len__(self) -> int:
-        return len(LatentClass._registry)
-
-    def __contains__(self, pgcs_key) -> bool:
-        return pgcs_key in LatentClass._registry
-
-    def clear(self) -> None:
-        LatentClass._registry.clear()
+# Per-pipeline-run walker, stashed on the guider so the same wrapper dict
+# survives every coarse stage and the final restore. Dropped at the end of
+# every run; recreated on the next run that touches the same guider.
+_LW_ATTR = "_speed_latent_walker"
 
 
-_LATENT_STORE = LatentClass._registry
-_PRISTINE_STORE: dict = _PristineStore()
+def _get_or_create_walker(guider) -> LatentWalker:
+    """Return the walker stashed on this guider, creating it on first use."""
+    lw_existing = getattr(guider, _LW_ATTR, None)
+    if lw_existing is not None:
+        return lw_existing
+    lw_walker = LatentWalker(guider)
+    try:
+        setattr(guider, _LW_ATTR, lw_walker)
+    except (AttributeError, TypeError):
+        # Some guider mocks refuse setattr; fall back to local-only walker.
+        pass
+    return lw_walker
 
 
-# Backwards-compat aliases for the old data-class names. Tests reference
-# `Latent` and `RefLatent`; both behave like the old classes for compatibility.
-Latent = LatentClass
-class RefLatent(LatentClass):
-    """Backwards-compat shim — refs opt out of rescaling in `mix`."""
-    def downscale(self, rh_dh, rh_dw):
-        if self.stage == LatentStage.CONSUMED:
-            raise RuntimeError("RefLatent already consumed")
-        if self._injected:
-            raise RuntimeError("RefLatent already injected")
-        self.stage = LatentStage.STAGED
-        return self.holder["latent"]
-
-
-def _get_pristine(gp_holder):
-    gp_lc = LatentClass._registry.get(id(gp_holder))
-    return gp_lc.lcl_pristine if gp_lc is not None else None
-
-
-def _patch_guider_conditioning_for_stage(guider, pgcs_stage_h, pgcs_stage_w, is_final_stage=False):
-    """[Level 3] Per-stage I2V fix: rescale the *stored* condition sources.
-
-    Delegated to LatentClass.walk_guider. The lifecycle, pristine snapshots,
-    and per-holder registry all live in LatentClass; this is a thin shim so
-    the call sites in run_speed_pipeline do not change.
-    """
-    LatentClass.walk_guider(guider, pgcs_stage_h, pgcs_stage_w, is_final_stage=is_final_stage)
-
-
-def _rescale_cond_latents(cond, rcl_stage_h, rcl_stage_w, is_final_stage=False):
-    """Rescale fl2va keyframe + ref2va ref latents in one conditioning dict.
-
-    Delegated to LatentClass.mix. Kept as a top-level shim so existing call
-    sites and tests do not change.
-    """
-    LatentClass.mix(cond, rcl_stage_h, rcl_stage_w, is_final_stage=is_final_stage)
+def _drop_walker(guider) -> None:
+    """Drop the walker at the end of a run. Pristine clones die with it."""
+    lw_walker = getattr(guider, _LW_ATTR, None)
+    if lw_walker is not None:
+        try:
+            delattr(guider, _LW_ATTR)
+        except (AttributeError, TypeError):
+            pass
 
 
 def stage_resolution(config, stage_idx, full_h, full_w, full_t):
@@ -403,7 +364,8 @@ def run_speed_pipeline(
         # (The payload dict from a previous stage is rebuilt from these
         # sources every call, so these sources are the only patch point.)
         rsp_sh, rsp_sw, _ = stage_resolution(config, stage_idx, full_h, full_w, full_t)
-        _patch_guider_conditioning_for_stage(guider, rsp_sh, rsp_sw, is_final_stage=False)
+        walker = _get_or_create_walker(guider)
+        walker.apply_stage(rsp_sh, rsp_sw)
 
         # Run the current stage over current_sigmas[:boundary+1].
         capture, callback = _step_capture()
@@ -534,7 +496,9 @@ def run_speed_pipeline(
     # (kept since our first downscale) so the final stage runs exactly like
     # the normal full-res I2V path.
     fh, fw, _ = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
-    _patch_guider_conditioning_for_stage(guider, fh, fw, is_final_stage=True)
+    walker = _get_or_create_walker(guider)
+    walker.apply_final()
+    _drop_walker(guider)
     final_capture, final_callback = _step_capture()
     final_public = guider.sample(
         stage_start_pub,

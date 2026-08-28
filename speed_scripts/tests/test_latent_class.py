@@ -1,8 +1,9 @@
-"""LatentClass tests — the new abstraction that owns the cond-latent lifecycle.
+"""LatentClass + LatentWalker tests.
 
-The old `Latent` / `RefLatent` data classes still exist in
-`speed_scripts.latent` for backwards compat; the new `LatentClass` is the
-canonical owner of pristine snapshots, the registry, and the cond walk.
+LatentClass is the per-holder lifecycle (one instance per keyframe/ref).
+LatentWalker is the per-generation orchestrator — construct it once with a
+guider, call apply_stage() at every coarse boundary, apply_final() at the
+end. Each instance owns its own wrapper dict, so two walkers never collide.
 """
 
 import torch
@@ -10,6 +11,7 @@ import torch
 from speed_scripts.latent_class import (
     LatentClass,
     LatentStage,
+    LatentWalker,
 )
 
 
@@ -21,12 +23,11 @@ def _ref(h, w):
     return {"latent": torch.rand(1, 1, 2, h, w)}
 
 
-def setup_function(_):
-    LatentClass.clear()
-
-
-def teardown_function(_):
-    LatentClass.clear()
+def _guider(*conds):
+    """Build a fake guider whose original_conds has every cond as positive."""
+    class _G:
+        original_conds = {"positive": list(conds), "negative": []}
+    return _G()
 
 
 def test_latent_class_input_to_staged_rounds_odd_dims_up_to_even():
@@ -73,7 +74,7 @@ def test_latent_class_release_blocks_further_changes():
 
 
 def test_ref_variant_never_rescales():
-    """RefLatent (via is_ref=True) tracks lifecycle but does not resize."""
+    """is_ref=True tracks lifecycle but does not resize."""
     ref = _ref(8, 16)
     lc = LatentClass(ref, is_ref=True)
     lc.downscale(2, 2)
@@ -82,70 +83,60 @@ def test_ref_variant_never_rescales():
     assert lc.stage == LatentStage.STAGED
 
 
-def test_mix_walks_positive_and_negative_conds():
-    """LatentClass.mix() handles positive + negative, keyframes + refs."""
+def test_walker_resizes_keyframes_in_every_cond():
+    """LatentWalker applies the resize to every positive+negative cond."""
     kf_p = _kf(8, 16)
     kf_n = _kf(8, 16)
     ref_p = _ref(8, 16)
     cond_pos = {"minimax_keyframes": [kf_p], "minimax_refs": [ref_p]}
     cond_neg = {"minimax_keyframes": [kf_n], "minimax_refs": []}
-    # No `original_conds` wrapping — feed `mix` directly.
-    LatentClass.mix(cond_pos, 3, 5, is_final_stage=False)
-    LatentClass.mix(cond_neg, 3, 5, is_final_stage=False)
+    g = _guider(cond_pos)
+    # Inject the negative cond by editing the same fake object.
+    g.original_conds["negative"] = [cond_neg]
+    w = LatentWalker(g)
+    w.apply_stage(3, 5)
     assert tuple(kf_p["latent"].shape[-2:]) == (4, 6)
     assert tuple(kf_n["latent"].shape[-2:]) == (4, 6)
     # Refs stay full res.
     assert tuple(ref_p["latent"].shape[-2:]) == (8, 16)
 
 
-def test_mix_final_stage_restores_and_releases():
+def test_walker_final_stage_restores_and_releases():
     kf = _kf(8, 16)
     cond = {"minimax_keyframes": [kf], "minimax_refs": []}
-    LatentClass.mix(cond, 3, 5, is_final_stage=False)
+    w = LatentWalker(_guider(cond))
+    w.apply_stage(3, 5)
     assert tuple(kf["latent"].shape[-2:]) == (4, 6)
-    assert len(LatentClass._registry) == 1
-    LatentClass.mix(cond, 8, 16, is_final_stage=True)
+    assert len(w._wrappers) == 1
+    w.apply_final()
     assert tuple(kf["latent"].shape[-2:]) == (8, 16)
-    # Registry entry popped after release.
-    assert len(LatentClass._registry) == 0
+    # Every wrapper popped on final.
+    assert len(w._wrappers) == 0
 
 
-def test_prime_populates_registry_without_resizing():
-    """prime() snapshots pristine but does not resize any holder."""
+def test_walker_prime_populates_wrappers_without_resizing():
+    """Constructor snapshots pristine but does not resize any holder."""
     kf = _kf(8, 16)
     ref = _ref(8, 16)
     cond = {"minimax_keyframes": [kf], "minimax_refs": [ref]}
-
-    class _FakeGuider:
-        original_conds = {"positive": [cond], "negative": []}
-
-    g = _FakeGuider()
-    LatentClass.prime(g)
-    assert len(LatentClass._registry) == 2
+    w = LatentWalker(_guider(cond))
+    assert len(w._wrappers) == 2
     # Latents unchanged.
     assert tuple(kf["latent"].shape[-2:]) == (8, 16)
     assert tuple(ref["latent"].shape[-2:]) == (8, 16)
 
 
-def test_walk_guider_applies_mix_to_positive_and_negative():
-    kf_p = _kf(8, 16)
-    kf_n = _kf(8, 16)
-    cond_p = {"minimax_keyframes": [kf_p], "minimax_refs": []}
-    cond_n = {"minimax_keyframes": [kf_n], "minimax_refs": []}
-
-    class _FakeGuider:
-        original_conds = {"positive": [cond_p], "negative": [cond_n]}
-
-    g = _FakeGuider()
-    LatentClass.walk_guider(g, 3, 5, is_final_stage=False)
-    assert tuple(kf_p["latent"].shape[-2:]) == (4, 6)
-    assert tuple(kf_n["latent"].shape[-2:]) == (4, 6)
-
-
-def test_clear_drops_all_wrapped_latents():
-    kf = _kf(8, 16)
-    cond = {"minimax_keyframes": [kf], "minimax_refs": []}
-    LatentClass.mix(cond, 3, 5, is_final_stage=False)
-    assert len(LatentClass._registry) == 1
-    LatentClass.clear()
-    assert len(LatentClass._registry) == 0
+def test_two_walkers_dont_collide():
+    """Per-instance wrapper dicts isolate independent generations."""
+    kf_a = _kf(8, 16)
+    kf_b = _kf(8, 16)
+    cond_a = {"minimax_keyframes": [kf_a], "minimax_refs": []}
+    cond_b = {"minimax_keyframes": [kf_b], "minimax_refs": []}
+    walker_a = LatentWalker(_guider(cond_a))
+    walker_b = LatentWalker(_guider(cond_b))
+    walker_a.apply_stage(3, 5)
+    # walker_a resized, walker_b untouched.
+    assert tuple(kf_a["latent"].shape[-2:]) == (4, 6)
+    assert tuple(kf_b["latent"].shape[-2:]) == (8, 16)
+    # Their wrapper dicts are independent.
+    assert walker_a._wrappers is not walker_b._wrappers

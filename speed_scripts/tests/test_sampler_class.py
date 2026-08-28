@@ -136,7 +136,6 @@ def test_class_node_noise_policy_options():
 def test_class_node_sample_runs_two_stages():
     """Calling sample() with stages=2 fires exactly two guider.sample() calls."""
     install_comfy_stubs()
-    from speed_scripts.latent_class import LatentClass
 
     # Build the nested latent
     video = torch.zeros(1, 1, 2, 8, 8)
@@ -171,7 +170,6 @@ def test_class_node_sample_runs_two_stages():
                     pass
             return return_latent
 
-    LatentClass.clear()
     cls = importlib.import_module("sampler_node_class_test").MiniMaxH3SPEEDSamplerClassTest
     sigmas = torch.linspace(1.0, 0.025, 20)
 
@@ -195,7 +193,6 @@ def test_class_node_sample_runs_two_stages():
 def test_class_node_delta_alias_accepted():
     """The node accepts 'Delta', 'delta', 'tolerance' as aliases for Tolerance (Delta)."""
     install_comfy_stubs()
-    from speed_scripts.latent_class import LatentClass
 
     video = torch.zeros(1, 1, 2, 8, 8)
     audio = torch.zeros(1, 1, 2, 44)
@@ -225,13 +222,11 @@ def test_class_node_delta_alias_accepted():
                     pass
             return return_latent
 
-    LatentClass.clear()
     cls = importlib.import_module("sampler_node_class_test").MiniMaxH3SPEEDSamplerClassTest
     sigmas = torch.linspace(1.0, 0.025, 20)
 
     # All aliases must not raise
     for alias in ("Tolerance (Delta)", "Tolerance", "tolerance", "delta", "Delta"):
-        LatentClass.clear()
         try:
             cls().sample(
                 noise=make_fake_noise(),
@@ -286,7 +281,6 @@ def test_manual_class_node_has_transition_widgets():
 def test_manual_class_node_sample_runs_two_stages():
     """Manual sampler fires exactly two stages when only goal_1/resolution_1 are set."""
     install_comfy_stubs()
-    from speed_scripts.latent_class import LatentClass
 
     video = torch.zeros(1, 1, 2, 8, 8)
     audio = torch.zeros(1, 1, 2, 44)
@@ -319,7 +313,6 @@ def test_manual_class_node_sample_runs_two_stages():
                     pass
             return return_latent
 
-    LatentClass.clear()
     cls = importlib.import_module("sampler_node_manual_class_test").MiniMaxH3SPEEDSamplerManualClassTest
     sigmas = torch.linspace(1.0, 0.025, 20)
 
@@ -347,7 +340,6 @@ def test_manual_class_node_sample_runs_two_stages():
 def test_manual_class_node_ratio_mode():
     """ratio_mode='ratio' accepts fractional goals (0 < goal <= 1)."""
     install_comfy_stubs()
-    from speed_scripts.latent_class import LatentClass
 
     video = torch.zeros(1, 1, 2, 8, 8)
     audio = torch.zeros(1, 1, 2, 44)
@@ -377,7 +369,6 @@ def test_manual_class_node_ratio_mode():
                     pass
             return return_latent
 
-    LatentClass.clear()
     cls = importlib.import_module("sampler_node_manual_class_test").MiniMaxH3SPEEDSamplerManualClassTest
     sigmas = torch.linspace(1.0, 0.025, 20)
 
@@ -405,7 +396,6 @@ def test_manual_class_node_ratio_mode():
 def test_manual_class_node_rejects_single_stage():
     """Manual sampler raises when fewer than two stages are active."""
     install_comfy_stubs()
-    from speed_scripts.latent_class import LatentClass
 
     video = torch.zeros(1, 1, 2, 8, 8)
     audio = torch.zeros(1, 1, 2, 44)
@@ -426,7 +416,6 @@ def test_manual_class_node_rejects_single_stage():
         def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
             return return_latent
 
-    LatentClass.clear()
     cls = importlib.import_module("sampler_node_manual_class_test").MiniMaxH3SPEEDSamplerManualClassTest
     sigmas = torch.linspace(1.0, 0.025, 20)
 
