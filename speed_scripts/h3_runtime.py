@@ -28,77 +28,275 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-# Latent lifecycle now lives in LatentClass (speed_scripts/latent_class.py).
-# Re-export the old module names so existing test imports keep working.
-from .latent_class import LatentClass, LatentStage
+# Distinct-boundary latent wrappers — one Latent per keyframe id (and one
+# RefLatent per ref2va block). Registry is tiny and lives only for one
+# generation; entries are popped at the final-stage restore.
+try:
+    from .latent import Latent, RefLatent  # type: ignore[import]
+except Exception:  # pragma: no cover - import guard for stub tests
+    Latent = RefLatent = None  # type: ignore[assignment,misc]
 
+_LATENT_STORE: dict[int, object] = {}
 
-# _PRISTINE_STORE is a backwards-compat shim that maps id(holder) -> pristine tensor.
-# Tests call _PRISTINE_STORE.get(id(kf)) and expect a tensor with .shape.
-# We intercept .get() to pull lcl_pristine from the underlying LatentClass registry.
-class _PristineStore(dict):
-    """Backwards-compat shim — _PRISTINE_STORE[id(holder)] returns the pristine tensor.
+# Pristine condition-latent snapshots. Holders are always plain keyframe dicts
+# (the walk in _rescale_cond_latents skips non-dicts), and plain dicts refuse
+# setattr, so the id()-keyed module dict is the ONLY store. Entries are popped
+# at the final-stage restore so the full-res clones die with each generation.
+# Kept in sync with _LATENT_STORE for backwards compat — tests import it.
+_PRISTINE_STORE: dict[int, object] = {}
 
-    Tests also check `len(_PRISTINE_STORE)` and `_PRISTINE_STORE.clear()`, so we
-    delegate to the underlying LatentClass registry for those operations.
+def _get_pristine(holder):
+    obj = _LATENT_STORE.get(id(holder))
+    if obj is not None and hasattr(obj, "pristine"):
+        return obj.pristine
+    return _PRISTINE_STORE.get(id(holder))
+
+def _set_pristine(holder, value):
+    _PRISTINE_STORE[id(holder)] = value
+    obj = _LATENT_STORE.get(id(holder))
+    if obj is not None and hasattr(obj, "pristine"):
+        try:
+            obj.pristine = value  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+def _interp_cond(z, h, w):
+    """Per-frame bilinear spatial resize of cond latents ([B,C,H,W] or [B,C,T,H,W]).
+
+    torch.nn.functional.interpolate is 4D-native (size=(h,w) on a 5D tensor
+    raises), so fold the temporal axis into the batch for the resize and fold
+    it back out after — frames are interpolated independently.
     """
-    def get(self, pgcs_key, pgcs_default=None):
-        pgcs_lc = LatentClass._registry.get(pgcs_key)
-        if pgcs_lc is not None:
-            return pgcs_lc.pristine
-        return pgcs_default
+    if z.ndim == 4:
+        b_, c_, hh, ww = z.shape
+        if hh == h and ww == w:
+            return z
+        resized = torch.nn.functional.interpolate(
+            z, size=(h, w), mode="bilinear", align_corners=False,
+        )
+        return resized.to(dtype=z.dtype)
+    if z.ndim != 5:
+        raise ValueError(f"unsupported cond latent ndim {z.ndim} (want 4 or 5)")
+    b_, c_, t_, hh, ww = z.shape
+    if hh == h and ww == w:
+        return z
+    flattened = z.transpose(1, 2).reshape(b_ * t_, c_, hh, ww)
+    resized = torch.nn.functional.interpolate(
+        flattened, size=(h, w), mode="bilinear", align_corners=False,
+    )
+    return resized.reshape(b_, t_, c_, h, w).transpose(1, 2).to(dtype=z.dtype)
 
-    def __len__(self) -> int:
-        return len(LatentClass._registry)
-
-    def __contains__(self, pgcs_key) -> bool:
-        return pgcs_key in LatentClass._registry
-
-    def clear(self) -> None:
-        LatentClass._registry.clear()
-
-
-_LATENT_STORE = LatentClass._registry
-_PRISTINE_STORE: dict = _PristineStore()
-
-
-# Backwards-compat aliases for the old data-class names. Tests reference
-# `Latent` and `RefLatent`; both behave like the old classes for compatibility.
-Latent = LatentClass
-class RefLatent(LatentClass):
-    """Backwards-compat shim — refs opt out of rescaling in `mix`."""
-    def downscale(self, rh_dh, rh_dw):
-        if self.stage == LatentStage.CONSUMED:
-            raise RuntimeError("RefLatent already consumed")
-        if self._injected:
-            raise RuntimeError("RefLatent already injected")
-        self.stage = LatentStage.STAGED
-        return self.holder["latent"]
-
-
-def _get_pristine(gp_holder):
-    gp_lc = LatentClass._registry.get(id(gp_holder))
-    return gp_lc.lcl_pristine if gp_lc is not None else None
-
-
-def _patch_guider_conditioning_for_stage(guider, pgcs_stage_h, pgcs_stage_w, is_final_stage=False):
+def _patch_guider_conditioning_for_stage(guider, stage_h, stage_w, is_final_stage=False):
     """[Level 3] Per-stage I2V fix: rescale the *stored* condition sources.
 
-    Delegated to LatentClass.walk_guider. The lifecycle, pristine snapshots,
-    and per-holder registry all live in LatentClass; this is a thin shim so
-    the call sites in run_speed_pipeline do not change.
+    Normal ComfyUI I2V path (rev 5749 / c2bcbecd):
+
+    1. ``MiniMaxH3ImageToVideo``(fl2va) / ``MiniMaxH3ReferenceToVideo``(ref2va)
+       encode reference frames and stash them on the conditioning via
+       ``conditioning_set_values`` under ``minimax_keyframes`` /
+       ``minimax_refs``. Each keyframe is ``{"resolved_frame_index": i,
+       "latent": z}``; each ref block is ``{"kind": ..., "latent": z, ...}``.
+    2. ``CFGGuider.inner_set_conds`` -> ``sampler_helpers.convert_cond`` stores
+       that (plus uuid) in ``guider.original_conds["positive"]``. The latents
+       are FULL-resolution [B,C,T,H,W] tenors.
+    3. On every stage's ``guider.sample()``, ``inner_sample`` copies
+       ``original_conds`` into ``self.conds`` and ``process_conds`` calls
+       ``model.extra_conds``, which builds ``minimax_payload``::
+           payload["cond_video_latents"] = [kf["latent"] for kf in keyframes]
+       (model_base.py ~2168-2175)
+    4. In ``MiniMaxH3Model._forward`` the live latent's coarse dims drive
+       ``PackedLayout`` (``frame_rows`` per keyframe), then
+       ``all_video_rows[~img_update] = self._cond_video_rows(payload, device)``
+       scatters the condition rows. The layout also gets recreated if the
+       signature changed; anything that keeps the condition latents full-res
+       while the grid shrinks makes ``cond_video_rows`` 4x too long -> the
+       [520,96] vs [130,96] broadcast error.
+
+    So the ONLY inputs under our control that end up in ``cond_video_latents``
+    are the stored keyframe/ref ``"latent"`` tensors, still full-res inside
+    ``original_conds``. (Two traps we fell into previously: the payload dict
+    is rebuilt from *these* sources on every guider.sample(), so mutating it
+    is a no-op; and ``_cond_video_rows``/PackedLayout live on the
+    inner diffusion model, not on the wrapper at ``guider.model_patcher.model``.)
+
+    Fix: walk the positive AND negative conds (negative is kept for parity
+    with ComfyUI's own cond handling — MiniMax has no negative prompts in
+    practice), find the keyframes / refs, and rescale each
+    stored ``latent`` to the stage's (h, w) — rounded to the model's 2x2
+    patch multiple is unnecessary because keyframes share the *target* grid
+    (PackedLayout computes it), but resize happens from a pristine full-res
+    snapshot so progressive stages never degrade the source.
+
+    Args:
+        guider: The guider object holding original_conds.
+        stage_h: Target height for this stage. If None, restore pristine.
+        stage_w: Target width for this stage. If None, restore pristine.
+        is_final_stage: If True, restore pristine (full-res) instead of downscaling.
     """
-    LatentClass.walk_guider(guider, pgcs_stage_h, pgcs_stage_w, is_final_stage=is_final_stage)
+    original_conds = getattr(guider, 'original_conds', None)
+    if not isinstance(original_conds, dict):
+        return
+    for key in ("positive", "negative"):
+        conds = original_conds.get(key)
+        if not isinstance(conds, list):
+            continue
+        for cond in conds:
+            if not isinstance(cond, dict):
+                continue
+            _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=is_final_stage)
 
+def _rescale_cond_latents(cond, stage_h, stage_w, is_final_stage=False):
+    """Rescale the fl2va keyframe latents found in one conditioning dict.
 
-def _rescale_cond_latents(cond, rcl_stage_h, rcl_stage_w, is_final_stage=False):
-    """Rescale fl2va keyframe + ref2va ref latents in one conditioning dict.
+    This is the ONLY cond source that can produce the row-mismatch:
+    PackedLayout allocates one "cond" segment per keyframe using the LIVE
+    target grid (the coarse stage dims), while `_cond_video_rows` patchifies
+    the keyframe's own tensor. Full-res tensor + coarse grid = 4x too many
+    rows (in the reported crash: 520 full-res vs 130 stage-0 rows).
 
-    Delegated to LatentClass.mix. Kept as a top-level shim so existing call
-    sites and tests do not change.
+    ref2va "minimax_refs" blocks are handled by RefLatent (intentionally NOT
+    rescaled: their rows are allocated from their own stored latent_h/latent_w
+    metadata, which SPEED never changes — tensor and allocation stay consistent
+    at every stage, at the cost of running ref rows at full res during coarse
+    stages). Keyframe path uses Latent with distinct boundaries:
+    input -> scale_to (downsample) -> restore/upscale_to_inject -> release.
+
+    Each keyframe keeps a pristine full-res snapshot (id-keyed module dict,
+    popped at the final-stage restore) so the final stage restores full
+    resolution and the snapshot dies with its generation.
+
+    Target dims are rounded UP to even (the DiT's 2x2 patch grid): SPEED
+    coarse stages can be odd (e.g. 0.25 scale -> w=13), and `patchify_video`
+    reshape would crash on odd dims while the live video gets circular-padded
+    to even by `pad_to_patch_size` — matching that grid keeps cond rows equal
+    to the layout's frame_rows.
     """
-    LatentClass.mix(cond, rcl_stage_h, rcl_stage_w, is_final_stage=is_final_stage)
+    # --- keyframes (fl2va) — rescaled via Latent ---
+    keyframes = cond.get("minimax_keyframes", []) or []
+    th = stage_h + (stage_h % 2)
+    tw = stage_w + (stage_w % 2)
+    for kf in keyframes:
+        if not isinstance(kf, dict):
+            continue
+        z = kf.get("latent")
+        if z is None or not hasattr(z, "shape"):
+            continue
+        # Get or create Latent wrapper (distinct input boundary).
+        latent_obj = _LATENT_STORE.get(id(kf))
+        if latent_obj is None and Latent is not None:
+            try:
+                latent_obj = Latent(kf)
+            except Exception:
+                latent_obj = None
+            if latent_obj is not None:
+                _LATENT_STORE[id(kf)] = latent_obj
+                _PRISTINE_STORE[id(kf)] = latent_obj.pristine
+        if is_final_stage:
+            # Upsample/inject boundary — restore pristine, then consumed.
+            if latent_obj is not None and hasattr(latent_obj, "restore"):
+                try:
+                    before_shape = getattr(z, "shape", None)
+                    latent_obj.restore()
+                    after_shape = getattr(kf.get("latent"), "shape", None)
+                    if before_shape != after_shape:
+                        log.info("[SPEED] final stage — restored keyframe latent %s",
+                                 list(after_shape) if hasattr(after_shape, "__iter__") else after_shape)
+                    # release + pop
+                    try:
+                        latent_obj.release()
+                    except Exception:
+                        pass
+                except Exception:
+                    # Fallback to legacy path
+                    pristine = _get_pristine(kf)
+                    if pristine is not None and getattr(z, "shape", None) != getattr(pristine, "shape", None):
+                        kf["latent"] = pristine.clone()
+                        log.info("[SPEED] final stage — restored keyframe latent %s", list(pristine.shape))
+            else:
+                # Legacy fallback (no Latent class available)
+                pristine = _get_pristine(kf)
+                if pristine is not None:
+                    if getattr(z, "shape", None) != getattr(pristine, "shape", None):
+                        kf["latent"] = pristine.clone()
+                        log.info("[SPEED] final stage — restored keyframe latent %s", list(pristine.shape))
+            _LATENT_STORE.pop(id(kf), None)
+            _PRISTINE_STORE.pop(id(kf), None)
+            continue
+        # Downsample boundary — scale_to from pristine.
+        if latent_obj is not None and hasattr(latent_obj, "scale_to"):
+            try:
+                before_shape = getattr(kf.get("latent"), "shape", None)
+                latent_obj.scale_to(stage_h, stage_w)
+                after_shape = getattr(kf.get("latent"), "shape", None)
+                if before_shape != after_shape:
+                    log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
+                             stage_h, stage_w,
+                             list(latent_obj.pristine.shape) if hasattr(latent_obj.pristine, "shape") else "?",
+                             list(after_shape) if hasattr(after_shape, "__iter__") else after_shape)
+            except RuntimeError:
+                # already injected/consumed — ignore
+                pass
+            except Exception:
+                # Fallback to legacy interpolate
+                pristine = _get_pristine(kf)
+                if pristine is not None:
+                    src_h, src_w = pristine.shape[-2], pristine.shape[-1]
+                    if src_h != th or src_w != tw:
+                        kf["latent"] = _interp_cond(pristine, th, tw)
+                        log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
+                                 stage_h, stage_w, list(pristine.shape), list(kf["latent"].shape))
+        else:
+            # Legacy fallback: direct _interp_cond from pristine.
+            pristine = _get_pristine(kf)
+            if pristine is None:
+                try:
+                    pristine = z.clone()
+                except Exception:
+                    continue
+                _set_pristine(kf, pristine)
+            src_h, src_w = pristine.shape[-2], pristine.shape[-1]
+            if src_h != th or src_w != tw:
+                kf["latent"] = _interp_cond(pristine, th, tw)
+                log.info("[SPEED] stage (%d,%d) — keyframe latent %s -> %s",
+                         stage_h, stage_w, list(pristine.shape), list(kf["latent"].shape))
 
+    # --- refs (ref2va) — never rescaled, but lifecycle-tracked via RefLatent ---
+    refs = cond.get("minimax_refs", []) or []
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        z = ref.get("latent")
+        if z is None or not hasattr(z, "shape"):
+            continue
+        ref_obj = _LATENT_STORE.get(id(ref))
+        if ref_obj is None and RefLatent is not None:
+            try:
+                ref_obj = RefLatent(ref)
+            except Exception:
+                ref_obj = None
+            if ref_obj is not None:
+                _LATENT_STORE[id(ref)] = ref_obj
+                _PRISTINE_STORE[id(ref)] = ref_obj.pristine
+        if is_final_stage:
+            if ref_obj is not None and hasattr(ref_obj, "restore"):
+                try:
+                    ref_obj.restore()
+                    try:
+                        ref_obj.release()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            _LATENT_STORE.pop(id(ref), None)
+            _PRISTINE_STORE.pop(id(ref), None)
+            continue
+        if ref_obj is not None and hasattr(ref_obj, "scale_to"):
+            try:
+                ref_obj.scale_to(stage_h, stage_w)
+            except RuntimeError:
+                pass
+            except Exception:
+                pass
 
 def stage_resolution(config, stage_idx, full_h, full_w, full_t):
     """[Level 2] Resolve the (h, w, t) a given stage runs at.
@@ -107,15 +305,15 @@ def stage_resolution(config, stage_idx, full_h, full_w, full_t):
     stage iteration and at the final stage. Returns the coarse spatial/temporal
     dimensions that SPEED stage `stage_idx` will operate at.
     """
-    sr_scales = config.scales
-    sr_s = sr_scales[stage_idx]
-    sr_h = max(1, round(full_h * sr_s))
-    sr_w = max(1, round(full_w * sr_s))
+    scales = config.scales
+    s = scales[stage_idx]
+    h = max(1, round(full_h * s))
+    w = max(1, round(full_w * s))
     if config.temporal_scales and stage_idx < len(config.temporal_scales):
-        sr_t = max(1, round(full_t * config.temporal_scales[stage_idx]))
+        t = max(1, round(full_t * config.temporal_scales[stage_idx]))
     else:
-        sr_t = full_t
-    return sr_h, sr_w, sr_t
+        t = full_t
+    return h, w, t
 
 # ---------------------------------------------------------------------------
 # Physics helpers
@@ -245,12 +443,12 @@ def _step_capture():
 
 def _find_first_step_below(sigmas, threshold: float) -> int:
     """[Level 3] First index whose sigma <= threshold; len-1 if none."""
-    ffsb_vals = [float(s) for s in sigmas]
-    ffsb_n = len(ffsb_vals) - 1
-    for ffsb_i in range(ffsb_n):
-        if ffsb_vals[ffsb_i] <= threshold:
-            return ffsb_i
-    return ffsb_n
+    vals = [float(s) for s in sigmas]
+    n = len(vals) - 1
+    for i in range(n):
+        if vals[i] <= threshold:
+            return i
+    return n
 
 def resolve_transition_steps(
     config: SpeedConfig, sigmas, H_full: int | None = None, W_full: int | None = None,
@@ -260,19 +458,19 @@ def resolve_transition_steps(
     Uses delta-optimal power-spectrum thresholds when the config requests it;
     otherwise falls back to the explicit transition_steps in the config.
     """
-    rts_scales = config.scales
+    scales = config.scales
     if config.transition_mode == "delta_custom":
-        rts_tolerance = config.delta
-        rts_A, rts_beta = config.noise_amplitude, config.noise_decay_exponent
+        tolerance = config.delta
+        A, beta = config.noise_amplitude, config.noise_decay_exponent
         if H_full is None or W_full is None:
             H_full, W_full = config.full_latent_h, config.full_latent_w
-        rts_steps = []
-        for rts_i in range(len(rts_scales) - 1):
-            rts_omega = rts_scales[rts_i] * min(H_full, W_full) / 2.0
-            rts_p = power_at_frequency(rts_omega, rts_A, rts_beta)
-            rts_thr = activation_threshold(rts_p, rts_tolerance)
-            rts_steps.append(_find_first_step_below(sigmas, rts_thr))
-        return tuple(rts_steps)
+        steps = []
+        for i in range(len(scales) - 1):
+            omega_i = scales[i] * min(H_full, W_full) / 2.0
+            p = power_at_frequency(omega_i, A, beta)
+            thr = activation_threshold(p, tolerance)
+            steps.append(_find_first_step_below(sigmas, thr))
+        return tuple(steps)
     return tuple(int(s) for s in config.transition_steps)
 
 def run_speed_pipeline(
@@ -335,8 +533,8 @@ def run_speed_pipeline(
     transition_steps = resolve_transition_steps(config, sigmas, full_h, full_w)
     if len(transition_steps) != n_stages - 1:
         raise ValueError("transition steps count must be n_scales - 1")
-    for rsp_ts in transition_steps:
-        if not 0 < rsp_ts < len(sigmas) - 1:
+    for ts in transition_steps:
+        if not 0 < ts < len(sigmas) - 1:
             raise ValueError("transition step must be inside the sigma schedule")
 
     # Stage 1: initialize coarse latent + noise at scale[0].
@@ -402,8 +600,8 @@ def run_speed_pipeline(
         # picks up cond_video_latents matching this stage's coarse latent.
         # (The payload dict from a previous stage is rebuilt from these
         # sources every call, so these sources are the only patch point.)
-        rsp_sh, rsp_sw, _ = stage_resolution(config, stage_idx, full_h, full_w, full_t)
-        _patch_guider_conditioning_for_stage(guider, rsp_sh, rsp_sw, is_final_stage=False)
+        sh, sw, _ = stage_resolution(config, stage_idx, full_h, full_w, full_t)
+        _patch_guider_conditioning_for_stage(guider, sh, sw, is_final_stage=False)
 
         # Run the current stage over current_sigmas[:boundary+1].
         capture, callback = _step_capture()
@@ -419,22 +617,22 @@ def run_speed_pipeline(
         )
         last_public = public
         last_capture = capture
-        rsp_q = float(current_sigmas[boundary])
+        q = float(current_sigmas[boundary])
         public_video, public_audio = unpack_latent(public)
-        log.info("[SPEED] stage %d output: video=%s audio=%s rsp_q=%.4f",
-                 stage_idx, list(public_video.shape), list(public_audio.shape), rsp_q)
+        log.info("[SPEED] stage %d output: video=%s audio=%s q=%.4f",
+                 stage_idx, list(public_video.shape), list(public_audio.shape), q)
 
         # Recover internal state (public -> carry-representation).
         internal_video, internal_audio = to_internal_state(
-            public_video, public_audio, rsp_q, audio_scale
+            public_video, public_audio, q, audio_scale
         )
 
-        # Align (kappa) for this transition: rsp_r = next_scale / current_scale.
+        # Align (kappa) for this transition: r = next_scale / current_scale.
         ratio = scales[stage_idx + 1] / scales[stage_idx]
         if config.sigma_policy == "canonical":
-            kappa, new_q = aligned_sigma(rsp_q, ratio)
+            kappa, new_q = aligned_sigma(q, ratio)
         else:
-            kappa, new_q = 1.0, rsp_q
+            kappa, new_q = 1.0, q
 
         # DCT-expand the video (coupled or fresh band) and rescale by kappa.
         next_h, next_w, next_t = stage_hw_t[stage_idx + 1]
@@ -451,14 +649,14 @@ def run_speed_pipeline(
                 # expansion: source DCT coefs go in low-freq corner, full noise coefs elsewhere.
                 source_dct = dct2(dct_temporal(internal_video))
                 target_noise = full_noise_video_dev[..., :next_t, :, :]
-                target_dct = dct2(dct_temporal(target_noise)) * float(rsp_q)
+                target_dct = dct2(dct_temporal(target_noise)) * float(q)
                 target_dct[..., :internal_video.shape[-3], :internal_video.shape[-2], :internal_video.shape[-1]] = source_dct
                 expanded_video = idct_temporal(idct2(target_dct))
             else:
                 expanded_video = spectral_expand_3d(
                     internal_video,
                     (next_t, next_h, next_w),
-                    rsp_q,
+                    q,
                     int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
                 )
         elif config.noise_policy == "coupled_full_grid":
@@ -466,23 +664,23 @@ def run_speed_pipeline(
             expanded_video = spectral_expand_coupled(
                 internal_video,
                 full_noise_video.to(device=internal_video.device, dtype=internal_video.dtype),
-                rsp_q,
+                q,
             )
         else:
             expanded_video = spectral_expand(
                 internal_video,
                 (next_h, next_w),
-                rsp_q,
+                q,
                 int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
             )
         transitioned_video = expanded_video * kappa
 
         # Audio handling at this boundary.
-        old_audio_sigma = time_shift_sigma(rsp_q, video_shift, audio_shift)
+        old_audio_sigma = time_shift_sigma(q, video_shift, audio_shift)
         new_audio_sigma = time_shift_sigma(new_q, video_shift, audio_shift)
         if config.audio_policy == "carry_preserve":
             transitioned_audio = carry_preserved_audio(
-                internal_audio, rsp_q, new_q, old_audio_sigma, new_audio_sigma
+                internal_audio, q, new_q, old_audio_sigma, new_audio_sigma
             )
         elif config.audio_policy == "clock_reindex":
             if "x0" not in capture:
@@ -491,7 +689,7 @@ def run_speed_pipeline(
             transitioned_audio = clock_reindex_audio_state(
                 internal_audio,
                 clean_audio,
-                rsp_q,
+                q,
                 new_q,
                 old_audio_sigma,
                 new_audio_sigma,

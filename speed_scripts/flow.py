@@ -8,14 +8,14 @@ from __future__ import annotations
 
 
 def aligned_sigma(sigma: float, resolution_ratio: float) -> tuple[float, float]:
-    as_q = float(sigma)
+    q = float(sigma)
     ratio = float(resolution_ratio)
-    if not 0.0 < as_q < 1.0:
+    if not 0.0 < q < 1.0:
         raise ValueError("transition sigma must be between zero and one")
     if ratio <= 1.0:
         raise ValueError("resolution ratio must be greater than one")
-    kappa = ratio / (1.0 + (ratio - 1.0) * as_q)
-    return kappa, as_q * kappa
+    kappa = ratio / (1.0 + (ratio - 1.0) * q)
+    return kappa, q * kappa
 
 
 def time_shift_sigma(sigma, from_shift: float, to_shift: float):

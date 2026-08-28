@@ -12,29 +12,29 @@ import enum
 import torch
 
 
-def _interp_cond(ic_z: torch.Tensor, ic_h: int, ic_w: int) -> torch.Tensor:
+def _interp_cond(z: torch.Tensor, h: int, w: int) -> torch.Tensor:
     """Per-frame bilinear spatial resize for cond latents [B,C,H,W] or [B,C,T,H,W].
 
     Duplicated here to keep latent self-contained and free of a circular
     import on h3_runtime. Behaviour is identical to h3_runtime._interp_cond.
     """
-    if ic_z.ndim == 4:
-        _, _, ic_hh, ic_ww = ic_z.shape
-        if ic_hh == ic_h and ic_ww == ic_w:
-            return ic_z
+    if z.ndim == 4:
+        _, _, hh, ww = z.shape
+        if hh == h and ww == w:
+            return z
         return torch.nn.functional.interpolate(
-            ic_z, size=(ic_h, ic_w), mode="bilinear", align_corners=False,
-        ).to(dtype=ic_z.dtype)
-    if ic_z.ndim != 5:
-        raise ValueError(f"unsupported cond latent ndim {ic_z.ndim} (want 4 or 5)")
-    ic_b, ic_c, ic_t, ic_hh, ic_ww = ic_z.shape
-    if ic_hh == ic_h and ic_ww == ic_w:
-        return ic_z
-    ic_flat = ic_z.transpose(1, 2).reshape(ic_b * ic_t, ic_c, ic_hh, ic_ww)
-    ic_resized = torch.nn.functional.interpolate(
-        ic_flat, size=(ic_h, ic_w), mode="bilinear", align_corners=False,
+            z, size=(h, w), mode="bilinear", align_corners=False,
+        ).to(dtype=z.dtype)
+    if z.ndim != 5:
+        raise ValueError(f"unsupported cond latent ndim {z.ndim} (want 4 or 5)")
+    b_, c_, t_, hh, ww = z.shape
+    if hh == h and ww == w:
+        return z
+    flat = z.transpose(1, 2).reshape(b_ * t_, c_, hh, ww)
+    resized = torch.nn.functional.interpolate(
+        flat, size=(h, w), mode="bilinear", align_corners=False,
     )
-    return ic_resized.reshape(ic_b, ic_t, ic_c, ic_h, ic_w).transpose(1, 2).to(dtype=ic_z.dtype)
+    return resized.reshape(b_, t_, c_, h, w).transpose(1, 2).to(dtype=z.dtype)
 
 
 class LatentStage(enum.Enum):
@@ -58,16 +58,16 @@ class Latent:
       stage:       LatentStage enum
     """
 
-    def __init__(self, lh_holder: dict):
-        if not isinstance(lh_holder, dict):
+    def __init__(self, holder: dict):
+        if not isinstance(holder, dict):
             raise TypeError("Latent holder must be a dict with a 'latent' tensor")
-        lh_z = lh_holder.get("latent")
-        if lh_z is None or not hasattr(lh_z, "shape"):
+        z = holder.get("latent")
+        if z is None or not hasattr(z, "shape"):
             raise TypeError("holder['latent'] must be a tensor with shape")
         # pristine is the ONLY source for every resize — never degrade
-        self.holder = lh_holder
-        self.pristine = lh_z.clone()
-        self.original_hw: tuple[int, int] = (int(lh_z.shape[-2]), int(lh_z.shape[-1]))
+        self.holder = holder
+        self.pristine = z.clone()
+        self.original_hw: tuple[int, int] = (int(z.shape[-2]), int(z.shape[-1]))
         self._current_hw: tuple[int, int] = self.original_hw
         self.stage = LatentStage.INPUT
         self._injected = False
@@ -80,21 +80,21 @@ class Latent:
     def is_consumed(self) -> bool:
         return self.stage == LatentStage.CONSUMED
 
-    def scale_to(self, st_h: int, st_w: int) -> torch.Tensor:
+    def scale_to(self, h: int, w: int) -> torch.Tensor:
         """Downsample boundary — even-round, same-size skip, INPUT/STAGED only."""
         if self.stage == LatentStage.CONSUMED:
             raise RuntimeError("Latent already consumed — cannot scale")
         if self._injected:
             raise RuntimeError("Latent already injected — cannot scale")
         # DiT 2x2 patch grid: odd dims would crash patchify_video, so round UP to even.
-        st_th = st_h + (st_h % 2)
-        st_tw = st_w + (st_w % 2)
-        if self._current_hw == (st_th, st_tw):
+        th = h + (h % 2)
+        tw = w + (w % 2)
+        if self._current_hw == (th, tw):
             self.stage = LatentStage.STAGED
             return self.holder["latent"]
         # Always resize from pristine, never from the live (degraded) tensor.
-        self.holder["latent"] = _interp_cond(self.pristine, st_th, st_tw)
-        self._current_hw = (st_th, st_tw)
+        self.holder["latent"] = _interp_cond(self.pristine, th, tw)
+        self._current_hw = (th, tw)
         self.stage = LatentStage.STAGED
         return self.holder["latent"]
 
@@ -107,8 +107,8 @@ class Latent:
         """
         if self.stage == LatentStage.CONSUMED:
             return self.holder.get("latent", self.pristine)
-        r_z = self.holder.get("latent")
-        if getattr(r_z, "shape", None) != getattr(self.pristine, "shape", None):
+        z = self.holder.get("latent")
+        if getattr(z, "shape", None) != getattr(self.pristine, "shape", None):
             self.holder["latent"] = self.pristine.clone()
             self._current_hw = self.original_hw
         self.stage = LatentStage.INJECT
