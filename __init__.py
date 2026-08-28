@@ -58,6 +58,22 @@ for _name in _NODE_MODULES:
         continue
     _register(_mod, _name)
 
+# LatentClass-edition nodes under nodes/class/.
+# These are distinct nodes (suffixed "Class") that wire LatentClass explicitly.
+_CLASS_MODULES = (
+    "nodes.class.sampler_node_class",
+    "nodes.class.sampler_node_manual_class",
+    "nodes.class.sampler_sigma_manual_class",
+)
+
+for _name in _CLASS_MODULES:
+    try:
+        _mod = importlib.import_module(_name)
+    except Exception:
+        print("FAILED to import %s:\n%s" % (_name, traceback.format_exc()))
+        continue
+    _register(_mod, _name)
+
 print("MiniMax-H3 SPEED registration complete: %d node(s)" % len(NODE_CLASS_MAPPINGS))
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

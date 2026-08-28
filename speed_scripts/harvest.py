@@ -32,9 +32,9 @@ def radial_dct_power(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     power = coeffs.abs() ** 2
     power = power.mean(dim=(0, 1, 2))  # [H, W]
 
-    cx, cy = 0, 0
-    yy, xx = np.mgrid[0:H, 0:W]
-    radial = np.round(np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)).astype(int)
+    cx, rdp_cy = 0, 0
+    yy, rdp_xx = np.mgrid[0:H, 0:W]
+    radial = np.round(np.sqrt((rdp_xx - cx) ** 2 + (yy - rdp_cy) ** 2)).astype(int)
     max_r = radial.max()
     counts = np.bincount(radial.ravel(), minlength=max_r + 1)
     sums = np.bincount(radial.ravel(), weights=power.cpu().numpy().ravel(),
@@ -49,18 +49,18 @@ def fit_power_law(freqs: np.ndarray, profile: np.ndarray,
                   omega_min: float = 0.5) -> dict:
     """Fit P = A * omega^(-beta) on log-log. Returns {A, beta, r_squared, n_bins}."""
     mask = (freqs >= omega_min) & (profile > 0)
-    x = np.log(freqs[mask])
-    y = np.log(profile[mask])
-    if len(x) < 3:
+    fpl_x = np.log(freqs[mask])
+    fpl_y = np.log(profile[mask])
+    if len(fpl_x) < 3:
         raise ValueError("not enough frequency bins to fit power law")
-    slope, intercept = np.polyfit(x, y, 1)
+    slope, intercept = np.polyfit(fpl_x, fpl_y, 1)
     beta = -slope
     A = math.exp(intercept)
-    pred = intercept + slope * x
-    ss_res = float(((y - pred) ** 2).sum())
-    ss_tot = float(((y - y.mean()) ** 2).sum())
+    pred = intercept + slope * fpl_x
+    ss_res = float(((fpl_y - pred) ** 2).sum())
+    ss_tot = float(((fpl_y - fpl_y.mean()) ** 2).sum())
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
-    return {"A": A, "beta": beta, "r_squared": r2, "n_bins": len(x)}
+    return {"A": A, "beta": beta, "r_squared": r2, "n_bins": len(fpl_x)}
 
 
 def classify_fit_quality(fit: dict) -> str:
@@ -96,8 +96,8 @@ def recommend_transition_steps(
         thresholds = []
         for i in range(len(scales) - 1):
             omega_i = scales[i] * omega_max
-            p = power_at_frequency(omega_i, A, beta)
-            t_star = activation_threshold(p, delta)
+            rts_p = power_at_frequency(omega_i, A, beta)
+            t_star = activation_threshold(rts_p, delta)
             thresholds.append(t_star)
             step = n_sigmas  # fallback
             for j in range(n_sigmas):
