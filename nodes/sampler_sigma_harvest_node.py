@@ -5,15 +5,14 @@ Runs one native full-res Euler pass over the full sigma schedule using
 on each step, fits the radial DCT power spectrum `P = A * |omega|^(-beta)`,
 and emits a flat `calibration` JSON (noise_amplitude, noise_decay_exponent,
 delta, r2, health, report) to paste back into the Automatic node.
-
-Inputs are the same as any native sampler node (noise, guider, sigmas,
-latent_image). Outputs: calibration STRING + passthrough LATENT.
 """
 
 from __future__ import annotations
 
 import json
-import math
+
+import comfy.samplers
+import comfy.utils
 import numpy as np
 import torch
 
@@ -62,8 +61,6 @@ class MiniMaxH3HarvestToConfig:
         latent_image,
         **kwargs,
     ):
-
-        import comfy.samplers
 
         # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
         delta = kwargs.get("Tolerance (Delta)",
@@ -316,8 +313,6 @@ class MiniMaxH3HarvestToConfig:
         return (output_json, output_latent)
 
     def compute_video_residual(self, x_tensor, denoised_tensor):
-        import torch
-
         def extract_video_stream(t):
             if hasattr(t, "is_nested") and t.is_nested:
                 vids = [s for s in t.unbind() if s.ndim == 5]

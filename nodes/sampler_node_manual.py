@@ -13,12 +13,19 @@ Semantics:
   == quarter → half → three-quarter → full.
 - ``ratio_mode == "ratio"``: goal must be <= 1. Scale is
   ``resolution * goal``; the boundary is placed at ``round(goal * total_steps)``.
+
+The cond-patching is done via LatentWalker — the latent lifecycle is owned
+by the walker, not embedded in h3_runtime.
 """
 
 from __future__ import annotations
 
-from speed_scripts.config import RATIO_MODES
-from speed_scripts.nodes_common import build_config_and_run, validate_transition_steps
+import comfy.samplers
+
+from speed_scripts.config import RATIO_MODES, SpeedConfig
+from speed_scripts.h3_runtime import run_speed_pipeline, unpack_latent
+from speed_scripts.latent_class import LatentWalker
+from speed_scripts.nodes_common import validate_transition_steps
 
 
 def CALCULATE_SCALES(transitions, ratio_mode):
@@ -93,13 +100,6 @@ class MiniMaxH3SPEEDSamplerManual:
                transition_goal_2=5, transition_resolution_2=0.5,
                transition_goal_3=8, transition_resolution_3=0.75,
                transition_goal_4=15, transition_resolution_4=1.0, **kwargs):
-        # Manual is explicit only — delta/A/beta are not used (steps are direct).
-        # Keep reading kwargs for backwards compat (old workflows had Tolerance/A/beta widgets) but ignore them.
-        _ = kwargs.get("Tolerance (Delta)", kwargs.get("delta", None))
-        delta = 0.01  # unused in explicit, but SpeedConfig requires valid value
-        noise_amplitude = 7.394
-        noise_decay_exponent = 0.62
-
         transitions = [
             (float(transition_goal_1), float(transition_resolution_1)),
             (float(transition_goal_2), float(transition_resolution_2)),
@@ -107,8 +107,6 @@ class MiniMaxH3SPEEDSamplerManual:
             (float(transition_goal_4), float(transition_resolution_4)),
         ]
 
-        # Active stages: pairs with a nonzero goal. Interpretation depends on
-        # ratio_mode (see CALCULATE_SCALES).
         scales = CALCULATE_SCALES(transitions, ratio_mode)
         n_stages = len(scales)
         if n_stages < 2:
@@ -118,32 +116,45 @@ class MiniMaxH3SPEEDSamplerManual:
             )
 
         total_steps = len(sigmas) - 1
-        # Every active pair produced one scale, so goals and stages align 1:1.
         goals = [g for g, r in transitions if g > 0 and r != 0]
 
-        # Boundary step for each active stage except the last (the last stage
-        # runs to the end of the schedule, so its goal carries no boundary).
         if ratio_mode == "steps":
             step_goals = [int(g) for g in goals[:-1]]
         else:  # "ratio"
             step_goals = [int(round(g * total_steps)) for g in goals[:-1]]
         transition_steps = tuple(step_goals)
 
-        # Steps-mode semantics: goal is the sigma-schedule step index of the
-        # boundary. sanity: boundaries must be strictly increasing interior
-        # indices (the same contract the preset DEFAULT_TRANSITION_STEPS hold).
         validate_transition_steps(transition_steps, n_stages, len(sigmas))
 
-        return build_config_and_run(
-            noise, guider, sigmas, latent_image,
-            scales=scales,
-            transition_steps=transition_steps,
+        # Build the SpeedConfig from the live full-res dims.
+        full_video, _ = unpack_latent(latent_image.get("samples"))
+        config = SpeedConfig(
+            scales=tuple(scales),
+            transition_steps=tuple(transition_steps),
             transition_mode="explicit",
             noise_policy=noise_policy,
-            delta=delta,
-            noise_amplitude=noise_amplitude,
-            noise_decay_exponent=noise_decay_exponent,
-            seed_offset=seed_offset,
+            delta=0.01,  # unused in explicit mode
+            noise_amplitude=7.394,
+            noise_decay_exponent=0.62,
+            transition_seed_offset=int(seed_offset),
+            full_latent_h=int(full_video.shape[-2]),
+            full_latent_w=int(full_video.shape[-1]),
+        )
+
+        # Snapshot pristine for every keyframe/ref on the guider before the
+        # first stage boundary. The runtime will call apply_stage at every
+        # boundary via the h3_runtime shim to do the actual resize.
+        LatentWalker(guider)
+
+        return run_speed_pipeline(
+            noise,
+            guider,
+            sigmas,
+            latent_image,
+            config,
+            sampler=comfy.samplers.sampler_object("euler"),
+            disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
+            output_device=None,
         )
 
 
