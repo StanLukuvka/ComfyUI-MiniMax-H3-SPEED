@@ -1,6 +1,9 @@
 # ComfyUI MiniMax-H3 SPEED Sampler
 
-⚠️ **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0)
+⚠️ **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0) 
+(I don't expect this to be used commercially. If it genuinely will be, message me.)
+
+
 
 > *"Why make big noise when little noise do trick?"*
 
