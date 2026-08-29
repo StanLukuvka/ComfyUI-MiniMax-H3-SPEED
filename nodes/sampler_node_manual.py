@@ -23,9 +23,9 @@ from __future__ import annotations
 import comfy.samplers
 
 from speed_scripts.config import RATIO_MODES, SpeedConfig
-from speed_scripts.h3_runtime import run_speed_pipeline, unpack_latent
+from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.latent_class import LatentWalker
-from speed_scripts.nodes_common import validate_transition_steps
+from speed_scripts.nodes_common import full_res_dims, validate_transition_steps
 
 
 def CALCULATE_SCALES(transitions, ratio_mode):
@@ -127,7 +127,7 @@ class MiniMaxH3SPEEDSamplerManual:
         validate_transition_steps(transition_steps, n_stages, len(sigmas))
 
         # Build the SpeedConfig from the live full-res dims.
-        full_video, _ = unpack_latent(latent_image.get("samples"))
+        full_h, full_w = full_res_dims(latent_image)
         config = SpeedConfig(
             scales=tuple(scales),
             transition_steps=tuple(transition_steps),
@@ -137,8 +137,8 @@ class MiniMaxH3SPEEDSamplerManual:
             noise_amplitude=7.394,
             noise_decay_exponent=0.62,
             transition_seed_offset=int(seed_offset),
-            full_latent_h=int(full_video.shape[-2]),
-            full_latent_w=int(full_video.shape[-1]),
+            full_latent_h=full_h,
+            full_latent_w=full_w,
         )
 
         # Snapshot pristine for every keyframe/ref on the guider before the

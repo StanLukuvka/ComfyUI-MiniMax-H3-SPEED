@@ -12,11 +12,9 @@ from __future__ import annotations
 import comfy.samplers
 
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import (
-    run_speed_pipeline,
-    unpack_latent,
-)
+from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.latent_class import LatentWalker
+from speed_scripts.nodes_common import full_res_dims
 
 
 # Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
@@ -99,7 +97,7 @@ class MiniMaxH3SPEEDSampler:
         transition_steps = tuple(range(1, len(scales)))
 
         # Resolve the live full-res dims, build the SpeedConfig.
-        full_video, _ = unpack_latent(latent_image.get("samples"))
+        full_h, full_w = full_res_dims(latent_image)
         config = SpeedConfig(
             scales=tuple(scales),
             transition_steps=tuple(transition_steps),
@@ -109,8 +107,8 @@ class MiniMaxH3SPEEDSampler:
             noise_amplitude=float(noise_amplitude),
             noise_decay_exponent=float(noise_decay_exponent),
             transition_seed_offset=int(seed_offset),
-            full_latent_h=int(full_video.shape[-2]),
-            full_latent_w=int(full_video.shape[-1]),
+            full_latent_h=full_h,
+            full_latent_w=full_w,
         )
 
         # Snapshot pristine for every keyframe/ref on the guider before the

@@ -73,82 +73,61 @@ class MiniMaxH3HarvestToConfig:
 
         residual_snapshots = []
 
-        def on_step(step, denoised, x, total_steps):
+        def _capture(sigma_val, step_idx, x_current, denoised_est):
+            """Record one residual snapshot from (sigma, step, x, denoised)."""
             try:
-                sigma_val = float(sigmas[step]) if step < len(sigmas) else 0.0
-            except Exception:
-                sigma_val = 0.0
-            try:
-                residual = self.compute_video_residual(x, denoised)
+                residual = self.compute_video_residual(x_current, denoised_est)
             except Exception:
                 residual = None
             if residual is not None:
                 residual_snapshots.append(
                     {
-                        "step_index": int(step),
-                        "sigma": sigma_val,
+                        "step_index": int(step_idx),
+                        "sigma": float(sigma_val),
                         "residual_video": residual,
                     }
                 )
 
+        # ComfyUI callback signatures across versions:
+        #  - dict-arg: callback({"x", "i"/"step", "sigma", "denoised"})     (newer)
+        #  - kwargs:   callback(x=..., denoised=..., i=..., sigma=...)      (mid)
+        #  - legacy:   callback(step, denoised, x, total_steps)              (old)
         def _compat_callback(*args, **kwargs):
             if len(args) == 1 and isinstance(args[0], dict):
                 info = args[0]
-                sigma_val = float(info.get("sigma", 0.0))
-                step_idx = int(info.get("i", info.get("step", 0)))
-                x_current = info.get("x")
-                denoised_est = info.get("denoised")
-                if x_current is not None and denoised_est is not None:
-                    residual = self.compute_video_residual(x_current, denoised_est)
-                    if residual is not None:
-                        residual_snapshots.append(
-                            {
-                                "step_index": step_idx,
-                                "sigma": sigma_val,
-                                "residual_video": residual,
-                            }
-                        )
-                return
-            if kwargs and "sigma" in kwargs:
-                sigma_val = float(kwargs.get("sigma", 0.0))
-                step_idx = int(kwargs.get("i", kwargs.get("step", 0)))
-                x_current = kwargs.get("x")
-                denoised_est = kwargs.get("denoised")
-                if x_current is not None and denoised_est is not None:
-                    residual = self.compute_video_residual(x_current, denoised_est)
-                    if residual is not None:
-                        residual_snapshots.append(
-                            {
-                                "step_index": step_idx,
-                                "sigma": sigma_val,
-                                "residual_video": residual,
-                            }
-                        )
-                return
-            return on_step(*args, **kwargs)
+                return _capture(
+                    info.get("sigma", 0.0),
+                    info.get("i", info.get("step", 0)),
+                    info.get("x"),
+                    info.get("denoised"),
+                )
+            if "sigma" in kwargs and "denoised" in kwargs:
+                return _capture(
+                    kwargs.get("sigma", 0.0),
+                    kwargs.get("i", kwargs.get("step", 0)),
+                    kwargs.get("x"),
+                    kwargs.get("denoised"),
+                )
+            # Legacy positional: (step, denoised, x, total_steps)
+            if len(args) >= 3:
+                step, denoised, x = args[0], args[1], args[2]
+                sigma_val = float(sigmas[step]) if step < len(sigmas) else 0.0
+                return _capture(sigma_val, step, x, denoised)
 
-        if isinstance(latent_image, dict) and "samples" in latent_image:
-            latent_tensor = latent_image["samples"]
-        elif hasattr(latent_image, "get"):
+        # ComfyUI LATENT is always {"samples": <tensor>}; the fallback to the
+        # raw input is paranoia for old test fakes that pass a tensor directly.
+        latent_tensor = (
+            latent_image["samples"]
+            if isinstance(latent_image, dict) and "samples" in latent_image
+            else latent_image
+        )
+        try:
+            noise_tensor = noise.generate_noise(latent_image)
+        except Exception:
             try:
-                latent_tensor = latent_image.get("samples", latent_image)
-                if latent_tensor is None:
-                    latent_tensor = latent_image
+                noise_tensor = noise.generate_noise({"samples": latent_tensor})
             except Exception:
-                latent_tensor = latent_image
-        else:
-            latent_tensor = latent_image
-
-        if hasattr(noise, "generate_noise"):
-            try:
-                noise_tensor = noise.generate_noise(latent_image)
-            except Exception:
-                try:
-                    noise_tensor = noise.generate_noise({"samples": latent_tensor})
-                except Exception:
-                    noise_tensor = noise
-        else:
-            noise_tensor = noise
+                noise_tensor = noise
 
         try:
             result = guider.sample(
