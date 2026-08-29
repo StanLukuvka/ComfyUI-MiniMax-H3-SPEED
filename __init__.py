@@ -24,7 +24,8 @@ import traceback
 # loads sibling modules by flat name, NOT by package path).
 _NODE_DIR = os.path.dirname(os.path.abspath(__file__))
 _NODES_DIR = os.path.join(_NODE_DIR, "nodes")
-for _p in (_NODE_DIR, _NODES_DIR):
+_NODES_CLASS_DIR = os.path.join(_NODES_DIR, "class")
+for _p in (_NODE_DIR, _NODES_DIR, _NODES_CLASS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -41,32 +42,24 @@ def _register(_mod, _name):
     print("Registered %-28s %s" % (_name, ", ".join(sorted(_mappings)) or "(nothing exported)"))
 
 
-# All nodes — flat files under nodes/.
+# All nodes — flat files under nodes/ and nodes/class/.
+# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
+# sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
+# *_class = LatentWalker edition (separate code path from build_config_and_run)
+# *_class_test = test variants for the LatentWalker edition
 _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",
     "sampler_sigma_harvest_node",
+    "sampler_node_class",
+    "sampler_node_manual_class",
+    "sampler_sigma_manual_class",
+    "sampler_node_class_test",
+    "sampler_node_manual_class_test",
+    "sampler_sigma_manual_class_test",
 )
-# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
-# sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
 
 for _name in _NODE_MODULES:
-    try:
-        _mod = importlib.import_module(_name)
-    except Exception:
-        print("FAILED to import %s:\n%s" % (_name, traceback.format_exc()))
-        continue
-    _register(_mod, _name)
-
-# LatentClass-edition nodes under nodes/class/.
-# These are distinct nodes (suffixed "Class") that wire LatentClass explicitly.
-_CLASS_MODULES = (
-    "nodes.class.sampler_node_class",
-    "nodes.class.sampler_node_manual_class",
-    "nodes.class.sampler_sigma_manual_class",
-)
-
-for _name in _CLASS_MODULES:
     try:
         _mod = importlib.import_module(_name)
     except Exception:
