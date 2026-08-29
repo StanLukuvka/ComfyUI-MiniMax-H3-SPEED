@@ -21,9 +21,8 @@ import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]  # .../minimax_speed
 NODES_DIR = REPO_ROOT / "nodes"
-NODES_CLASS_DIR = REPO_ROOT / "nodes" / "class"
 
-for _p in (str(REPO_ROOT), str(NODES_DIR), str(NODES_CLASS_DIR)):
+for _p in (str(REPO_ROOT), str(NODES_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
