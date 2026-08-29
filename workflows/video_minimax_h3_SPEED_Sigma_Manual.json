@@ -13,7 +13,7 @@
       ],
       "size": [
         1070,
-        704.3333333333334
+        106
       ],
       "flags": {},
       "order": 5,
@@ -39,8 +39,15 @@
       "widgets_values": [
         "video/MiniMax_H3",
         "auto",
+        "auto",
         "auto"
-      ]
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "video/MiniMax_H3",
+        "format": "auto",
+        "format.codec": "auto",
+        "codec": "auto"
+      }
     },
     {
       "id": 116,
@@ -63,6 +70,9 @@
       "widgets_values": [
         "## MiniMax H3\n\n[MiniMax H3](https://www.minimax.io/blog/minimax-h3) is MiniMax's general-purpose, omni-modal generation model. It jointly understands text, image, video, and audio, and generates video with **native stereo audio**: voice, sound effects, and music are modeled jointly in a single forward pass, not layered on afterward. Output is up to 2K resolution, 24fps, and up to about 15 seconds.\n\n## ComfyUI links\n- [ComfyUI#15224](https://github.com/Comfy-Org/ComfyUI/pull/15224)\n- [🤗 Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3)\n\n## About this workflow\n\n**Key inputs**\n\n- **prompt**: describe the shots, camera moves, and the accompanying audio (dialogue, SFX, music) in one block\n- **width / height**: set via Resolution Selector. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32\n- **duration (seconds)**: converted to a valid frame `length` by the Math Expression node, snapping up to the model's 17-frame-per-block (17k+5) grid at 24fps\n"
       ],
+      "widgets_values_named": {
+        "text": "## MiniMax H3\n\n[MiniMax H3](https://www.minimax.io/blog/minimax-h3) is MiniMax's general-purpose, omni-modal generation model. It jointly understands text, image, video, and audio, and generates video with **native stereo audio**: voice, sound effects, and music are modeled jointly in a single forward pass, not layered on afterward. Output is up to 2K resolution, 24fps, and up to about 15 seconds.\n\n## ComfyUI links\n- [ComfyUI#15224](https://github.com/Comfy-Org/ComfyUI/pull/15224)\n- [🤗 Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3)\n\n## About this workflow\n\n**Key inputs**\n\n- **prompt**: describe the shots, camera moves, and the accompanying audio (dialogue, SFX, music) in one block\n- **width / height**: set via Resolution Selector. H3's native canvas is a 768px short edge, capped at 768x1344 pixels, rounded to a multiple of 32\n- **duration (seconds)**: converted to a valid frame `length` by the Math Expression node, snapping up to the model's 17-frame-per-block (17k+5) grid at 24fps\n"
+      },
       "color": "#222",
       "bgcolor": "#000"
     },
@@ -87,6 +97,9 @@
       "widgets_values": [
         "## Model Links\n\n**vae**\n\n- [minimax_h3_video_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors)\n- [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors)\n\n**diffusion_models**\n\n- [minimax_h3_fl2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 vae/\n│   │   ├── minimax_h3_video_vae_fp16.safetensors\n│   │   └── minimax_h3_audio_vae_fp32.safetensors\n│   ├── 📂 diffusion_models/\n│   │   └── minimax_h3_fl2va_pruned_int8_convrot.safetensors\n│   └── 📂 text_encoders/\n│       └── qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
       ],
+      "widgets_values_named": {
+        "text": "## Model Links\n\n**vae**\n\n- [minimax_h3_video_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors)\n- [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors)\n\n**diffusion_models**\n\n- [minimax_h3_fl2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors)\n\n**text_encoders**\n\n- [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 vae/\n│   │   ├── minimax_h3_video_vae_fp16.safetensors\n│   │   └── minimax_h3_audio_vae_fp32.safetensors\n│   ├── 📂 diffusion_models/\n│   │   └── minimax_h3_fl2va_pruned_int8_convrot.safetensors\n│   └── 📂 text_encoders/\n│       └── qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+      },
       "color": "#222",
       "bgcolor": "#000"
     },
@@ -111,6 +124,9 @@
       "widgets_values": [
         "| megapixels | Aspect | Output (multiple=32) |\n|---|---|---|\n| 0.2 | 16:9 | 608 x 352 |\n| 0.3 | 16:9 | 736 x 416 |\n| 0.4 | 16:9 | 864 x 480 |\n| 0.5 | 16:9 | 960 x 544 |\n| 0.6 | 16:9 | 1056 x 608 |\n| 0.7 | 16:9 | 1152 x 640 |\n| 0.8 | 16:9 | 1216 x 672 |\n| 0.9 | 16:9 | 1280 x 736 |\n| 0.98 | 16:9 | 1344 x 768 |\n| 1.0 | 16:9 | 1376 x 768 |\n| 1.2 | 16:9 | 1504 x 832 |\n| 1.5 | 16:9 | 1664 x 928 |\n| 1.8 | 16:9 | 1824 x 1024 |\n| 2.0 | 16:9 | 1920 x 1088 |\n"
       ],
+      "widgets_values_named": {
+        "text": "| megapixels | Aspect | Output (multiple=32) |\n|---|---|---|\n| 0.2 | 16:9 | 608 x 352 |\n| 0.3 | 16:9 | 736 x 416 |\n| 0.4 | 16:9 | 864 x 480 |\n| 0.5 | 16:9 | 960 x 544 |\n| 0.6 | 16:9 | 1056 x 608 |\n| 0.7 | 16:9 | 1152 x 640 |\n| 0.8 | 16:9 | 1216 x 672 |\n| 0.9 | 16:9 | 1280 x 736 |\n| 0.98 | 16:9 | 1344 x 768 |\n| 1.0 | 16:9 | 1376 x 768 |\n| 1.2 | 16:9 | 1504 x 832 |\n| 1.5 | 16:9 | 1664 x 928 |\n| 1.8 | 16:9 | 1824 x 1024 |\n| 2.0 | 16:9 | 1920 x 1088 |\n"
+      },
       "color": "#222",
       "bgcolor": "#000"
     },
@@ -155,14 +171,19 @@
         "16:9 (Widescreen)",
         0.5,
         32
-      ]
+      ],
+      "widgets_values_named": {
+        "aspect_ratio": "16:9 (Widescreen)",
+        "megapixels": 0.5,
+        "multiple": 32
+      }
     },
     {
       "id": 105,
       "type": "4c314f31-ecda-4b08-ae98-faaba1bf613f",
       "pos": [
-        -1490.20109462953,
-        4818.399993896484
+        -1208.803130614379,
+        4786.457522305577
       ],
       "size": [
         480,
@@ -243,7 +264,18 @@
         "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
         "minimax_h3_video_vae_fp16.safetensors",
         "minimax_h3_audio_vae_fp32.safetensors"
-      ]
+      ],
+      "widgets_values_named": {
+        "prompt": "integrated_multimodal_description: [Shot 1] Live-action, mockumentary, a medium-wide static shot frames a dull open-plan office under flat fluorescent light — desks with monitors, sticky notes, a large window with closed blinds in the background. A young man in his late 20s with tousled brown hair, wearing a light blue button-down shirt and loosened dark tie (S1), stands in the aisle holding up a white ceramic mug reading \"World's Most Mediocre Boss\" toward the camera with both hands, looking straight into the lens with forced confidence. The camera holds a static shot. The young man with an earnest, slightly nasal voice at a quick, nervous rate (S1) says: <d>[English] You know what? I've decided to aim higher.</d>\n[Shot 2] At 00:03.000, the camera pushes in with small amplitude at slow speed toward him as he sneers at the window, winds up with his right arm, and hurls the mug reading \"World's Most Mediocre Boss\" toward the office window. The young man (S1) says: <d>[English] Watch this.</d>\n[Shot 3] At 00:05.800, the camera holds a static shot as the mug hits the reinforced window glass with a dull clunk, fails to break it, and bounces straight back in a slow arc toward him, spinning in the air.\n[Shot 4] At 00:07.200, the camera tilts down at slow speed as the mug smacks him squarely in the forehead, he keeps a perfectly deadpan, eyes-wide expression for a beat, then falls stiff as a plank straight backwards onto the thin office carpet with his arms pinned at his sides, the mug clattering beside him while two coworkers in the background freeze and stare.\n\noverall_soundscape: Low office ambience with faint keyboard clatter, air conditioning hum, and distant phones. A sharp whoosh as the mug is thrown, a dull clunk on the window glass, a second sharper thwack as it hits his forehead, then a soft thud as he hits the carpet followed by the mug clattering and stifled gasps and short, shocked laughter from coworkers.\n\nnon_diegetic_music: N/A",
+        "width": 1344,
+        "height": 768,
+        "value_1": 10,
+        "noise_seed": 858321443110123,
+        "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "vae_name": "minimax_h3_video_vae_fp16.safetensors",
+        "vae_name_1": "minimax_h3_audio_vae_fp32.safetensors"
+      }
     }
   ],
   "links": [
@@ -508,7 +540,10 @@
             },
             "widgets_values": [
               "minimax_h3_video_vae_fp16.safetensors"
-            ]
+            ],
+            "widgets_values_named": {
+              "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+            }
           },
           {
             "id": 24,
@@ -559,7 +594,10 @@
             },
             "widgets_values": [
               "minimax_h3_audio_vae_fp32.safetensors"
-            ]
+            ],
+            "widgets_values_named": {
+              "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+            }
           },
           {
             "id": 23,
@@ -605,8 +643,7 @@
               "cnr_id": "comfy-core",
               "ver": "0.32.0",
               "Node name for S&R": "VAEDecodeAudio"
-            },
-            "widgets_values": []
+            }
           },
           {
             "id": 13,
@@ -659,7 +696,12 @@
               "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
               "minimax",
               "default"
-            ]
+            ],
+            "widgets_values_named": {
+              "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+              "type": "minimax",
+              "device": "default"
+            }
           },
           {
             "id": 91,
@@ -670,7 +712,7 @@
             ],
             "size": [
               270,
-              110
+              126
             ],
             "flags": {},
             "order": 9,
@@ -707,8 +749,14 @@
             },
             "widgets_values": [
               24,
-              8
-            ]
+              8,
+              "sRGB"
+            ],
+            "widgets_values_named": {
+              "fps": 24,
+              "bit_depth": 8,
+              "color_space": "sRGB"
+            }
           },
           {
             "id": 107,
@@ -772,7 +820,10 @@
             },
             "widgets_values": [
               "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17"
-            ]
+            ],
+            "widgets_values_named": {
+              "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17"
+            }
           },
           {
             "id": 111,
@@ -817,7 +868,10 @@
             },
             "widgets_values": [
               2
-            ]
+            ],
+            "widgets_values_named": {
+              "value": 2
+            }
           },
           {
             "id": 10,
@@ -863,8 +917,7 @@
               "cnr_id": "comfy-core",
               "ver": "0.32.0",
               "Node name for S&R": "VAEDecode"
-            },
-            "widgets_values": []
+            }
           },
           {
             "id": 6,
@@ -917,7 +970,11 @@
             "widgets_values": [
               "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
               "default"
-            ]
+            ],
+            "widgets_values_named": {
+              "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+              "weight_dtype": "default"
+            }
           },
           {
             "id": 15,
@@ -962,7 +1019,11 @@
             "widgets_values": [
               1,
               "randomize"
-            ]
+            ],
+            "widgets_values_named": {
+              "noise_seed": 1,
+              "control_after_generate": "randomize"
+            }
           },
           {
             "id": 9,
@@ -1005,7 +1066,12 @@
               "simple",
               20,
               1
-            ]
+            ],
+            "widgets_values_named": {
+              "scheduler": "simple",
+              "steps": 20,
+              "denoise": 1
+            }
           },
           {
             "id": 16,
@@ -1049,8 +1115,7 @@
               "cnr_id": "comfy-core",
               "ver": "0.32.0",
               "Node name for S&R": "BasicGuider"
-            },
-            "widgets_values": []
+            }
           },
           {
             "id": 104,
@@ -1158,7 +1223,13 @@
               1344,
               768,
               73
-            ]
+            ],
+            "widgets_values_named": {
+              "prompt": "Vaporwave title sequence look: pink and blue gradient palette, VHS tracking artifacts, Greek statue motifs, chrome palm trees, RGB chromatic aberration, lo-fi retro atmosphere, mood languid and nostalgic.\n\nTimeline:\n[0s-1s] VHS static opens the frame, the title \"COMFYUI\" appears with RGB split and a slight horizontal jitter.\n[1s-2.5s] Hard cut, a Greek plaster bust close-up, pink-purple gradient sky, a pixelated sun.\n[2.5s-4s] Clean \"STARRING\" credits appear, \"LATENT\" and \"CONTROLNET\" each shown exactly once.\n[4s-5s] Final card \"DIRECTED BY COMFYUI\" holds, one VHS tracking glitch settling into stability.\n\nHard cuts only, transitions landing with tape jumps, no push-ins, no dissolves.\n\nAudio: lo-fi vaporwave score, slow drum machine with soft bass, VHS tape-noise sample joins at 2.5s, melody fading for the last 1s.\n\nAll text must be clearly legible, do not misspell English, no Chinese characters, do not repeat names or job titles, no soft dissolves, no subtitle bars.",
+              "width": 1344,
+              "height": 768,
+              "length": 73
+            }
           },
           {
             "id": 126,
@@ -1234,7 +1305,20 @@
               1,
               0,
               0
-            ]
+            ],
+            "widgets_values_named": {
+              "noise_policy": "direct_coarse",
+              "seed_offset": 10000,
+              "ratio_mode": "steps",
+              "transition_goal_1": 3,
+              "transition_resolution_1": 0.25,
+              "transition_goal_2": 5,
+              "transition_resolution_2": 0.5,
+              "transition_goal_3": 7,
+              "transition_resolution_3": 1,
+              "transition_goal_4": 0,
+              "transition_resolution_4": 0
+            }
           }
         ],
         "groups": [
@@ -1527,7 +1611,7 @@
   },
   "config": {},
   "extra": {
-    "frontendVersion": "1.48.7",
+    "frontendVersion": "1.49.6",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,
@@ -1535,8 +1619,8 @@
     "ds": {
       "scale": 0.6574319066147871,
       "offset": [
-        1214.2533148645032,
-        -4323.808232203177
+        2107.1214493341986,
+        -4363.356054172874
       ]
     }
   },

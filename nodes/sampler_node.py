@@ -1,11 +1,21 @@
-"""Automatic SPEED sampler — simple English.
+"""Automatic SPEED sampler — uses LatentWalker to own the I2V keyframe
+lifecycle across the SPEED stage boundaries.
 
-Picks 2-4 resolution stages (0.5→1.0, 0.33→0.66→1.0, 0.25→0.5→0.75→1.0). Starts cheap at low-res and upsamples when needed. Steps are placed automatically from Tolerance + A/beta.
+Picks 2-4 resolution stages (0.5→1.0, 0.33→0.66→1.0, 0.25→0.5→0.75→1.0).
+Steps are placed automatically from Tolerance + A/beta via the power-spectrum
+threshold. The cond-patching is done via LatentWalker — the latent lifecycle
+is owned by the walker, not embedded in h3_runtime.
 """
 
 from __future__ import annotations
 
-from speed_scripts.nodes_common import build_config_and_run
+import comfy.samplers
+
+from speed_scripts.config import SpeedConfig
+from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.latent_class import LatentWalker
+from speed_scripts.nodes_common import full_res_dims
+
 
 # Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
 # 2: 0.5 → 1.0, 3: 0.33 → 0.66 → 1.0, 4: 0.25 → 0.5 → 0.75 → 1.0
@@ -23,22 +33,24 @@ PRESET_TO_STAGES: dict[str, int] = {
     "quarter_half_3q_full": 4,
 }
 
+
 class MiniMaxH3SPEEDSampler:
     """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
 
     Drop-in replacement for the standard KSAMPLER + SamplerCustomAdvanced
     pair. Takes (noise, guider, sigmas, latent_image) and runs a multi-stage
-    progressive-resolution diffusion chain.
-
+    diffusion that starts cheap at low resolution and upsamples when the
+    detail matters. Steps per stage are placed automatically from the
+    power-spectrum threshold (Tolerance + A/beta) so the user just picks
+    "how many stages" and goes.
     """
 
     DESCRIPTION = (
-        "Automatic SPEED sampler — just pick how many stages (2, 3 or 4) and go. "
-        "It starts the video at low resolution (cheap), then automatically upsamples "
-        "to full resolution when the detail actually matters. Set Tolerance (1% = 0.01) "
-        "to allow a little blur for speed, or lower for quality. Uses baked A/beta; "
-        "re-calibrate with the Harvest node if you change checkpoint. Audio is passed "
-        "through at full-res."
+        "Automatic SPEED sampler — pick stages (2, 3, or 4) and go. "
+        "Starts cheap at low resolution, then upsamples when the detail "
+        "matters. Set Tolerance (1% = 0.01) to trade blur for speed. "
+        "Uses baked A/beta; re-calibrate with the Harvest node if you "
+        "change checkpoint."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
@@ -72,36 +84,54 @@ class MiniMaxH3SPEEDSampler:
                 kwargs.get("tolerance",
                 kwargs.get("delta", kwargs.get("Delta", 0.01)))))
         delta = float(delta)
-        # Backwards compat: old workflows saved preset=half_then_full etc — map to stages
         if "preset" in kwargs:
             preset = kwargs.pop("preset")
             stages = PRESET_TO_STAGES.get(preset, stages)
-        # Also accept stages as string from old INT widget serialization
         try:
             stages = int(stages)
         except Exception:
             stages = 3
         stages = max(2, min(4, stages))
         scales = STAGES_TO_SCALES[stages]
-        # Dummy steps — validated then overridden by delta_custom power-spectrum thresholds in h3_runtime
+        # Dummy steps — validated then overridden by delta_custom power-spectrum thresholds
         transition_steps = tuple(range(1, len(scales)))
-        # Automatic node is delta_custom only — steps auto-computed from A/beta + Tolerance via thr formula
-        config_mode = "delta_custom"
-        return build_config_and_run(
-            noise, guider, sigmas, latent_image,
-            scales=scales,
-            transition_steps=transition_steps,
-            transition_mode=config_mode,
+
+        # Resolve the live full-res dims, build the SpeedConfig.
+        full_h, full_w = full_res_dims(latent_image)
+        config = SpeedConfig(
+            scales=tuple(scales),
+            transition_steps=tuple(transition_steps),
+            transition_mode="delta_custom",
             noise_policy=noise_policy,
-            delta=delta,
-            noise_amplitude=noise_amplitude,
-            noise_decay_exponent=noise_decay_exponent,
-            seed_offset=seed_offset,
+            delta=float(delta),
+            noise_amplitude=float(noise_amplitude),
+            noise_decay_exponent=float(noise_decay_exponent),
+            transition_seed_offset=int(seed_offset),
+            full_latent_h=full_h,
+            full_latent_w=full_w,
+        )
+
+        # Snapshot pristine for every keyframe/ref on the guider before the
+        # first stage boundary. The runtime will call apply_stage again at
+        # every boundary (via the h3_runtime shim) to do the actual resize.
+        LatentWalker(guider)
+
+        return run_speed_pipeline(
+            noise,
+            guider,
+            sigmas,
+            latent_image,
+            config,
+            sampler=comfy.samplers.sampler_object("euler"),
+            disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
+            output_device=None,
         )
 
 
 NODE_CLASS_MAPPINGS = {"MiniMaxH3SPEEDSampler": MiniMaxH3SPEEDSampler}
-NODE_DISPLAY_NAME_MAPPINGS = {"MiniMaxH3SPEEDSampler": "MiniMax H3 SPEED — Sampler"}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "MiniMaxH3SPEEDSampler": "MiniMax H3 SPEED — Sampler"
+}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS",
            "MiniMaxH3SPEEDSampler"]

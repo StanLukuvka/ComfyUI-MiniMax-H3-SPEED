@@ -19,9 +19,9 @@ import os
 import sys
 import traceback
 
-# Ensure our directory + repo root are importable so `from speed_scripts...`
-# and flat node-module imports resolve when ComfyUI imports this module (it
-# loads sibling modules by flat name, NOT by package path).
+# Ensure our directory is on sys.path so flat node-module imports resolve
+# when ComfyUI imports this module (it loads siblings by flat name, NOT by
+# package path).
 _NODE_DIR = os.path.dirname(os.path.abspath(__file__))
 _NODES_DIR = os.path.join(_NODE_DIR, "nodes")
 for _p in (_NODE_DIR, _NODES_DIR):
@@ -42,13 +42,14 @@ def _register(_mod, _name):
 
 
 # All nodes — flat files under nodes/.
+# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
+# sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
+# sampler_sigma_harvest_node = native-Euler power-law calibration
 _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",
     "sampler_sigma_harvest_node",
 )
-# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
-# sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
 
 for _name in _NODE_MODULES:
     try:

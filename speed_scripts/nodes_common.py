@@ -1,18 +1,16 @@
 """Shared tail for the two sampler nodes (preset- and manual-schedule variants).
 
-Both nodes end the same way: validate the transition schedule against the
-sigma count, build a SpeedConfig from the live latent dims, and run the
-multi-stage SPEED chain. Consolidating that here keeps the twin `sample()`
-bodies from drifting apart — one change to the pipeline call contract lands
-once, not twice.
+Both nodes validate their transition schedule against the sigma count
+through the same helper here, and resolve the full-res latent dims the
+same way (via the same `unpack_latent` the SPEED pipeline uses). The
+build-and-run tail is inlined into each node's sample() method — the
+LatentWalker + SpeedConfig wiring is short, and one function per node
+keeps the wiring obvious.
 """
 
 from __future__ import annotations
 
-import comfy.samplers
-
-from .config import SpeedConfig
-from .h3_runtime import run_speed_pipeline, unpack_latent
+from .h3_runtime import unpack_latent
 
 
 def validate_transition_steps(transition_steps, n_stages, n_sigmas):
@@ -45,46 +43,16 @@ def validate_transition_steps(transition_steps, n_stages, n_sigmas):
         )
 
 
-def build_config_and_run(
-    noise, guider, sigmas, latent_image, *,
-    scales, transition_steps, transition_mode,
-    noise_policy, delta, noise_amplitude, noise_decay_exponent, seed_offset,
-):
-    """Validate, build the SpeedConfig from the live latent, run SPEED."""
-    n_stages = len(scales)
-    if n_stages < 2:
-        raise ValueError("need at least two stages (scales ending at 1.0)")
-    validate_transition_steps(transition_steps, n_stages, len(sigmas))
+def full_res_dims(latent_image) -> tuple[int, int]:
+    """Resolve (full_latent_h, full_latent_w) from a ComfyUI LATENT dict.
 
-    full_video, _ = unpack_latent(latent_image.get("samples"))
-    config = SpeedConfig(
-        scales=tuple(scales),
-        transition_steps=tuple(transition_steps),
-        transition_mode=transition_mode,
-        noise_policy=noise_policy,
-        delta=float(delta),
-        noise_amplitude=float(noise_amplitude),
-        noise_decay_exponent=float(noise_decay_exponent),
-        transition_seed_offset=int(seed_offset),
-        full_latent_h=int(full_video.shape[-2]),
-        full_latent_w=int(full_video.shape[-1]),
-    )
-
-    # Run the multi-stage SPEED diffusion chain. Audio is carried through
-    # unchanged; the final-stage x0 (denoised) is surfaced as denoised_output.
-    # NOTE: SPEED's kappa alignment and DCT-boundary semantics are calibrated
-    # for Euler. Supporting other samplers requires calibration and changing
-    # the underlying math for kappa alignment.
-    return run_speed_pipeline(
-        noise,
-        guider,
-        sigmas,
-        latent_image,
-        config,
-        sampler=comfy.samplers.sampler_object("euler"),
-        disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
-        output_device=None,
-    )
+    Reuses the SPEED pipeline's own `unpack_latent` so the H/W validation
+    (and any future geometry checks) is consistent between the node's
+    SpeedConfig and the runtime's first call.
+    """
+    samples = latent_image["samples"] if isinstance(latent_image, dict) else latent_image
+    full_video, _ = unpack_latent(samples)
+    return int(full_video.shape[-2]), int(full_video.shape[-1])
 
 
-__all__ = ["validate_transition_steps", "build_config_and_run"]
+__all__ = ["validate_transition_steps", "full_res_dims"]
