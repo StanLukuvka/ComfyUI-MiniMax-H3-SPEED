@@ -204,6 +204,73 @@ def _step_capture():
             pbar.update_absolute(step + 1, total_steps)
     return state, callback
 
+def _make_preview_callback(guider, total_steps, x0_output):
+    """Build the shared live-preview callback (SamplerCustomAdvanced path).
+
+    Mirrors `comfy_extras/nodes_custom_sampler.py`: `latent_preview
+    .prepare_callback(guider.model_patcher, steps, x0_output)`. The first arg
+    must be the ModelPatcher (needs `.load_device` and `.model.latent_format`),
+    not the inner model. Returns the preview callback or None when previews are
+    unavailable (offline tests, guider without a patcher, NoPreviews method,
+    model without a decoder).
+    """
+    patcher = getattr(guider, "model_patcher", None)
+    if patcher is None:
+        log.info("[SPEED-preview] no model_patcher on guider — previews disabled")
+        return None
+    try:
+        from comfy import latent_preview as _lp  # type: ignore
+    except Exception as exc:
+        log.info("[SPEED-preview] comfy.latent_preview unavailable (%r) — previews disabled", exc)
+        return None
+    try:
+        preview_callback = _lp.prepare_callback(patcher, total_steps, x0_output)
+    except Exception as exc:
+        log.info("[SPEED-preview] prepare_callback failed (%r) — previews disabled", exc)
+        return None
+    if preview_callback is None:
+        log.info("[SPEED-preview] prepare_callback returned None — previews disabled")
+        return None
+    log.info("[SPEED-preview] live preview wired (total_steps=%s)", total_steps)
+    return preview_callback
+
+def _make_fallback_pbar(total_steps):
+    """Plain progress bar used only when the preview callback is absent."""
+    try:
+        import comfy.utils as _cu  # type: ignore
+        return _cu.ProgressBar(total_steps)
+    except Exception:
+        return None
+
+def _preview_step_capture(x0_output, preview_callback, fallback_pbar, global_offset, global_total):
+    """Chained step callback: dict state + shared x0 + preview/progress.
+
+    Same `(state, callback)` shape as `_step_capture` so pipeline call sites
+    stay uniform. `guider.sample()` calls with local (stage) step numbers; we
+    remap to global progress so the bar runs 0..global_total continuously
+    instead of resetting each stage. Total denoise steps always equal
+    `len(sigmas) - 1` regardless of stage count.
+    """
+    state = {}
+    def callback(step, x0, x, total_steps):
+        state["x0"] = x0
+        state["x"] = x
+        state["step"] = global_offset + step
+        state["total_steps"] = global_total
+        if x0_output is not None:
+            x0_output["x0"] = x0
+        if preview_callback is not None:
+            try:
+                preview_callback(global_offset + step, x0, x, global_total)
+            except Exception as exc:
+                log.info("[SPEED-preview] preview callback failed (%r)", exc)
+        elif fallback_pbar is not None:
+            try:
+                fallback_pbar.update_absolute(global_offset + step + 1, global_total)
+            except Exception:
+                pass
+    return state, callback
+
 def _find_first_step_below(sigmas, threshold: float) -> int:
     """[Level 3] First index whose sigma <= threshold; len-1 if none."""
     ffsb_vals = [float(s) for s in sigmas]
@@ -340,6 +407,14 @@ def run_speed_pipeline(
     stage_start_latent = cur_latent["samples"]
     last_public = None
     last_capture = None
+    # Live-preview wiring (SamplerCustomAdvanced path): one shared x0 dict +
+    # one preview callback built for the global step total, remapped per stage
+    # so the bar runs continuously instead of resetting.
+    global_total = len(sigmas) - 1
+    x0_output: dict = {}
+    preview_callback = _make_preview_callback(guider, global_total, x0_output)
+    fallback_pbar = _make_fallback_pbar(global_total) if preview_callback is None else None
+    global_done = 0
 
     for stage_idx in range(n_stages - 1):
         # Boundary for this stage: transition_steps[stage_idx] is an index into
@@ -368,7 +443,9 @@ def run_speed_pipeline(
         walker.apply_stage(rsp_sh, rsp_sw)
 
         # Run the current stage over current_sigmas[:boundary+1].
-        capture, callback = _step_capture()
+        capture, callback = _preview_step_capture(
+            x0_output, preview_callback, fallback_pbar, global_done, global_total
+        )
         stage_sigmas = current_sigmas[: boundary + 1]
         public = guider.sample(
             stage_start_pub,
@@ -381,6 +458,7 @@ def run_speed_pipeline(
         )
         last_public = public
         last_capture = capture
+        global_done += len(stage_sigmas) - 1
         rsp_q = float(current_sigmas[boundary])
         public_video, public_audio = unpack_latent(public)
         log.info("[SPEED] stage %d output: video=%s audio=%s rsp_q=%.4f",
@@ -499,7 +577,9 @@ def run_speed_pipeline(
     walker = _get_or_create_walker(guider)
     walker.apply_final()
     _drop_walker(guider)
-    final_capture, final_callback = _step_capture()
+    final_capture, final_callback = _preview_step_capture(
+        x0_output, preview_callback, fallback_pbar, global_done, global_total
+    )
     final_public = guider.sample(
         stage_start_pub,
         stage_start_latent,
@@ -520,8 +600,12 @@ def run_speed_pipeline(
     out["samples"] = last_public
 
     denoised = out
-    if last_capture is not None and "x0" in last_capture:
+    # Prefer the shared x0 dict (SamplerCustomAdvanced path); fall back to
+    # the final stage capture when previews were disabled (offline tests).
+    x0 = x0_output.get("x0", None)
+    if x0 is None and last_capture is not None and "x0" in last_capture:
         x0 = last_capture["x0"]
+    if x0 is not None:
         # x0 may be a NestedTensor — extract video stream
         if getattr(x0, "is_nested", False):
             x0_streams = list(x0.unbind())
