@@ -176,34 +176,6 @@ def resolve_sigma_shifts(guider):
         raise ValueError("active MiniMax-H3 shifts must be positive")
     return video_shift, audio_shift, video_shift / audio_shift
 
-def _step_capture():
-    """[Level 2] Build a step callback that records per-step state and drives the
-    ComfyUI UI progress bar (ProgressBar.update_absolute).
-
-    ComfyUI's web UI bar is NOT drawn by k_diffusion's `disable=` flag — it's
-    driven by `comfy.utils.ProgressBar(total).update_absolute(...)` called
-    inside a node's execution context (latent_preview.prepare_callback does
-    this for the official SamplerCustomAdvanced). Our sampler must do the
-    same, otherwise the UI bar never appears regardless of PROGRESS_BAR_ENABLED.
-
-    `total_steps` is forwarded by the k_diffusion callback wrapper and is the
-    only reliable count we have at callback construction time.
-    """
-    state = {}
-    try:
-        import comfy.utils as _comfy_utils  # type: ignore
-    except Exception:
-        _comfy_utils = None
-    pbar = _comfy_utils.ProgressBar(1) if _comfy_utils is not None else None
-    def callback(step, x0, x, total_steps):
-        state["x0"] = x0
-        state["x"] = x
-        state["step"] = step
-        state["total_steps"] = total_steps
-        if pbar is not None:
-            pbar.update_absolute(step + 1, total_steps)
-    return state, callback
-
 def _make_preview_callback(guider, total_steps, x0_output):
     """Build the shared live-preview callback (SamplerCustomAdvanced path).
 
@@ -228,9 +200,6 @@ def _make_preview_callback(guider, total_steps, x0_output):
     except Exception as exc:
         log.info("[SPEED-preview] prepare_callback failed (%r) — previews disabled", exc)
         return None
-    if preview_callback is None:
-        log.info("[SPEED-preview] prepare_callback returned None — previews disabled")
-        return None
     log.info("[SPEED-preview] live preview wired (total_steps=%s)", total_steps)
     return preview_callback
 
@@ -245,14 +214,15 @@ def _make_fallback_pbar(total_steps):
 def _preview_step_capture(x0_output, preview_callback, fallback_pbar, global_offset, global_total):
     """Chained step callback: dict state + shared x0 + preview/progress.
 
-    Same `(state, callback)` shape as `_step_capture` so pipeline call sites
-    stay uniform. `guider.sample()` calls with local (stage) step numbers; we
+    Returns a `(state, callback)` pair; `guider.sample()` calls with local (stage) step numbers; we
     remap to global progress so the bar runs 0..global_total continuously
     instead of resetting each stage. Total denoise steps always equal
     `len(sigmas) - 1` regardless of stage count.
     """
     state = {}
+    warned = False
     def callback(step, x0, x, total_steps):
+        nonlocal warned
         state["x0"] = x0
         state["x"] = x
         state["step"] = global_offset + step
@@ -263,7 +233,13 @@ def _preview_step_capture(x0_output, preview_callback, fallback_pbar, global_off
             try:
                 preview_callback(global_offset + step, x0, x, global_total)
             except Exception as exc:
-                log.info("[SPEED-preview] preview callback failed (%r)", exc)
+                # Warn once: a callback that throws every step kills both the
+                # image and the bar for the whole run, so the first failure
+                # must be loud; repeats add nothing.
+                if not warned:
+                    warned = True
+                    log.warning("[SPEED-preview] preview callback failed (%r) — "
+                                "previews and bar updates will be missing", exc)
         elif fallback_pbar is not None:
             try:
                 fallback_pbar.update_absolute(global_offset + step + 1, global_total)
