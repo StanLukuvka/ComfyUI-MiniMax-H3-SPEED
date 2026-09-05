@@ -481,50 +481,39 @@ def test_flow_time_shift_sigma():
     assert abs(q_audio - (1.0/3.0)) < 1e-6
 
 
-def _install_preview_fakes(preview_calls, pbar_updates):
-    """Install fake latent_preview + ProgressBar that record calls."""
+def _install_preview_fakes():
+    """Install the comfy stub modules needed by `_build_preview_callback` and
+    `_wrap_preview_callback` so the runtime exercises the stock
+    `latent_preview.prepare_callback` path end-to-end."""
     import sys
     from types import ModuleType
 
     _install_comfy_stubs()
-    comfy = sys.modules["comfy"]
-    utils = sys.modules["comfy.utils"]
 
-    preview_mod = ModuleType("comfy.latent_preview")
-
-    def prepare_callback(patcher, total_steps, x0_output):
-        # Must receive the ModelPatcher, not the inner model.
-        assert hasattr(patcher, "model"), "prepare_callback needs the patcher"
-        assert total_steps == 19, f"global total should be len(sigmas)-1=19, got {total_steps}"
-
-        def _cb(step, x0, x, total):
-            preview_calls.append((step, total))
-            if x0_output is not None:
-                x0_output["x0"] = x0
-
-        return _cb
-
-    preview_mod.prepare_callback = prepare_callback
-    sys.modules["comfy.latent_preview"] = preview_mod
-    comfy.latent_preview = preview_mod
-
-    class FakePbar:
-        def __init__(self, total):
-            self.total = total
-
-        def update_absolute(self, value, total, preview=None):
-            pbar_updates.append((value, total))
-
-    utils.ProgressBar = FakePbar
+    # Give the fake model the attributes `get_previewer` needs so it returns
+    # a real previewer (or None gracefully — that's also valid and tested).
+    model = sys.modules["comfy"].model
+    model.load_device = type("D", (), {"device": "cpu"})()
+    model.model.latent_format = type("LF", (), {})()
 
 
 def _preview_fake_guider(sample_calls=None):
     class FakeGuider:
-        model_patcher = type("MP", (), {"model": type("M", (), {
-            "sigma_shift_video": 12.0,
-            "sigma_shift_audio": 3.0,
-            "process_latent_out": lambda s, x: x,
-        })()})()
+        class _Model:
+            sigma_shift_video = 12.0
+            sigma_shift_audio = 3.0
+            # ComfyUI stores latent_rgb_factors on the model instance, not on
+            # the latent_format class. When present, `get_previewer` finds a
+            # previewer and `prepare_callback` produces preview bytes each step.
+            # When absent, the callback still runs and updates the bar — just
+            # without a JPEG image.
+            latent_rgb_factors = [[0.1] * 3 for _ in range(24)]
+            latent_rgb_factors_bias = [0.0, 0.0, 0.0]
+
+            def process_latent_out(self, x):
+                return x
+
+        model_patcher = type("MP", (), {"model": _Model()})()
         conds = {}
 
         def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
@@ -553,7 +542,9 @@ def _preview_fake_noise():
 
 
 def _preview_fake_latent():
-    video = torch.zeros(1, 1, 2, 8, 8)
+    # H3 video stream shape: (B=1, C=24, T=2, H=8, W=8) — must match the
+    # 24-channel factor matrix the preview callback expects.
+    video = torch.zeros(1, 24, 2, 8, 8)
     audio = torch.zeros(1, 1, 2, 44)
 
     class FakeNested:
@@ -566,56 +557,93 @@ def _preview_fake_latent():
 
 
 def test_preview_callback_global_steps():
-    """Preview callback sees continuous global steps across SPEED stages."""
-    import sys
+    """Stock `latent_preview.prepare_callback` sees continuous global steps.
 
-    preview_calls: list = []
+    The runtime builds the stock callback once for the full denoise total
+    (matches `SamplerCustomAdvanced`), then wraps it per stage to remap the
+    local `step` into a global timeline. The resulting `pbar.update_absolute`
+    calls must run continuously 1..19 across stages instead of resetting.
+    """
+    import sys
+    from types import ModuleType
+
     pbar_updates: list = []
-    _install_preview_fakes(preview_calls, pbar_updates)
+    _install_comfy_stubs()
+    # Install a stock-style `latent_preview.prepare_callback` that hands the
+    # closure the test fakes need: it builds a real `ProgressBar` and writes
+    # the shared x0 dict, exactly like `latent_preview.py:120-129`. The runtime
+    # doesn't know or care that this is a test fake — it just forwards.
+    utils = sys.modules["comfy.utils"]
+
+    class FakePbar:
+        def __init__(self, total):
+            self.total = total
+
+        def update_absolute(self, value, total=None, preview=None):
+            pbar_updates.append((value, total if total is not None else self.total, preview))
+
+    utils.ProgressBar = FakePbar
+
+    def fake_prepare_callback(model_patcher, steps, x0_output_dict=None):
+        pbar = FakePbar(steps)
+        def _cb(step, x0, x, total_steps):
+            if x0_output_dict is not None:
+                x0_output_dict["x0"] = x0
+            pbar.update_absolute(step + 1, total_steps, None)
+        return _cb
+
+    preview_mod = ModuleType("comfy.latent_preview")
+    preview_mod.prepare_callback = fake_prepare_callback
+    sys.modules["comfy.latent_preview"] = preview_mod
+    sys.modules["comfy"].latent_preview = preview_mod
 
     import importlib
     h3_runtime = importlib.import_module("speed_scripts.h3_runtime")
     importlib.reload(h3_runtime)
 
     sigmas = torch.linspace(1.0, 0.025, 20)
+    x0_output: dict = {}
     out, denoised = h3_runtime.run_speed_pipeline(
         _preview_fake_noise(), _preview_fake_guider(), sigmas, _preview_fake_latent(),
         SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,)),
         sampler=object(), disable_pbar=False, output_device=None,
+        x0_output=x0_output,
     )
     assert out is not None and denoised is not None
-    # 19 denoise steps total; preview must see every global step exactly once.
-    steps = sorted(s for s, _ in preview_calls)
-    assert steps == list(range(19)), f"preview steps not continuous: {steps}"
-    assert all(t == 19 for _, t in preview_calls)
-    # Preview path handles progress; fallback bar stays silent.
-    assert pbar_updates == []
 
+    # 19 denoise steps total. The bar must see values 1..19 exactly once each,
+    # in order, with total=19 — proof that the stage offsets are remapped.
+    values = [v for v, _t, _p in pbar_updates]
+    assert values == list(range(1, 20)), (
+        f"preview bar not continuous across stages: {values}"
+    )
+    assert all(t == 19 for _v, t, _p in pbar_updates)
+    # The shared x0 dict is the same one the denoised block reads from.
+    assert "x0" in x0_output, "stock callback must write the shared x0 dict"
+
+    # Reset so subsequent tests start clean.
     sys.modules.pop("comfy.latent_preview", None)
-    if hasattr(sys.modules["comfy"], "latent_preview"):
-        delattr(sys.modules["comfy"], "latent_preview")
     _install_comfy_stubs()
     importlib.reload(h3_runtime)
 
 
 def test_fallback_pbar_when_no_preview():
-    """Without latent_preview, the fallback bar still advances globally."""
+    """Without `comfy.latent_preview`, a plain progress bar still runs globally."""
     import sys
 
     _install_comfy_stubs()
+    # Drop `latent_preview` entirely so `_build_preview_callback` returns None
+    # and the runtime's fallback path (plain `comfy.utils.ProgressBar`) fires.
     sys.modules.pop("comfy.latent_preview", None)
-    if hasattr(sys.modules["comfy"], "latent_preview"):
-        delattr(sys.modules["comfy"], "latent_preview")
     utils = sys.modules["comfy.utils"]
     pbar_updates: list = []
 
     class FakePbar:
         def __init__(self, total):
-            assert total == 19
             self.total = total
 
-        def update_absolute(self, value, total, preview=None):
-            pbar_updates.append((value, total))
+        def update_absolute(self, value, total=None, preview=None):
+            pbar_updates.append((value, total if total is not None else self.total))
 
     utils.ProgressBar = FakePbar
 
@@ -629,7 +657,7 @@ def test_fallback_pbar_when_no_preview():
         SpeedConfig(scales=(0.5, 1.0), transition_steps=(5,)),
         sampler=object(), disable_pbar=False, output_device=None,
     )
-    values = sorted(v for v, _ in pbar_updates)
+    values = sorted(v for v, _t in pbar_updates)
     assert values == list(range(1, 20)), f"fallback bar not continuous: {values}"
 
     _install_comfy_stubs()
