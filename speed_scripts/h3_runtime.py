@@ -191,9 +191,9 @@ def _build_preview_callback(guider, total_steps, x0_output):
     `step+1` value advances continuously across stages instead of resetting.
     """
     try:
-        from comfy import latent_preview as _lp
+        import latent_preview as _lp
     except Exception as exc:
-        log.info("[SPEED-preview] comfy.latent_preview unavailable (%r) — previews disabled", exc)
+        log.info("[SPEED-preview] latent_preview unavailable (%r) — previews disabled", exc)
         return None
     patcher = getattr(guider, "model_patcher", None)
     if patcher is None:

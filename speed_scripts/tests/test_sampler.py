@@ -592,10 +592,9 @@ def test_preview_callback_global_steps():
             pbar.update_absolute(step + 1, total_steps, None)
         return _cb
 
-    preview_mod = ModuleType("comfy.latent_preview")
+    preview_mod = ModuleType("latent_preview")
     preview_mod.prepare_callback = fake_prepare_callback
-    sys.modules["comfy.latent_preview"] = preview_mod
-    sys.modules["comfy"].latent_preview = preview_mod
+    sys.modules["latent_preview"] = preview_mod
 
     import importlib
     h3_runtime = importlib.import_module("speed_scripts.h3_runtime")
@@ -622,19 +621,19 @@ def test_preview_callback_global_steps():
     assert "x0" in x0_output, "stock callback must write the shared x0 dict"
 
     # Reset so subsequent tests start clean.
-    sys.modules.pop("comfy.latent_preview", None)
+    sys.modules.pop("latent_preview", None)
     _install_comfy_stubs()
     importlib.reload(h3_runtime)
 
 
 def test_fallback_pbar_when_no_preview():
-    """Without `comfy.latent_preview`, a plain progress bar still runs globally."""
+    """Without `latent_preview`, a plain progress bar still runs globally."""
     import sys
 
     _install_comfy_stubs()
     # Drop `latent_preview` entirely so `_build_preview_callback` returns None
     # and the runtime's fallback path (plain `comfy.utils.ProgressBar`) fires.
-    sys.modules.pop("comfy.latent_preview", None)
+    sys.modules.pop("latent_preview", None)
     utils = sys.modules["comfy.utils"]
     pbar_updates: list = []
 
