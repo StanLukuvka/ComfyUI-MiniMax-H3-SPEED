@@ -10,7 +10,7 @@ keeps the wiring obvious.
 
 from __future__ import annotations
 
-from .h3_runtime import _build_preview_callback, unpack_latent
+from .h3_runtime import unpack_latent
 
 
 def validate_transition_steps(transition_steps, n_stages, n_sigmas):
@@ -55,4 +55,4 @@ def full_res_dims(latent_image) -> tuple[int, int]:
     return int(full_video.shape[-2]), int(full_video.shape[-1])
 
 
-__all__ = ["validate_transition_steps", "full_res_dims", "_build_preview_callback"]
+__all__ = ["validate_transition_steps", "full_res_dims"]

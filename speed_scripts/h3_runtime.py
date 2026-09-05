@@ -195,15 +195,9 @@ def _build_preview_callback(guider, total_steps, x0_output):
     except Exception as exc:
         log.info("[SPEED-preview] latent_preview unavailable (%r) — previews disabled", exc)
         return None
-    patcher = getattr(guider, "model_patcher", None)
-    if patcher is None:
-        log.info("[SPEED-preview] no model_patcher on guider — previews disabled")
-        return None
-    try:
-        return _lp.prepare_callback(patcher, total_steps, x0_output)
-    except Exception as exc:
-        log.info("[SPEED-preview] prepare_callback failed (%r) — previews disabled", exc)
-        return None
+    # Mirrors SamplerCustomAdvanced (comfy_extras/nodes_custom_sampler.py:1045-1046):
+    # the patcher must be valid; if it is not, let the exception propagate.
+    return _lp.prepare_callback(guider.model_patcher, total_steps, x0_output)
 
 
 def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total):
@@ -234,9 +228,6 @@ def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total)
             pbar = None
         def callback(step, x0, x, total_steps):
             state["x0"] = x0
-            state["x"] = x
-            state["step"] = global_offset + step
-            state["total_steps"] = global_total
             if pbar is not None:
                 try:
                     pbar.update_absolute(global_offset + step + 1, global_total)
@@ -247,9 +238,6 @@ def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total)
     def callback(step, x0, x, total_steps):
         nonlocal warned
         state["x0"] = x0
-        state["x"] = x
-        state["step"] = global_offset + step
-        state["total_steps"] = global_total
         try:
             stock_cb(global_offset + step, x0, x, global_total)
         except Exception as exc:
@@ -409,12 +397,10 @@ def run_speed_pipeline(
     stage_start_pub = coarse_noise
     stage_start_latent = cur_latent["samples"]
     last_public = None
-    last_capture = None
     # Build ComfyUI's native preview callback once for the full run, mirroring
     # SamplerCustomAdvanced. The shared x0_output dict is used for denoised
     # reconstruction; the stock callback writes it every step and also pushes
-    # preview bytes through PROGRESS_BAR_HOOK. If the caller passed a
-    # pre-built callback (e.g. from the node layer), use it instead.
+    # preview bytes through PROGRESS_BAR_HOOK.
     global_total = len(sigmas) - 1
     if x0_output is None:
         x0_output = {}
@@ -454,11 +440,10 @@ def run_speed_pipeline(
         # (`latent_preview.prepare_callback`) with the step remapped to the
         # global timeline, so the bar runs continuously and preview bytes
         # flow through the same PROGRESS_BAR_HOOK every other ComfyUI node
-        # uses. The dict-state capture is preserved for `clock_reindex` audio
-        # and for the denoised_output fallback when previews are disabled.
-        capture = {}
+        # uses. The wrapper writes x0 into the shared `x0_output` dict for
+        # `clock_reindex` audio and the denoised fallback.
         callback = _wrap_preview_callback(
-            stock_cb, capture, global_done, global_total,
+            stock_cb, x0_output, global_done, global_total,
         )
         stage_sigmas = current_sigmas[: boundary + 1]
         public = guider.sample(
@@ -471,7 +456,6 @@ def run_speed_pipeline(
             seed=noise.seed,
         )
         last_public = public
-        last_capture = capture
         global_done += len(stage_sigmas) - 1
         rsp_q = float(current_sigmas[boundary])
         public_video, public_audio = unpack_latent(public)
@@ -539,9 +523,9 @@ def run_speed_pipeline(
                 internal_audio, rsp_q, new_q, old_audio_sigma, new_audio_sigma
             )
         elif config.audio_policy == "clock_reindex":
-            if "x0" not in capture:
+            if "x0" not in x0_output:
                 raise RuntimeError("clock_reindex requires an x0 callback from this stage")
-            _, clean_audio = unpack_latent(capture["x0"])
+            _, clean_audio = unpack_latent(x0_output["x0"])
             transitioned_audio = clock_reindex_audio_state(
                 internal_audio,
                 clean_audio,
@@ -591,9 +575,8 @@ def run_speed_pipeline(
     walker = _get_or_create_walker(guider)
     walker.apply_final()
     _drop_walker(guider)
-    final_capture = {}
     final_callback = _wrap_preview_callback(
-        stock_cb, final_capture, global_done, global_total,
+        stock_cb, x0_output, global_done, global_total,
     )
     final_public = guider.sample(
         stage_start_pub,
@@ -605,7 +588,6 @@ def run_speed_pipeline(
         seed=noise.seed,
     )
     last_public = final_public
-    last_capture = final_capture
 
     if output_device is not None and last_public is not None:
         last_public = last_public.to(output_device)
@@ -615,11 +597,9 @@ def run_speed_pipeline(
     out["samples"] = last_public
 
     denoised = out
-    # Prefer the shared x0 dict (SamplerCustomAdvanced path); fall back to
-    # the final stage capture when previews were disabled (offline tests).
+    # The shared x0_output dict holds the most recent denoised x0 (written
+    # by the stock callback or the fallback wrapper each step).
     x0 = x0_output.get("x0", None)
-    if x0 is None and last_capture is not None and "x0" in last_capture:
-        x0 = last_capture["x0"]
     if x0 is not None:
         # x0 may be a NestedTensor — extract video stream
         if getattr(x0, "is_nested", False):

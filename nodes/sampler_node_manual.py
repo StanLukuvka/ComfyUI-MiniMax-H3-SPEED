@@ -25,7 +25,7 @@ import comfy.samplers
 from speed_scripts.config import RATIO_MODES, SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.latent_class import LatentWalker
-from speed_scripts.nodes_common import _build_preview_callback, full_res_dims, validate_transition_steps
+from speed_scripts.nodes_common import full_res_dims, validate_transition_steps
 
 
 def CALCULATE_SCALES(transitions, ratio_mode):
@@ -146,16 +146,6 @@ class MiniMaxH3SPEEDSamplerManual:
         # boundary via the h3_runtime shim to do the actual resize.
         LatentWalker(guider)
 
-        # Build ComfyUI's native preview callback at the node layer (matches
-        # `SamplerCustomAdvanced.execute`): one x0_output dict shared across
-        # the whole run, one callback built for the full step total. The
-        # runtime wraps this per stage so the bar's `step+1` value advances
-        # continuously instead of resetting each stage.
-        x0_output: dict = {}
-        preview_callback = _build_preview_callback(
-            guider, len(sigmas) - 1, x0_output,
-        )
-
         return run_speed_pipeline(
             noise,
             guider,
@@ -165,8 +155,6 @@ class MiniMaxH3SPEEDSamplerManual:
             sampler=comfy.samplers.sampler_object("euler"),
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
             output_device=None,
-            preview_callback=preview_callback,
-            x0_output=x0_output,
         )
 
 
