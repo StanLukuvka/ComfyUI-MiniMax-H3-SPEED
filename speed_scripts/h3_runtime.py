@@ -176,33 +176,81 @@ def resolve_sigma_shifts(guider):
         raise ValueError("active MiniMax-H3 shifts must be positive")
     return video_shift, audio_shift, video_shift / audio_shift
 
-def _step_capture():
-    """[Level 2] Build a step callback that records per-step state and drives the
-    ComfyUI UI progress bar (ProgressBar.update_absolute).
+def _build_preview_callback(guider, total_steps, x0_output):
+    """Forward ComfyUI's native `latent_preview.prepare_callback` pipeline.
 
-    ComfyUI's web UI bar is NOT drawn by k_diffusion's `disable=` flag — it's
-    driven by `comfy.utils.ProgressBar(total).update_absolute(...)` called
-    inside a node's execution context (latent_preview.prepare_callback does
-    this for the official SamplerCustomAdvanced). Our sampler must do the
-    same, otherwise the UI bar never appears regardless of PROGRESS_BAR_ENABLED.
+    Mirrors `SamplerCustomAdvanced.execute` (comfy_extras/nodes_custom_sampler.py
+    ~1045-1049): one `x0_output` dict shared across the whole run, one callback
+    built for the full step total. The callback writes `x0_output["x0"]` every
+    step and pushes preview bytes via the same `PROGRESS_BAR_HOOK` ComfyUI uses
+    everywhere else.
 
-    `total_steps` is forwarded by the k_diffusion callback wrapper and is the
-    only reliable count we have at callback construction time.
+    Returns None when previews are unavailable (no patcher, import error, or
+    no decoder). Callers should pass the returned callback into each
+    `guider.sample()` call wrapped with `_wrap_preview_callback` so the bar's
+    `step+1` value advances continuously across stages instead of resetting.
     """
-    state = {}
     try:
-        import comfy.utils as _comfy_utils  # type: ignore
-    except Exception:
-        _comfy_utils = None
-    pbar = _comfy_utils.ProgressBar(1) if _comfy_utils is not None else None
+        import latent_preview as _lp
+    except Exception as exc:
+        log.info("[SPEED-preview] latent_preview unavailable (%r) — previews disabled", exc)
+        return None
+    # Mirrors SamplerCustomAdvanced (comfy_extras/nodes_custom_sampler.py:1045-1046):
+    # the patcher must be valid; if it is not, let the exception propagate.
+    return _lp.prepare_callback(guider.model_patcher, total_steps, x0_output)
+
+
+def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total):
+    """Wrap a stock `latent_preview.prepare_callback` callback for one stage.
+
+    Each `guider.sample()` call gets a fresh callback whose local `step`
+    resets to 0. We record per-step state (for `clock_reindex` audio) and
+    forward the call to the shared stock callback with the step number
+    remapped to the global timeline, so the underlying `ProgressBar` runs
+    continuously `0..global_total` instead of resetting each stage.
+
+    `stock_cb` is the closure returned by `latent_preview.prepare_callback`;
+    its own `(step, x0, x, total_steps)` call writes `x0_output["x0"] = x0`
+    and calls `pbar.update_absolute(step + 1, total_steps, preview_bytes)`.
+    We pass `global_offset + step` so the bar sees a monotonically increasing
+    value, with `total_steps` overridden to `global_total` so its throttle
+    uses the full run length.
+
+    When `stock_cb is None` (previews disabled in the env) we still build a
+    plain progress bar via `comfy.utils.ProgressBar` so the bar keeps moving.
+    """
+    state = capture_state
+    if stock_cb is None:
+        try:
+            import comfy.utils as _cu
+            pbar = _cu.ProgressBar(global_total)
+        except Exception:
+            pbar = None
+        def callback(step, x0, x, total_steps):
+            state["x0"] = x0
+            if pbar is not None:
+                try:
+                    pbar.update_absolute(global_offset + step + 1, global_total)
+                except Exception:
+                    pass
+        return callback
+    warned = False
     def callback(step, x0, x, total_steps):
+        nonlocal warned
         state["x0"] = x0
-        state["x"] = x
-        state["step"] = step
-        state["total_steps"] = total_steps
-        if pbar is not None:
-            pbar.update_absolute(step + 1, total_steps)
-    return state, callback
+        try:
+            stock_cb(global_offset + step, x0, x, global_total)
+        except Exception as exc:
+            # First failure must be loud; repeats would spam per step and
+            # would also mask the real exception that broke the run.
+            if not warned:
+                warned = True
+                log.warning(
+                    "[SPEED-preview] preview callback failed (%r) — "
+                    "preview image and bar updates will be missing for the rest of this run",
+                    exc,
+                )
+    return callback
 
 def _find_first_step_below(sigmas, threshold: float) -> int:
     """[Level 3] First index whose sigma <= threshold; len-1 if none."""
@@ -251,6 +299,8 @@ def run_speed_pipeline(
     # the progress bar for every run and is easy to miss (the node still "works").
     disable_pbar: bool = False,
     output_device=None,
+    preview_callback=None,
+    x0_output=None,
 ):
     """[Level 1] Run an N-stage progressive-resolution Euler chain (multi-stage SPEED).
 
@@ -261,6 +311,14 @@ def run_speed_pipeline(
     Mirrors canonical SPEED ``generate``: it computes transition steps from
     delta-optimal thresholds, runs each scale stage, and DCT-expands + kappa-aligns
     at each boundary.
+
+    Live previews are forwarded from ComfyUI's `latent_preview.prepare_callback`
+    pipeline (the same one `SamplerCustomAdvanced` uses). Pass a callback built
+    by the node layer in `preview_callback`; if `None`, the function builds one
+    for the current run via `_build_preview_callback` so previews keep working
+    in offline tests and programmatic use. The shared `x0` dict (`x0_output`)
+    is also forwarded so `denoised` is reconstructed exactly as in
+    `SamplerCustomAdvanced`.
 
     Returns ``(output_latent, denoised_latent)``.
     """
@@ -339,7 +397,17 @@ def run_speed_pipeline(
     stage_start_pub = coarse_noise
     stage_start_latent = cur_latent["samples"]
     last_public = None
-    last_capture = None
+    # Build ComfyUI's native preview callback once for the full run, mirroring
+    # SamplerCustomAdvanced. The shared x0_output dict is used for denoised
+    # reconstruction; the stock callback writes it every step and also pushes
+    # preview bytes through PROGRESS_BAR_HOOK.
+    global_total = len(sigmas) - 1
+    if x0_output is None:
+        x0_output = {}
+    stock_cb = preview_callback
+    if stock_cb is None:
+        stock_cb = _build_preview_callback(guider, global_total, x0_output)
+    global_done = 0
 
     for stage_idx in range(n_stages - 1):
         # Boundary for this stage: transition_steps[stage_idx] is an index into
@@ -368,7 +436,15 @@ def run_speed_pipeline(
         walker.apply_stage(rsp_sh, rsp_sw)
 
         # Run the current stage over current_sigmas[:boundary+1].
-        capture, callback = _step_capture()
+        # The wrapped callback forwards to the shared stock callback
+        # (`latent_preview.prepare_callback`) with the step remapped to the
+        # global timeline, so the bar runs continuously and preview bytes
+        # flow through the same PROGRESS_BAR_HOOK every other ComfyUI node
+        # uses. The wrapper writes x0 into the shared `x0_output` dict for
+        # `clock_reindex` audio and the denoised fallback.
+        callback = _wrap_preview_callback(
+            stock_cb, x0_output, global_done, global_total,
+        )
         stage_sigmas = current_sigmas[: boundary + 1]
         public = guider.sample(
             stage_start_pub,
@@ -380,7 +456,7 @@ def run_speed_pipeline(
             seed=noise.seed,
         )
         last_public = public
-        last_capture = capture
+        global_done += len(stage_sigmas) - 1
         rsp_q = float(current_sigmas[boundary])
         public_video, public_audio = unpack_latent(public)
         log.info("[SPEED] stage %d output: video=%s audio=%s rsp_q=%.4f",
@@ -447,9 +523,9 @@ def run_speed_pipeline(
                 internal_audio, rsp_q, new_q, old_audio_sigma, new_audio_sigma
             )
         elif config.audio_policy == "clock_reindex":
-            if "x0" not in capture:
+            if "x0" not in x0_output:
                 raise RuntimeError("clock_reindex requires an x0 callback from this stage")
-            _, clean_audio = unpack_latent(capture["x0"])
+            _, clean_audio = unpack_latent(x0_output["x0"])
             transitioned_audio = clock_reindex_audio_state(
                 internal_audio,
                 clean_audio,
@@ -499,7 +575,9 @@ def run_speed_pipeline(
     walker = _get_or_create_walker(guider)
     walker.apply_final()
     _drop_walker(guider)
-    final_capture, final_callback = _step_capture()
+    final_callback = _wrap_preview_callback(
+        stock_cb, x0_output, global_done, global_total,
+    )
     final_public = guider.sample(
         stage_start_pub,
         stage_start_latent,
@@ -510,7 +588,6 @@ def run_speed_pipeline(
         seed=noise.seed,
     )
     last_public = final_public
-    last_capture = final_capture
 
     if output_device is not None and last_public is not None:
         last_public = last_public.to(output_device)
@@ -520,8 +597,10 @@ def run_speed_pipeline(
     out["samples"] = last_public
 
     denoised = out
-    if last_capture is not None and "x0" in last_capture:
-        x0 = last_capture["x0"]
+    # The shared x0_output dict holds the most recent denoised x0 (written
+    # by the stock callback or the fallback wrapper each step).
+    x0 = x0_output.get("x0", None)
+    if x0 is not None:
         # x0 may be a NestedTensor — extract video stream
         if getattr(x0, "is_nested", False):
             x0_streams = list(x0.unbind())
