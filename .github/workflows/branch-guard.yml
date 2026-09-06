@@ -1,0 +1,19 @@
+name: branch-guard
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  only-dev-to-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless PR source is dev
+        run: |
+          if [ "${{ github.event.pull_request.head.ref }}" != "dev" ]; then
+            echo "::error::PRs to main must come from dev. Target dev instead."
+            exit 1
+          fi
