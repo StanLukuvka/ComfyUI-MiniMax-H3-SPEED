@@ -94,8 +94,15 @@ def _spatial_band_powers(video: torch.Tensor) -> dict[str, Any]:
     H, W = int(video.shape[-2]), int(video.shape[-1])
     if H < 2 or W < 2:
         return empty
+    # Band edges on the smaller spatial axis. High band is kept non-empty by
+    # requiring mid_cut < min(H, W); otherwise that band would mean() over an
+    # empty selection and yield NaN.
     low_cut = max(1, min(H, W) // 3)
     mid_cut = max(low_cut + 1, 2 * min(H, W) // 3)
+    if mid_cut >= min(H, W):
+        mid_cut = min(H, W) - 1
+        if mid_cut <= low_cut:
+            return empty
     try:
         coeffs = _dct2(video.detach().float())
     except Exception:
@@ -106,13 +113,19 @@ def _spatial_band_powers(video: torch.Tensor) -> dict[str, Any]:
         SPATIAL_BAND_NAMES[1]: (..., slice(low_cut, mid_cut), slice(0, W)),
         SPATIAL_BAND_NAMES[2]: (..., slice(mid_cut, H), slice(0, W)),
     }
+    # Per-frame band energy: sum |coeff|^2 over batch, channel, rows and columns,
+    # keeping the time axis so each band series has one entry per frame, length T.
+    band_energy = [
+        power[slices].sum(dim=(0, 1, 3, 4))  # [T]
+        for slices in band_slices.values()
+    ]
+    # Per-frame total energy across all coefficients: the three bands sum to
+    # 1.0 at every frame index (a global-sum normaliser would give 1/W).
+    frame_total = power.sum(dim=(1, 3, 4)).squeeze(0)  # [T] (batch is 1)
     powers: list[list[float]] = []
-    for band_name in SPATIAL_BAND_NAMES:
-        per_frame = power[band_slices[band_name]].mean(dim=(0, 1, 2, 3))  # [T]
+    for band_sum in band_energy:
+        per_frame = torch.where(frame_total > 0.0, band_sum / frame_total.clamp_min(1e-30), torch.zeros_like(band_sum))
         powers.append([float(v) for v in per_frame.detach().cpu().tolist()])
-    total_energy = float(power.sum().item())
-    if total_energy > 0.0:
-        powers = [[p / total_energy for p in band_powers] for band_powers in powers]
     return {"bands": list(SPATIAL_BAND_NAMES), "powers": powers, "n_frames": n_frames}
 
 
@@ -141,19 +154,6 @@ def _temporal_band_summary(video: torch.Tensor) -> dict[str, Any]:
     }
 
 
-def _coerce_sigma(value: Any) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, torch.Tensor):
-        return float(value.detach().reshape(()).item())
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _sigma_list(sigmas: Any) -> list[float]:
     if isinstance(sigmas, torch.Tensor):
         return [float(v) for v in sigmas.detach().reshape(-1).cpu().tolist()]
@@ -171,70 +171,11 @@ def _sigma_list(sigmas: Any) -> list[float]:
         return []
 
 
-def _n_sigma_steps(sigmas: Any) -> int:
-    if isinstance(sigmas, torch.Tensor):
-        return sigmas.numel()
-    if isinstance(sigmas, (list, tuple)):
-        return len(sigmas)
-    return 0
-
-
-def _build_callback(records: list, sigmas: Any) -> Any:
+def _build_callback(records: list, sigmas: Any, patcher: Any = None) -> Any:
     """Wrap a stock `latent_preview.prepare_callback` so it still drives the
     ComfyUI progress/preview pipeline, then append one telemetry record per step.
-    """
-    sig = _sigma_list(sigmas)
-    n_steps = max(0, len(sig) - 1)
-    x0_output: dict = {}
-    stock_cb = None
-    if _lp is not None:
-        try:
-            stock_cb = _lp.prepare_callback(None, n_steps, x0_output)
-        except Exception:
-            stock_cb = None
-    if stock_cb is None:
-        pbar = comfy.utils.ProgressBar(n_steps)
-        def _stock_fallback(step, x0, x, total_steps):
-            pbar.update_absolute(step + 1, total_steps)
-        stock_cb = _stock_fallback
-
-    def _callback(step, x0, x, total_steps):
-        si = int(step)
-        sigma_now = sig[si] if 0 <= si < len(sig) else None
-        sigma_next = sig[si + 1] if 0 <= si + 1 < len(sig) else None
-        x0_nested = x0 if (hasattr(x0, "is_nested") and x0.is_nested) else None
-        x0_video = _extract_video_stream(x0)
-        record: dict[str, Any] = {
-            "step_index": si,
-            "sigma": sigma_now,
-            "sigma_next": sigma_next,
-            "sigma_source": "schedule" if sigma_now is not None else "missing",
-            "latent_shapes": {"x0": _extract_nested_shapes(x0_nested)},
-            "video_shape": list(x0_video.shape) if x0_video is not None else None,
-            "signal": _signal_stats(x0_video) if x0_video is not None else {
-                "mean": None, "std": None, "rms": None,
-                "min": None, "max": None, "abs_mean": None,
-            },
-            "spatial_dct": _spatial_band_powers(x0_video) if x0_video is not None else {
-                "bands": list(SPATIAL_BAND_NAMES),
-                "powers": [[0.0] for _ in SPATIAL_BAND_NAMES],
-                "n_frames": 0,
-            },
-            "temporal_dct": _temporal_band_summary(x0_video) if x0_video is not None else {
-                "available": False, "reason": "no_video_tensor", "power": [],
-            },
-            "status": "ok",
-            "measurement_note": MEASURED_TENSOR,
-        }
-        records.append(record)
-        return stock_cb(step, x0, x, total_steps)
-
-    return _callback, x0_output
-
-
-def _open_video_stream_callback(records: list, sigmas: Any, patcher: Any) -> Any:
-    """Variant for the real runtime path: pass the real patcher so ComfyUI's
-    previewer is actually used and the live preview works on H3.
+    Pass the real model patcher on the runtime path so the live previewer is
+    actually used; without it the stock callback degrades to a ProgressBar.
     """
     sig = _sigma_list(sigmas)
     n_steps = max(0, len(sig) - 1)
@@ -282,13 +223,11 @@ def _open_video_stream_callback(records: list, sigmas: Any, patcher: Any) -> Any
         records.append(record)
         return stock_cb(step, x0, x, total_steps)
 
-    return _callback
+    return _callback, x0_output
 
 
 def _trace_callback(patcher: Any, sigmas: torch.Tensor, records: list) -> Any:
-    if patcher is None:
-        return _build_callback(records, sigmas)[0]
-    return _open_video_stream_callback(records, sigmas, patcher)
+    return _build_callback(records, sigmas, patcher)[0]
 
 
 class MiniMaxH3SigmaTrace:

@@ -210,6 +210,17 @@ def test_trace_runs_one_native_pass_and_preserves_every_callback(trace_env):
             predicted_video.square().mean().sqrt().item(), rel=1e-5
         )
         assert set(entry["spatial_dct"]["bands"]) == {"low", "mid", "high"}
+        powers = entry["spatial_dct"]["powers"]
+        # one entry per frame per band (F1 regression: frame axis collapsed -> len W)
+        assert all(len(series) == video.shape[2] for series in powers)
+        # the three bands sum to 1.0 at every frame index (F2 regression: 1/W)
+        band_sums = [
+            sum(powers[band_idx][frame_idx] for band_idx in range(len(powers)))
+            for frame_idx in range(video.shape[2])
+        ]
+        assert all(total == pytest.approx(1.0, rel=1e-3) for total in band_sums)
+        # no NaN from empty band slices (F3 regression: H<3 -> NaN high band)
+        assert all(math.isfinite(v) for series in powers for v in series)
         assert entry["temporal_dct"]["available"] is True
         assert len(entry["temporal_dct"]["power"]) == video.shape[2]
         assert trace_env.previews[step][0] == step
