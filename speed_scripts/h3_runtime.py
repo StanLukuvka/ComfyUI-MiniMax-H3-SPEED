@@ -29,6 +29,12 @@ from .spectral import (
 log = logging.getLogger(__name__)
 
 from .latent_class import LatentClass, LatentStage, LatentWalker
+from .observer import (
+    SpeedRunEndEvent,
+    SpeedRunStartEvent,
+    SpeedStepEvent,
+    SpeedTransitionEvent,
+)
 
 
 # Per-pipeline-run walker, stashed on the guider so the same wrapper dict
@@ -252,6 +258,25 @@ def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total)
                 )
     return callback
 
+def _wrap_observer_callback(inner_cb, observer, event_fn):
+    """Compose the observer around an existing stage callback (plan §14).
+
+    Order per callback: capture x0 / forward stock preview + progress
+    (the inner `_wrap_preview_callback` wrapper) FIRST, then notify the
+    observer — the UI update must not wait on observer work. The observer
+    receives the exact callback x0/x the inner wrapper recorded; the
+    shared `x0_output` dict remains the single x0 source (plan §45).
+    """
+    if observer is None:
+        return inner_cb
+
+    def callback(step, x0, x, total_steps):
+        inner_cb(step, x0, x, total_steps)
+        observer.on_step(event_fn(step), x0, x)
+
+    return callback
+
+
 def _find_first_step_below(sigmas, threshold: float) -> int:
     """[Level 3] First index whose sigma <= threshold; len-1 if none."""
     ffsb_vals = [float(s) for s in sigmas]
@@ -301,6 +326,7 @@ def run_speed_pipeline(
     output_device=None,
     preview_callback=None,
     x0_output=None,
+    observer=None,
 ):
     """[Level 1] Run an N-stage progressive-resolution Euler chain (multi-stage SPEED).
 
@@ -319,6 +345,13 @@ def run_speed_pipeline(
     in offline tests and programmatic use. The shared `x0` dict (`x0_output`)
     is also forwarded so `denoised` is reconstructed exactly as in
     `SamplerCustomAdvanced`.
+
+    `observer` optionally receives runtime events (see `speed_scripts.observer`):
+    one `on_step` per actual denoising interval, one `on_transition` per
+    resolution transition (coincident transitions included — a zero-step
+    intermediate stage emits no step event but its transition still fires),
+    plus one `on_run_start` / `on_run_end` each. `None` (the default) runs
+    the pipeline exactly as before.
 
     Returns ``(output_latent, denoised_latent)``.
     """
@@ -422,6 +455,17 @@ def run_speed_pipeline(
     global_done = 0
     global_start = 0  # GLOBAL index the next stage begins at (into working_sigmas).
 
+    if observer is not None:
+        observer.on_run_start(SpeedRunStartEvent(
+            n_stages=n_stages,
+            scales=tuple(scales),
+            transition_steps=tuple(int(s) for s in transition_steps),
+            global_steps=global_total,
+            full_h=full_h,
+            full_w=full_w,
+            full_t=full_t,
+        ))
+
     for stage_idx in range(n_stages - 1):
         # Boundary for this stage: transition_steps[stage_idx] is a GLOBAL
         # index into the sigma schedule identifying where the NEXT scale
@@ -451,11 +495,40 @@ def run_speed_pipeline(
         # global timeline, so the bar runs continuously and preview bytes
         # flow through the same PROGRESS_BAR_HOOK every other ComfyUI node
         # uses. The wrapper writes x0 into the shared `x0_output` dict for
-        # `clock_reindex` audio and the denoised fallback.
-        callback = _wrap_preview_callback(
+        # `clock_reindex` audio and the denoised fallback. The observer
+        # wrapper composes AROUND that preview wrapper so the stock
+        # preview/progress update always runs before observer work.
+        preview_cb = _wrap_preview_callback(
             stock_cb, x0_output, global_done, global_total,
         )
         stage_sigmas = working_sigmas[global_start:global_end + 1]
+        stage_h, stage_w, stage_t = stage_hw_t[stage_idx]
+
+        def _step_event(stage_local_step, _stage_idx=stage_idx,
+                        _global_start=global_start, _stage_sigmas=stage_sigmas,
+                        _stage_scale=scales[stage_idx], _stage_h=stage_h,
+                        _stage_w=stage_w, _stage_t=stage_t,
+                        _callback_offset=global_done):
+            _global_index = _global_start + stage_local_step
+            return SpeedStepEvent(
+                callback_index=_callback_offset + stage_local_step,
+                stage_index=_stage_idx,
+                stage_scale=_stage_scale,
+                stage_local_step=stage_local_step,
+                global_schedule_index=_global_index,
+                actual_sigma=float(_stage_sigmas[stage_local_step]),
+                actual_sigma_next=float(_stage_sigmas[stage_local_step + 1]),
+                original_sigma=float(sigmas[_global_index]),
+                original_sigma_next=float(sigmas[_global_index + 1]),
+                stage_h=_stage_h,
+                stage_w=_stage_w,
+                stage_t=_stage_t,
+                full_h=full_h,
+                full_w=full_w,
+                full_t=full_t,
+            )
+
+        callback = _wrap_observer_callback(preview_cb, observer, _step_event)
         public = guider.sample(
             stage_start_pub,
             stage_start_latent,
@@ -489,6 +562,24 @@ def run_speed_pipeline(
         # Patch the boundary coordinate in the working schedule with the
         # aligned sigma (upstream: `scheduler.sigmas[end] = t_tilde`).
         working_sigmas[global_end] = new_q
+
+        if observer is not None:
+            observer.on_transition(SpeedTransitionEvent(
+                transition_index=stage_idx,
+                from_stage=stage_idx,
+                to_stage=stage_idx + 1,
+                global_schedule_index=global_end,
+                from_scale=scales[stage_idx],
+                to_scale=scales[stage_idx + 1],
+                scale_ratio=ratio,
+                sigma_before_alignment=rsp_q,
+                sigma_after_alignment=new_q,
+                kappa=kappa,
+                source_h=stage_hw_t[stage_idx][0],
+                source_w=stage_hw_t[stage_idx][1],
+                target_h=stage_hw_t[stage_idx + 1][0],
+                target_w=stage_hw_t[stage_idx + 1][1],
+            ))
 
         # DCT-expand the video (coupled or fresh band) and rescale by kappa.
         next_h, next_w, next_t = stage_hw_t[stage_idx + 1]
@@ -590,19 +681,55 @@ def run_speed_pipeline(
     walker = _get_or_create_walker(guider)
     walker.apply_final()
     _drop_walker(guider)
-    final_callback = _wrap_preview_callback(
+    final_preview_cb = _wrap_preview_callback(
         stock_cb, x0_output, global_done, global_total,
+    )
+    final_sigmas = working_sigmas[global_start:]
+
+    def _final_step_event(stage_local_step, _stage_idx=n_stages - 1,
+                          _global_start=global_start, _stage_sigmas=final_sigmas,
+                          _stage_scale=scales[n_stages - 1],
+                          _stage_h=fh, _stage_w=fw, _stage_t=stage_hw_t[n_stages - 1][2],
+                          _callback_offset=global_done):
+        _global_index = _global_start + stage_local_step
+        return SpeedStepEvent(
+            callback_index=_callback_offset + stage_local_step,
+            stage_index=_stage_idx,
+            stage_scale=_stage_scale,
+            stage_local_step=stage_local_step,
+            global_schedule_index=_global_index,
+            actual_sigma=float(_stage_sigmas[stage_local_step]),
+            actual_sigma_next=float(_stage_sigmas[stage_local_step + 1]),
+            original_sigma=float(sigmas[_global_index]),
+            original_sigma_next=float(sigmas[_global_index + 1]),
+            stage_h=_stage_h,
+            stage_w=_stage_w,
+            stage_t=_stage_t,
+            full_h=full_h,
+            full_w=full_w,
+            full_t=full_t,
+        )
+
+    final_callback = _wrap_observer_callback(
+        final_preview_cb, observer, _final_step_event,
     )
     final_public = guider.sample(
         stage_start_pub,
         stage_start_latent,
         sampler,
-        working_sigmas[global_start:],
+        final_sigmas,
         callback=final_callback,
         disable_pbar=disable_pbar,
         seed=noise.seed,
     )
     last_public = final_public
+
+    if observer is not None:
+        observer.on_run_end(SpeedRunEndEvent(
+            n_stages=n_stages,
+            global_steps=global_total,
+            transition_count=n_stages - 1,
+        ))
 
     if output_device is not None and last_public is not None:
         last_public = last_public.to(output_device)
