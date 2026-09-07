@@ -68,8 +68,8 @@ class MiniMaxH3SPEEDSampler:
                 "stages": ("INT", {"default": 3, "min": 2, "max": 4}),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
                 "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6}),
-                "noise_decay_exponent": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 10.0}),
+                "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6, "step": 0.001, "round": 0.001}),
+                "noise_decay_exponent": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 10.0, "step": 0.001, "round": 0.001}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
             },
         }
