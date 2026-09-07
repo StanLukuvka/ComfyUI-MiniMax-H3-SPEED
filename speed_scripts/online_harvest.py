@@ -1,4 +1,3 @@
-# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §17-26, 30, 35, 42 (commits 3-4) — flow-produced, do not hand-edit
 """Torch-native online spectral analysis for continuous SPEED sigma harvesting.
 
 Per-step companion to :mod:`speed_scripts.harvest`: measures the radial DCT

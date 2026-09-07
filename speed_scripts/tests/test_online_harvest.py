@@ -1,4 +1,3 @@
-# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §49 (commit 3) — flow-produced, do not hand-edit
 """Pure-math tests for the torch-native online spectral analysis (§49)."""
 
 from __future__ import annotations

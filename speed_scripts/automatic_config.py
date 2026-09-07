@@ -1,4 +1,3 @@
-# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §7 (commit 1) — flow-produced, do not hand-edit
 """Shared automatic SPEED config construction.
 
 The Automatic SPEED sampler and the SPEED Sigma Harvest diagnostic node must
