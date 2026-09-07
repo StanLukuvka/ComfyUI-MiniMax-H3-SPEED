@@ -37,24 +37,24 @@ def canonical_segments(sigmas, transition_steps):
 
 
 def canonical_stage_schedules(sigmas, transition_steps, ratios):
-    """Expected per-stage sigma schedules under canonical global semantics.
+    """Expected per-stage sigma schedules under the upstream working-sigmas model.
 
-    Mirrors the official implementation: stage 0 takes the original slice
-    [0..end0]; every later stage takes [aligned_entry] + original slice
-    (prev+1 .. end), where aligned_entry is the kappa-aligned previous
-    boundary sigma — computed exactly as the runtime should compute it.
+    Mirrors official SPEED: a working copy of the schedule is sliced by
+    global boundary indices, and after every transition the boundary
+    coordinate is patched in place with the kappa-aligned sigma
+    (`working[end] = aligned_sigma(float(working[end]), ratio)[1]`). For
+    unique boundaries this equals the aligned-entry-per-stage model; for
+    coincident boundaries it makes the second transition read the
+    already-aligned coordinate and align it again.
     """
     segs = canonical_segments(sigmas, transition_steps)
+    working = [float(s) for s in sigmas]
     schedules = []
-    entry = None
     for k, (start, end) in enumerate(segs):
-        if k == 0:
-            sched = [float(s) for s in sigmas[start:end + 1]]
-        else:
-            sched = [entry] + [float(s) for s in sigmas[start + 1:end + 1]]
-        schedules.append(sched)
+        schedules.append([working[i] for i in range(start, end + 1)])
         if k < len(segs) - 1:
-            _kappa, entry = aligned_sigma(float(sigmas[end]), ratios[k])
+            _kappa, entry = aligned_sigma(float(working[end]), ratios[k])
+            working[end] = entry
     return schedules
 
 
@@ -302,6 +302,65 @@ def test_delta_custom_multi_stage_matches_resolved_boundaries():
     assert_matches_canonical(calls, sigmas, tuple(resolved), ratios)
 
 
+def test_delta_custom_duplicate_boundaries_follow_working_sigmas():
+    """Resolved coincident boundaries execute the upstream working-sigmas model.
+
+    With A=219.48, beta=2.42, delta=0.01 on an 8x8 latent, both thresholds
+    quantize onto sigma index 1 (guarded below, so the test cannot silently
+    rot if the calibration or the schedule changes). Upstream SPEED handles
+    the repeated boundary as: stage 0 samples 0..1, transition A aligns and
+    patches working[1], the intermediate stage gets the single-entry slice
+    working[1:2] and denoises ZERO steps, transition B reads the
+    already-aligned coordinate, aligns it AGAIN (intentional compounding),
+    patches again, and the final stage runs working[1:] with the
+    double-aligned entry.
+    """
+    from speed_scripts.h3_runtime import resolve_transition_steps
+
+    sigmas = torch.linspace(1.0, 0.0, 11)
+    cfg = SpeedConfig(
+        scales=(0.25, 0.5, 1.0),
+        transition_steps=(3, 5),  # ignored by delta_custom
+        transition_mode="delta_custom",
+        delta=0.01,
+        noise_amplitude=219.48,
+        noise_decay_exponent=2.42,
+        full_latent_h=8,
+        full_latent_w=8,
+    )
+    resolved = resolve_transition_steps(cfg, sigmas, H_full=8, W_full=8)
+    assert resolved == (1, 1), (
+        f"calibration no longer resolves to duplicate boundaries: {resolved}"
+    )
+
+    calls = run(cfg, sigmas=sigmas, latent=make_latent(t=2, h=8, w=8))
+    orig = [float(s) for s in sigmas]
+    ratios = [0.5 / 0.25, 1.0 / 0.5]
+
+    # Full oracle match (generalized patch-and-read model, duplicates included).
+    assert_matches_canonical(calls, sigmas, resolved, ratios)
+
+    # Stage shapes: stage 0 ends at the boundary; the intermediate stage is a
+    # single-entry schedule (zero denoising steps); the final stage gets the
+    # rest.
+    assert len(calls) == 3
+    assert calls[0] == pytest.approx(orig[0:2])
+    assert len(calls[1]) == 1, f"intermediate stage must denoise zero steps: {calls[1]}"
+    assert calls[2][1:] == pytest.approx(orig[2:11])
+
+    # The final entry is the DOUBLE-aligned boundary coordinate: transition B
+    # read transition A's patched sigma and aligned it again.
+    _k_a, new_q_a = aligned_sigma(orig[1], ratios[0])
+    assert calls[1] == pytest.approx([new_q_a])
+    _k_b, new_q_b = aligned_sigma(new_q_a, ratios[1])
+    assert calls[2][0] == pytest.approx(new_q_b)
+
+    # Zero-step stage contributes nothing: total denoising callbacks are
+    # still len(sigmas) - 1.
+    total = sum(len(call) - 1 for call in calls)
+    assert total == len(sigmas) - 1
+
+
 def test_progress_advances_once_per_global_step_multistage():
     """Preview bar advances exactly 1..n_steps across a 4-stage run."""
     pbar_updates = []
@@ -371,16 +430,21 @@ def test_boundary_at_schedule_end_raises():
 
 
 def test_duplicate_transition_steps_rejected():
-    """Duplicate boundaries (5,5) would produce an empty middle stage.
+    """Explicit duplicate boundaries (5,5) are rejected as user error.
 
-    Official SPEED would collapse the schedule; SpeedConfig cannot express
-    that (n_stages is fixed by len(scales)), so it is an H3-specific
-    restriction and fails loudly at the config boundary.
+    Upstream SPEED does NOT collapse duplicate transitions: it runs a
+    zero-step intermediate segment (a single-entry sigma schedule denoises
+    nothing) and still performs the spectral expand + alignment for each
+    transition. Resolved ("delta_custom") steps follow that model and are
+    accepted. Explicit steps are the H3-facing convenience API, where a
+    duplicate index cannot express a meaningful stage ladder, so it fails
+    loudly at the config boundary.
     """
     with pytest.raises(ValueError, match="strictly increasing"):
         SpeedConfig(
             scales=(1 / 3, 2 / 3, 1.0),
             transition_steps=(5, 5),
+            transition_mode="explicit",
         )
 
 
@@ -389,4 +453,19 @@ def test_decreasing_transition_steps_rejected():
         SpeedConfig(
             scales=(1 / 3, 2 / 3, 1.0),
             transition_steps=(7, 3),
+            transition_mode="explicit",
         )
+
+
+def test_duplicate_transition_steps_allowed_in_delta_custom():
+    """delta_custom accepts duplicate/decreasing steps (resolved upstream-style)."""
+    SpeedConfig(
+        scales=(1 / 3, 2 / 3, 1.0),
+        transition_steps=(5, 5),
+        transition_mode="delta_custom",
+    )
+    SpeedConfig(
+        scales=(1 / 3, 2 / 3, 1.0),
+        transition_steps=(7, 3),
+        transition_mode="delta_custom",
+    )

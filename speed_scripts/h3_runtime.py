@@ -284,20 +284,6 @@ def resolve_transition_steps(
         return tuple(rts_steps)
     return tuple(int(s) for s in config.transition_steps)
 
-def _stage_sigma_slice(sigmas, ss_start, ss_end, ss_entry):
-    """One stage's sigma schedule from GLOBAL original-schedule indices.
-
-    Covers original indices ss_start..ss_end of the original schedule. For
-    stages after the first, index ss_start is replaced by the aligned
-    re-entry sigma (ss_entry), so the stage still ends at original index
-    ss_end and runs ss_end - ss_start denoising steps.
-    """
-    ss_tail = sigmas[ss_start + 1:ss_end + 1]
-    if ss_entry is None:
-        return sigmas[ss_start:ss_end + 1]
-    return torch.cat([sigmas.new_tensor([ss_entry]), ss_tail], dim=0)
-
-
 def run_speed_pipeline(
     noise,
     guider,
@@ -371,11 +357,19 @@ def run_speed_pipeline(
     for rsp_ts in transition_steps:
         if not 0 < rsp_ts < len(sigmas) - 1:
             raise ValueError("transition step must be inside the sigma schedule")
-    if any(a >= b for a, b in zip(transition_steps[:-1], transition_steps[1:])):
-        raise ValueError(
-            f"resolved transition steps must be strictly increasing: got "
-            f"{list(transition_steps)}"
-        )
+    # NOTE: resolved steps are NOT required to be strictly increasing. Upstream
+    # SPEED lets multiple transitions quantize onto the same sigma index: the
+    # repeated boundary yields a zero-denoising-step intermediate segment while
+    # every transition still runs its spectral expand + alignment.
+
+    # Upstream's working-sigmas model: slice every stage by GLOBAL boundary
+    # indices into this working copy, and after each transition patch the
+    # boundary coordinate in place with the aligned sigma (upstream:
+    # `scheduler.sigmas[end] = t_tilde`). For unique boundaries this is
+    # identical to replacing the boundary entry per stage slice; for coincident
+    # boundaries the second transition reads the already-aligned coordinate and
+    # aligns it again.
+    working_sigmas = sigmas.clone()
 
     # Stage 1: initialize coarse latent + noise at scale[0].
     s0_h, s0_w, s0_t = stage_hw_t[0]
@@ -406,11 +400,12 @@ def run_speed_pipeline(
 
     # Canonical generate structure: `transition_steps` (resolved above,
     # delta-optimal when transition_mode == "delta_custom") are GLOBAL indices
-    # into the ORIGINAL sigma schedule — never local indices into a shortened
-    # tail. Stage k runs original indices [prev_boundary+1 .. boundary]
+    # into the sigma schedule — never local indices into a shortened tail.
+    # Stage k runs sigma indices [prev_boundary+1 .. boundary]
     # (stage 0: [0 .. boundary0]); at each boundary the output is DCT-expanded
-    # + kappa-aligned, and the next stage re-enters at the aligned boundary
-    # sigma, which replaces the original boundary coordinate in its slice.
+    # + kappa-aligned, and the boundary coordinate in `working_sigmas` is
+    # patched in place with the aligned sigma, so the next stage re-enters
+    # at the aligned coordinate.
     stage_start_pub = coarse_noise
     stage_start_latent = cur_latent["samples"]
     last_public = None
@@ -425,13 +420,12 @@ def run_speed_pipeline(
     if stock_cb is None:
         stock_cb = _build_preview_callback(guider, global_total, x0_output)
     global_done = 0
-    global_start = 0  # GLOBAL original-schedule index the next stage begins at.
-    aligned_entry = None  # Aligned re-entry sigma for stages after the first.
+    global_start = 0  # GLOBAL index the next stage begins at (into working_sigmas).
 
     for stage_idx in range(n_stages - 1):
         # Boundary for this stage: transition_steps[stage_idx] is a GLOBAL
-        # index into the ORIGINAL sigma schedule identifying where the NEXT
-        # scale begins. The final stage's global_end is len(sigmas) - 1.
+        # index into the sigma schedule identifying where the NEXT scale
+        # begins. The final stage's global_end is len(sigmas) - 1.
         global_end = int(transition_steps[stage_idx])
 
         log.info("[SPEED] stage %d start: latent=%s pub=%s sigmas=%d boundary=%d",
@@ -451,8 +445,8 @@ def run_speed_pipeline(
         walker.apply_stage(rsp_sh, rsp_sw)
 
         # Run the current stage over its global slice
-        # (`_stage_sigma_slice(sigmas, global_start, global_end, aligned_entry)`).
-        # The wrapped callback forwards to the shared stock callback
+        # (`working_sigmas[global_start : global_end + 1]`). The wrapped
+        # callback forwards to the shared stock callback
         # (`latent_preview.prepare_callback`) with the step remapped to the
         # global timeline, so the bar runs continuously and preview bytes
         # flow through the same PROGRESS_BAR_HOOK every other ComfyUI node
@@ -461,7 +455,7 @@ def run_speed_pipeline(
         callback = _wrap_preview_callback(
             stock_cb, x0_output, global_done, global_total,
         )
-        stage_sigmas = _stage_sigma_slice(sigmas, global_start, global_end, aligned_entry)
+        stage_sigmas = working_sigmas[global_start:global_end + 1]
         public = guider.sample(
             stage_start_pub,
             stage_start_latent,
@@ -473,9 +467,10 @@ def run_speed_pipeline(
         )
         last_public = public
         global_done += len(stage_sigmas) - 1
-        # Kappa alignment uses the ORIGINAL transition sigma at the GLOBAL
-        # boundary index — never a value from a shortened tail schedule.
-        rsp_q = float(sigmas[global_end])
+        # Kappa alignment uses the transition sigma at the GLOBAL boundary
+        # index of the working schedule — which previous transitions may have
+        # already patched with an aligned coordinate.
+        rsp_q = float(working_sigmas[global_end])
         public_video, public_audio = unpack_latent(public)
         log.info("[SPEED] stage %d output: video=%s audio=%s rsp_q=%.4f",
                  stage_idx, list(public_video.shape), list(public_audio.shape), rsp_q)
@@ -491,6 +486,9 @@ def run_speed_pipeline(
             kappa, new_q = aligned_sigma(rsp_q, ratio)
         else:
             kappa, new_q = 1.0, rsp_q
+        # Patch the boundary coordinate in the working schedule with the
+        # aligned sigma (upstream: `scheduler.sigmas[end] = t_tilde`).
+        working_sigmas[global_end] = new_q
 
         # DCT-expand the video (coupled or fresh band) and rescale by kappa.
         next_h, next_w, next_t = stage_hw_t[stage_idx + 1]
@@ -572,15 +570,15 @@ def run_speed_pipeline(
                  new_q)
 
         # Advance to the next stage. The next stage's sigma slice derives
-        # from GLOBAL boundaries of the original schedule; only the entry
-        # coordinate changes (aligned sigma replaces the boundary sigma).
+        # from GLOBAL boundaries of the working schedule; the boundary
+        # coordinate was just patched in place with the aligned sigma.
         stage_start_pub = next_noise
         stage_start_latent = next_zero
         global_start = global_end
-        aligned_entry = new_q
 
     # After the final transition, run the last full-res stage over the
-    # remaining ORIGINAL-schedule tail, entering at the aligned boundary sigma.
+    # remaining working-schedule tail, entering at the aligned boundary sigma
+    # (patched into working_sigmas by the last transition).
     log.info("[SPEED] final stage: latent=%s sigmas=%d",
              list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
              len(sigmas) - global_start)
@@ -599,7 +597,7 @@ def run_speed_pipeline(
         stage_start_pub,
         stage_start_latent,
         sampler,
-        _stage_sigma_slice(sigmas, global_start, len(sigmas) - 1, aligned_entry),
+        working_sigmas[global_start:],
         callback=final_callback,
         disable_pbar=disable_pbar,
         seed=noise.seed,
