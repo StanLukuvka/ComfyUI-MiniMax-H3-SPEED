@@ -94,6 +94,11 @@ def test_harvest_node_runs_native_euler_and_emits_json():
     assert "r2" in parsed
     assert "health" in parsed
     assert "report" in parsed
+    # Measurement-basis metadata (schema v2): the fit is an empirical H3
+    # residual calibration, not the SPEED paper's clean-data spectrum.
+    assert parsed["schema_version"] == 2
+    assert parsed["measurement_basis"] == "residual_x_minus_denoised"
+    assert parsed["calibration_kind"] == "empirical_h3_residual_fit"
     # The fit should be a float in a reasonable range
     assert 0.0 < float(parsed["noise_amplitude"]) < 1e6
     assert -5.0 <= float(parsed["noise_decay_exponent"]) < 10.0

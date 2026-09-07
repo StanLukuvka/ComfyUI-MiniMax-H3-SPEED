@@ -96,7 +96,6 @@ Each `records[]` entry (per measured callback):
   "stage_index": 1,
   "stage_scale": 0.5,
   "stage_local_step": 2,
-  "video_shape": [1, 24, 31, 23, 40],
   "sigma": {
     "actual": 0.621,
     "actual_next": 0.58,
@@ -174,8 +173,9 @@ Eligibility and EMA: `eligible_point` / `eligible_band` / `eligible_ema`
 answer, per step, whether the live x0 spectrum would already make the stage
 eligible to expand if it were controlling SPEED
 (`actual_sigma <= threshold`). `ema_power` is a log-space exponential moving
-average of the raw boundary power, seeded from the first valid x0 measurement
-of the run. It is recorded for study only.
+average of the raw boundary power, tracked per stage: each stage's EMA is
+seeded from that stage's first valid x0 measurement of the run, never from
+the static calibration coefficients. It is recorded for study only.
 
 Transitions: each `transitions[]` entry records one real resolution change
 (`from_stage`, `to_stage`, `global_schedule_index`, scales, ratio,
