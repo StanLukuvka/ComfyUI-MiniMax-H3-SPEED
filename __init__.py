@@ -49,6 +49,7 @@ _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",
     "sampler_sigma_harvest_node",
+    "sampler_sigma_trace_node",
 )
 
 for _name in _NODE_MODULES:
