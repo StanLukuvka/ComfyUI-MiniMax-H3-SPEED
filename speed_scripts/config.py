@@ -74,6 +74,10 @@ class SpeedConfig:
                 raise ValueError("need (n_scales - 1) transition steps")
             if not all(s >= 1 for s in steps):
                 raise ValueError("every transition step must be at least one")
+            if any(a >= b for a, b in zip(steps[:-1], steps[1:])):
+                raise ValueError(
+                    f"transition steps must be strictly increasing: got {list(steps)}"
+                )
         if not 0.0 < self.delta < 1.0:
             raise ValueError("delta must be in (0, 1)")
         if self.transition_mode not in ("explicit", "delta_custom"):
