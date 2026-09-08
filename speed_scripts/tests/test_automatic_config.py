@@ -52,7 +52,8 @@ def _node_config(latent, **overrides):
 
 
 def test_input_schema_widgets_and_required_inputs():
-    """Regression: the Automatic node's required inputs and defaults are unchanged."""
+    """Regression: the Automatic node's required inputs and widget defaults
+    stay as shipped (calibration defaults may move; the schema shape may not)."""
     mod = importlib.import_module("sampler_node")
     required = mod.MiniMaxH3SPEEDSampler.INPUT_TYPES()["required"]
     for key in ("noise", "guider", "sigmas", "latent_image", "stages"):
@@ -68,10 +69,10 @@ def test_input_schema_widgets_and_required_inputs():
         ["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"},
     )
     assert required["Tolerance (Delta)"] == (
-        "FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001},
+        "FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001},
     )
-    assert required["noise_amplitude"][1]["default"] == 7.394
-    assert required["noise_decay_exponent"][1]["default"] == 0.62
+    assert required["noise_amplitude"][1]["default"] == 12.105
+    assert required["noise_decay_exponent"][1]["default"] == 0.773
     assert required["seed_offset"][1]["default"] == 10000
 
 
