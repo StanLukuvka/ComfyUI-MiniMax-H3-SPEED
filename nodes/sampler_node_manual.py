@@ -1,28 +1,18 @@
 """Manual step-through SPEED sampler — explicit transition schedule.
 
-Exposes the transition schedule directly: up to four
-(transition_goal, transition_resolution) widget pairs.
+Exposes up to four (transition_goal, transition_resolution) pairs.
 
-Semantics:
-
-- ``transition_goal_N == 0`` or ``transition_resolution_N == 0`` disables stage N.
-- ``ratio_mode == "steps"`` (default): goal is a STEP INDEX (position in the
-  sigma schedule) at which stage N ends; resolution is that stage's scale.
-  The final active stage's goal is unused — it runs to the end of the
-  schedule. Example (defaults): goals 3/5/8, resolutions 0.25/0.5/0.75/1.0
-  == quarter → half → three-quarter → full.
-- ``ratio_mode == "ratio"``: goal must be <= 1 and is a 0-1 fraction of the
-  schedule; the boundary is placed at ``round(goal * total_steps)``. The
-  stage scale is ``resolution`` unchanged — goal positions the boundary,
-  it never rescales the stage.
-
-The cond-patching is done via LatentWalker — the latent lifecycle is owned
-by the walker, not embedded in h3_runtime.
+- goal/resolution == 0 disables that stage.
+- steps mode: goal is the global sigma-schedule step index where the stage ends.
+- ratio mode: goal is a 0-1 schedule fraction used only to place the boundary.
+- resolution is always the stage scale.
+- the final active stage's goal is unused; it runs to the end of the schedule.
 """
 
 from __future__ import annotations
 
 import comfy.samplers
+import comfy.utils
 
 from speed_scripts.config import RATIO_MODES, SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
@@ -31,31 +21,22 @@ from speed_scripts.nodes_common import full_res_dims, validate_transition_steps
 
 
 def CALCULATE_SCALES(transitions, ratio_mode):
-    """Build the per-stage scale factors from (goal, resolution) pairs.
+    """Return active stage scales; goal affects boundary placement, never scale."""
+    if ratio_mode not in RATIO_MODES:
+        raise ValueError(f"unsupported ratio_mode: {ratio_mode!r}")
 
-    ``resolution`` is the stage's scale in both modes — the goal only
-    positions the stage boundary (a step index in "steps" mode, a 0-1
-    schedule fraction in "ratio" mode) and never rescales the stage.
-    A goal of 0 skips that stage; later stages stay active and shift down
-    (the caller validates the resulting schedule).
-    """
-    scales = []
-    for goal, resolution in transitions:
-        if goal == 0 or resolution == 0:
-            continue  # Skips this stage; later stages remain active.
-        scales.append(resolution)
+    scales = [
+        resolution
+        for goal, resolution in transitions
+        if goal != 0 and resolution != 0
+    ]
     if not scales:
         raise ValueError("No valid scales calculated. Check transition goals and resolutions.")
     return scales
 
 
 class MiniMaxH3SPEEDSamplerManual:
-    """SPEED progressive-resolution diffusion for MiniMax-H3's packed latent.
-
-    Manual step-through variant of MiniMaxH3SPEEDSampler: the transition
-    schedule (per-stage boundaries and scales) is set directly on the node
-    instead of coming from a named preset.
-    """
+    """SPEED progressive-resolution diffusion with an explicit stage schedule."""
 
     DESCRIPTION = (
         "Manual SPEED sampler — you set the stages by hand. Give up to four "
@@ -76,28 +57,57 @@ class MiniMaxH3SPEEDSamplerManual:
                 "guider": ("GUIDER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
-                "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
+                "noise_policy": (
+                    ["direct_coarse", "coupled_full_grid"],
+                    {"default": "direct_coarse"},
+                ),
+                "seed_offset": (
+                    "INT",
+                    {"default": 10000, "min": 0, "max": 2**31 - 1},
+                ),
                 "ratio_mode": (list(RATIO_MODES), {"default": "steps"}),
                 "transition_goal_1": ("FLOAT", {"default": 3, "min": 0, "max": 1000}),
-                "transition_resolution_1": ("FLOAT", {"default": 0.25, "min": 0, "max": 1}),
+                "transition_resolution_1": (
+                    "FLOAT",
+                    {"default": 0.25, "min": 0, "max": 1},
+                ),
                 "transition_goal_2": ("FLOAT", {"default": 5, "min": 0, "max": 1000}),
-                "transition_resolution_2": ("FLOAT", {"default": 0.5, "min": 0, "max": 1}),
+                "transition_resolution_2": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0, "max": 1},
+                ),
                 "transition_goal_3": ("FLOAT", {"default": 8, "min": 0, "max": 1000}),
-                "transition_resolution_3": ("FLOAT", {"default": 0.75, "min": 0, "max": 1}),
+                "transition_resolution_3": (
+                    "FLOAT",
+                    {"default": 0.75, "min": 0, "max": 1},
+                ),
                 "transition_goal_4": ("FLOAT", {"default": 15, "min": 0, "max": 1000}),
-                "transition_resolution_4": ("FLOAT", {"default": 1.0, "min": 0, "max": 1}),
+                "transition_resolution_4": (
+                    "FLOAT",
+                    {"default": 1.0, "min": 0, "max": 1},
+                ),
             },
         }
 
-    def sample(self, noise, guider, sigmas, latent_image,
-               noise_policy="direct_coarse",
-               seed_offset=10000,
-               ratio_mode="steps",
-               transition_goal_1=3, transition_resolution_1=0.25,
-               transition_goal_2=5, transition_resolution_2=0.5,
-               transition_goal_3=8, transition_resolution_3=0.75,
-               transition_goal_4=15, transition_resolution_4=1.0, **kwargs):
+    def sample(
+        self,
+        noise,
+        guider,
+        sigmas,
+        latent_image,
+        noise_policy="direct_coarse",
+        seed_offset=10000,
+        ratio_mode="steps",
+        transition_goal_1=3,
+        transition_resolution_1=0.25,
+        transition_goal_2=5,
+        transition_resolution_2=0.5,
+        transition_goal_3=8,
+        transition_resolution_3=0.75,
+        transition_goal_4=15,
+        transition_resolution_4=1.0,
+        **kwargs,
+    ):
         transitions = [
             (float(transition_goal_1), float(transition_resolution_1)),
             (float(transition_goal_2), float(transition_resolution_2)),
@@ -114,37 +124,37 @@ class MiniMaxH3SPEEDSamplerManual:
             )
 
         total_steps = len(sigmas) - 1
-        goals = [g for g, r in transitions if g > 0 and r != 0]
+        goals = [goal for goal, resolution in transitions if goal > 0 and resolution != 0]
+        transition_goals = goals[:-1]
 
         if ratio_mode == "steps":
-            for g in goals[:-1]:
-                if g != int(g):
+            for goal in transition_goals:
+                if goal != int(goal):
                     raise ValueError(
-                        f"transition_goal must be a whole step index in steps mode: got {g}. "
-                        f"Use ratio_mode='ratio' for fractional (0-1) goals."
+                        f"transition_goal must be a whole step index in steps mode: got {goal}. "
+                        "Use ratio_mode='ratio' for fractional (0-1) goals."
                     )
-            step_goals = [int(g) for g in goals[:-1]]
+            step_goals = [int(goal) for goal in transition_goals]
         elif ratio_mode == "ratio":
-            if any(g > 1 for g in goals):
+            if any(goal > 1 for goal in transition_goals):
                 raise ValueError(
-                    f"Invalid goal for ratio mode: {goals}. Goals must be <= 1 "
-                    f"(fraction of the schedule)."
+                    f"Invalid goal for ratio mode: {transition_goals}. Goals must be <= 1 "
+                    "(fraction of the schedule)."
                 )
-            step_goals = [int(round(g * total_steps)) for g in goals[:-1]]
+            step_goals = [int(round(goal * total_steps)) for goal in transition_goals]
         else:
             raise ValueError(f"unsupported ratio_mode: {ratio_mode!r}")
+
         transition_steps = tuple(step_goals)
+        validate_transition_steps(transition_steps, len(sigmas))
 
-        validate_transition_steps(transition_steps, n_stages, len(sigmas))
-
-        # Build the SpeedConfig from the live full-res dims.
         full_h, full_w = full_res_dims(latent_image)
         config = SpeedConfig(
             scales=tuple(scales),
-            transition_steps=tuple(transition_steps),
+            transition_steps=transition_steps,
             transition_mode="explicit",
             noise_policy=noise_policy,
-            delta=0.01,  # unused in explicit mode
+            delta=0.01,
             noise_amplitude=7.394,
             noise_decay_exponent=0.62,
             transition_seed_offset=int(seed_offset),
@@ -152,11 +162,7 @@ class MiniMaxH3SPEEDSamplerManual:
             full_latent_w=full_w,
         )
 
-        # Snapshot pristine for every keyframe/ref on the guider before the
-        # first stage boundary. The runtime will call apply_stage at every
-        # boundary via the h3_runtime shim to do the actual resize.
         LatentWalker(guider)
-
         return run_speed_pipeline(
             noise,
             guider,
@@ -174,5 +180,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3SPEEDSamplerManual": "MiniMax H3 SPEED — Sampler (Manual Step-Through)"
 }
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS",
-           "MiniMaxH3SPEEDSamplerManual"]
+__all__ = [
+    "NODE_CLASS_MAPPINGS",
+    "NODE_DISPLAY_NAME_MAPPINGS",
+    "MiniMaxH3SPEEDSamplerManual",
+]
