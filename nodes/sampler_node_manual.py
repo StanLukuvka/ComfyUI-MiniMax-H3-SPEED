@@ -11,8 +11,10 @@ Semantics:
   The final active stage's goal is unused — it runs to the end of the
   schedule. Example (defaults): goals 3/5/8, resolutions 0.25/0.5/0.75/1.0
   == quarter → half → three-quarter → full.
-- ``ratio_mode == "ratio"``: goal must be <= 1. Scale is
-  ``resolution * goal``; the boundary is placed at ``round(goal * total_steps)``.
+- ``ratio_mode == "ratio"``: goal must be <= 1 and is a 0-1 fraction of the
+  schedule; the boundary is placed at ``round(goal * total_steps)``. The
+  stage scale is ``resolution`` unchanged — goal positions the boundary,
+  it never rescales the stage.
 
 The cond-patching is done via LatentWalker — the latent lifecycle is owned
 by the walker, not embedded in h3_runtime.
@@ -31,21 +33,17 @@ from speed_scripts.nodes_common import full_res_dims, validate_transition_steps
 def CALCULATE_SCALES(transitions, ratio_mode):
     """Build the per-stage scale factors from (goal, resolution) pairs.
 
-    Steps mode: resolution is the stage's scale. Ratio mode: the goal is a
-    fraction of the schedule, and the scale must be scaled by it. A goal of 0
-    skips that stage; later stages stay active and shift down (the caller
-    validates the resulting schedule).
+    ``resolution`` is the stage's scale in both modes — the goal only
+    positions the stage boundary (a step index in "steps" mode, a 0-1
+    schedule fraction in "ratio" mode) and never rescales the stage.
+    A goal of 0 skips that stage; later stages stay active and shift down
+    (the caller validates the resulting schedule).
     """
     scales = []
     for goal, resolution in transitions:
         if goal == 0 or resolution == 0:
             continue  # Skips this stage; later stages remain active.
-        if ratio_mode == "steps":
-            scales.append(resolution)
-        elif ratio_mode == "ratio":
-            if goal > 1:
-                raise ValueError(f"Invalid goal for ratio mode: {goal}. Goal must be <= 1.")
-            scales.append(resolution * goal)
+        scales.append(resolution)
     if not scales:
         raise ValueError("No valid scales calculated. Check transition goals and resolutions.")
     return scales
@@ -119,9 +117,22 @@ class MiniMaxH3SPEEDSamplerManual:
         goals = [g for g, r in transitions if g > 0 and r != 0]
 
         if ratio_mode == "steps":
+            for g in goals[:-1]:
+                if g != int(g):
+                    raise ValueError(
+                        f"transition_goal must be a whole step index in steps mode: got {g}. "
+                        f"Use ratio_mode='ratio' for fractional (0-1) goals."
+                    )
             step_goals = [int(g) for g in goals[:-1]]
-        else:  # "ratio"
+        elif ratio_mode == "ratio":
+            if any(g > 1 for g in goals):
+                raise ValueError(
+                    f"Invalid goal for ratio mode: {goals}. Goals must be <= 1 "
+                    f"(fraction of the schedule)."
+                )
             step_goals = [int(round(g * total_steps)) for g in goals[:-1]]
+        else:
+            raise ValueError(f"unsupported ratio_mode: {ratio_mode!r}")
         transition_steps = tuple(step_goals)
 
         validate_transition_steps(transition_steps, n_stages, len(sigmas))
