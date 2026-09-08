@@ -65,17 +65,16 @@ Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, correcte
 
 | Fit | Mode | Time | Speedup | Quality |
 |------|------|------|---------|---------|
-| Δ0.005 `A12.105 β0.773` | 2-stage | 463s | 1.23× | beats native on text + beats |
-| Δ0.005 | 3-stage | 439s | 1.30× | best text of the class — **quality pick** |
-| Δ0.005 | 4-stage | 435s | 1.31× | same quality, mildest melt artifact |
-| Δ0.01 `A12.436 β0.786` | 2-stage | 450s | 1.27× | near parity, sharp toss — **balanced pick** |
+| Δ0.005 `A12.105 β0.773` | 2-stage | 463s | 1.23× | native equivalent|
+| Δ0.005 | 3-stage | 439s | 1.30× | native equivalent |
+| Δ0.005 | 4-stage | 435s | 1.31× | native equivalent, mildest melt artifact |
+| Δ0.01 `A12.436 β0.786` | 2-stage | 450s | 1.27× | near parity |
 | Δ0.01 | 3-stage | 410s | 1.39× | cleanest mug-landing beat |
-| Δ0.01 | 4-stage | 384s | 1.49× | no artifacts found |
-| Δ0.05 `A6.920 β0.766` | 2-stage | 278s | 2.05× | transition pops, all beats hold |
-| Δ0.05 | 3-stage | 262s | 2.18× | draft tier |
-| Δ0.05 | 4-stage | 238s | 2.41× | most stable of the budget class — **budget pick** |
+| Δ0.01 | 4-stage | 384s | 1.49× | inconsistencies start appearing |
+| Δ0.05 `A6.920 β0.766` | 2-stage | 278s | 2.05× | noticable artifacting |
+| Δ0.05 | 3-stage | 262s | 2.18× | very noticable artifacting but still usable |
+| Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
 
-The multi-stage pipeline suppresses the native blinds-melt artifact at every delta. Old pre-fix failure modes (garbled mug text, face doubling, splatter) do not reproduce on the corrected scheduler.
 
 See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and the review rubric.
 
