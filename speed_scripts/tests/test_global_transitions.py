@@ -313,7 +313,10 @@ def test_delta_custom_duplicate_boundaries_follow_working_sigmas():
     working[1:2] and denoises ZERO steps, transition B reads the
     already-aligned coordinate, aligns it AGAIN (intentional compounding),
     patches again, and the final stage runs working[1:] with the
-    double-aligned entry.
+    double-aligned entry. The slicing and patching follow upstream SPEED;
+    one H3-runtime difference is that the zero-step intermediate stage still
+    invokes `guider.sample` once with its single-entry schedule, where
+    upstream skips the sampler for zero-step segments.
     """
     from speed_scripts.h3_runtime import resolve_transition_steps
 
@@ -436,7 +439,11 @@ def test_duplicate_transition_steps_rejected():
     zero-step intermediate segment (a single-entry sigma schedule denoises
     nothing) and still performs the spectral expand + alignment for each
     transition. Resolved ("delta_custom") steps follow that model and are
-    accepted. Explicit steps are the H3-facing convenience API, where a
+    accepted. This test only checks the config boundary, not the sampler
+    call pattern: under this H3 runtime the zero-step segment still invokes
+    `guider.sample` once (upstream skips the sampler there), while the
+    slicing and alignment above match upstream. Explicit steps are the
+    H3-facing convenience API, where a
     duplicate index cannot express a meaningful stage ladder, so it fails
     loudly at the config boundary.
     """

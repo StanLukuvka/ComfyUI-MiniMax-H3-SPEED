@@ -3,8 +3,13 @@
 Runs one native full-res Euler pass over the full sigma schedule using
 `guider.sample()` (not the SPEED chain), snapshots `residual = x - denoised`
 on each step, fits the radial DCT power spectrum `P = A * |omega|^(-beta)`,
-and emits a flat `calibration` JSON (noise_amplitude, noise_decay_exponent,
-delta, r2, health, report) to paste back into the Automatic node.
+and emits a flat `calibration` JSON (schema_version, noise_amplitude,
+noise_decay_exponent, delta, r2, health, measurement_basis,
+calibration_kind, report) to paste back into the Automatic node.
+
+The fit is an empirical H3 residual calibration (basis:
+`residual_x_minus_denoised`); its A/beta are not the clean-data power
+spectrum from the SPEED paper.
 """
 
 from __future__ import annotations
@@ -28,9 +33,11 @@ class MiniMaxH3HarvestToConfig:
 
     DESCRIPTION = (
         "Sigma Harvest — run this ONCE on a full-res native Euler generation to "
-        "calibrate the Automatic sampler. It measures how noise falls off with "
+        "calibrate the Automatic sampler. It is an empirical H3 residual "
+        "calibration: it measures how the residual (x - denoised) falls off with "
         "frequency (P = A·|ω|^-beta) and gives you A/beta to paste into the "
-        "Automatic node. Does NOT use SPEED — it must run at full res with a "
+        "Automatic node. It does NOT measure the clean-data power spectrum from "
+        "the SPEED paper. Does NOT use SPEED — it must run at full res with a "
         "fixed sigma schedule."
     )
     RETURN_TYPES = ("STRING", "LATENT")
@@ -233,16 +240,22 @@ class MiniMaxH3HarvestToConfig:
         # noise_amplitude / noise_decay_exponent + delta. No per-preset
         # transition_steps table — SPEED computes it via resolve_transition_steps.
         calibration = {
+            "schema_version": 2,
             "noise_amplitude": A,
             "noise_decay_exponent": beta,
             "delta": float(delta),
             "r2": r2,
             "health": health,
+            # Measurement basis: this fit comes from the residual (x - denoised),
+            # not the clean-data x0 spectrum. Kept alongside the original keys
+            # so existing consumers keep working unchanged.
+            "measurement_basis": "residual_x_minus_denoised",
+            "calibration_kind": "empirical_h3_residual_fit",
         }
 
         # Human-readable report — just the plug-and-play values
         lines = [
-            f"Calibrated: noise_amplitude={A:.3f}  noise_decay_exponent={beta:.3f}  r²={r2:.4f}  health={health}",
+            f"Empirical H3 residual calibration: noise_amplitude={A:.3f}  noise_decay_exponent={beta:.3f}  r²={r2:.4f}  health={health}",
         ]
         if health in ("suspect", "weak", "invalid"):
             lines.append(

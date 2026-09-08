@@ -11,27 +11,12 @@ from __future__ import annotations
 
 import comfy.samplers
 
-from speed_scripts.config import SpeedConfig
+from speed_scripts.automatic_config import (
+    PRESET_TO_STAGES,
+    build_automatic_speed_config,
+)
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.latent_class import LatentWalker
-from speed_scripts.nodes_common import full_res_dims
-
-
-# Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
-# 2: 0.5 → 1.0, 3: 0.33 → 0.66 → 1.0, 4: 0.25 → 0.5 → 0.75 → 1.0
-STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
-    2: (0.5, 1.0),
-    3: (0.3333333333, 0.6666666667, 1.0),
-    4: (0.25, 0.5, 0.75, 1.0),
-}
-# Backwards compat: old preset names -> stages (for workflows saved before the rename)
-PRESET_TO_STAGES: dict[str, int] = {
-    "half_then_full": 2,
-    "three_quarter_then_full": 2,
-    "quarter_half_full": 3,
-    "aggressive": 3,
-    "quarter_half_3q_full": 4,
-}
 
 
 class MiniMaxH3SPEEDSampler:
@@ -83,7 +68,6 @@ class MiniMaxH3SPEEDSampler:
                 kwargs.get("Tolerance",
                 kwargs.get("tolerance",
                 kwargs.get("delta", kwargs.get("Delta", 0.01)))))
-        delta = float(delta)
         if "preset" in kwargs:
             preset = kwargs.pop("preset")
             stages = PRESET_TO_STAGES.get(preset, stages)
@@ -92,23 +76,14 @@ class MiniMaxH3SPEEDSampler:
         except Exception:
             stages = 3
         stages = max(2, min(4, stages))
-        scales = STAGES_TO_SCALES[stages]
-        # Dummy steps — validated then overridden by delta_custom power-spectrum thresholds
-        transition_steps = tuple(range(1, len(scales)))
-
-        # Resolve the live full-res dims, build the SpeedConfig.
-        full_h, full_w = full_res_dims(latent_image)
-        config = SpeedConfig(
-            scales=tuple(scales),
-            transition_steps=tuple(transition_steps),
-            transition_mode="delta_custom",
+        config = build_automatic_speed_config(
+            latent_image,
+            stages=stages,
             noise_policy=noise_policy,
-            delta=float(delta),
-            noise_amplitude=float(noise_amplitude),
-            noise_decay_exponent=float(noise_decay_exponent),
-            transition_seed_offset=int(seed_offset),
-            full_latent_h=full_h,
-            full_latent_w=full_w,
+            delta=delta,
+            noise_amplitude=noise_amplitude,
+            noise_decay_exponent=noise_decay_exponent,
+            seed_offset=seed_offset,
         )
 
         # Snapshot pristine for every keyframe/ref on the guider before the
