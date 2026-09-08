@@ -1,3 +1,4 @@
+# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §7 (commit 1) — flow-produced, do not hand-edit
 """Automatic SPEED sampler — uses LatentWalker to own the I2V keyframe
 lifecycle across the SPEED stage boundaries.
 
@@ -33,7 +34,7 @@ class MiniMaxH3SPEEDSampler:
     DESCRIPTION = (
         "Automatic SPEED sampler — pick stages (2, 3, or 4) and go. "
         "Starts cheap at low resolution, then upsamples when the detail "
-        "matters. Set Tolerance (1% = 0.01) to trade blur for speed. "
+        "matters. Set Tolerance (0.5% = 0.005) to trade blur for speed. "
         "Uses baked A/beta; re-calibrate with the Harvest node if you "
         "change checkpoint."
     )

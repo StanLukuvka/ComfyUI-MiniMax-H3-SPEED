@@ -1,3 +1,4 @@
+# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §8-12 (commit 2) — flow-produced, do not hand-edit
 """Runtime observer contract for the multi-stage SPEED pipeline.
 
 `run_speed_pipeline` notifies an optional observer about what the run does:

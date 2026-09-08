@@ -1,3 +1,4 @@
+# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §4-6, 17, 48 (commit 4) — flow-produced, do not hand-edit
 """SPEED Sigma Harvest (Continuous) — diagnostic node.
 
 Runs ONE real multi-stage SPEED generation (the same `run_speed_pipeline` the
@@ -56,9 +57,9 @@ class MiniMaxH3SPEEDSigmaHarvest:
                 "latent_image": ("LATENT",),
                 "stages": ("INT", {"default": 3, "min": 2, "max": 4}),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
-                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6, "step": 0.001, "round": 0.001}),
-                "noise_decay_exponent": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 10.0, "step": 0.001, "round": 0.001}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "noise_amplitude": ("FLOAT", {"default": 12.105, "min": 0.0, "max": 1e6, "step": 0.001, "round": 0.001}),
+                "noise_decay_exponent": ("FLOAT", {"default": 0.773, "min": 0.0, "max": 10.0, "step": 0.001, "round": 0.001}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
                 "measurement_mode": (["both", "x0_only", "residual_only"], {"default": "both"}),
                 "analysis_stride": ("INT", {"default": 1, "min": 1, "max": 1000}),
@@ -70,7 +71,7 @@ class MiniMaxH3SPEEDSigmaHarvest:
 
     def sample(self, noise, guider, sigmas, latent_image, stages=3,
                noise_policy="direct_coarse",
-               noise_amplitude=7.394, noise_decay_exponent=0.62,
+               noise_amplitude=12.105, noise_decay_exponent=0.773,
                seed_offset=10000,
                measurement_mode="both", analysis_stride=1,
                smoothing_alpha=0.25, boundary_band_half_width=1.0,
@@ -80,7 +81,7 @@ class MiniMaxH3SPEEDSigmaHarvest:
         delta = kwargs.get("Tolerance (Delta)",
                 kwargs.get("Tolerance",
                 kwargs.get("tolerance",
-                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
+                kwargs.get("delta", kwargs.get("Delta", 0.005)))))
         if "preset" in kwargs:
             preset = kwargs.pop("preset")
             stages = PRESET_TO_STAGES.get(preset, stages)
