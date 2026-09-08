@@ -1,3 +1,4 @@
+# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §50-54 (commit 2) — flow-produced, do not hand-edit
 """Runtime observer hook tests.
 
 Runs `run_speed_pipeline` with the same fake guider/noise infrastructure as

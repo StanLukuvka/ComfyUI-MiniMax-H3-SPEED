@@ -1,3 +1,4 @@
+# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §55-56 (commit 4) — flow-produced, do not hand-edit
 """Node tests for the continuous SPEED Sigma Harvest (plan §55, §56).
 
 Drives `run_speed_pipeline` through the node with the same fake
