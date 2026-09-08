@@ -529,6 +529,9 @@ def run_speed_pipeline(
             )
 
         callback = _wrap_observer_callback(preview_cb, observer, _step_event)
+        # H3-runtime behavior: a zero-step intermediate stage still invokes
+        # guider.sample once with a single-sigma schedule (zero denoising
+        # steps). Upstream SPEED skips the sampler for such segments.
         public = guider.sample(
             stage_start_pub,
             stage_start_latent,

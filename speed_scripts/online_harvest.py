@@ -2,8 +2,9 @@
 
 Per-step companion to :mod:`speed_scripts.harvest`: measures the radial DCT
 power spectrum of a video tensor and fits ``P = A * |omega|^(-beta)`` without
-leaving the torch device, so a per-callback collector never pays for GPU
-sync or a ``.cpu().numpy()`` transfer. Also provides direct point/band
+leaving the torch device, so a per-callback collector avoids full per-step
+NumPy/profile transfers. Extracting Python scalars from the resulting
+tensors still synchronizes CUDA. Also provides direct point/band
 sampling of a radial profile, a log-space EMA for boundary-power smoothing,
 and JSON-safe fit records (failed fits become nulls, never NaN/Infinity).
 
@@ -171,7 +172,7 @@ def sample_radial_power(freqs: torch.Tensor, profile: torch.Tensor, omega: float
         return float(y[0])
     if omega >= float(x[-1]):
         return float(y[-1])
-    upper = int(torch.clamp(torch.searchsorted(x, torch.tensor(omega)), 1, x.numel() - 1))
+    upper = int(torch.clamp(torch.searchsorted(x, x.new_tensor(omega)), 1, x.numel() - 1))
     x0 = float(x[upper - 1])
     x1 = float(x[upper])
     y0 = float(y[upper - 1])
@@ -208,17 +209,20 @@ def update_log_ema(
 
     The first valid measurement seeds the EMA (plan §36 — never seed from the
     baked calibration A/beta). A non-positive ``raw`` carries no log-space
-    information and leaves the previous value unchanged. Returns the EMA in
-    linear power units.
+    information and leaves the previous value unchanged. ``alpha = 1.0``
+    disables smoothing: the EMA equals the raw measurement exactly. Returns
+    the EMA in linear power units.
     """
-    if not 0.0 < alpha < 1.0:
-        raise ValueError("alpha must be in (0, 1)")
+    if not 0.0 < alpha <= 1.0:
+        raise ValueError("alpha must be in (0, 1]")
     if raw <= 0:
         return previous_ema if previous_ema is not None else float("nan")
     if previous_ema is None:
         return float(raw)
     if previous_ema <= 0:
         raise ValueError("previous_ema must be positive once seeded")
+    if alpha == 1.0:
+        return float(raw)
     log_ema = (1.0 - alpha) * math.log(previous_ema) + alpha * math.log(raw)
     return math.exp(log_ema)
 
@@ -296,8 +300,8 @@ class SpeedHarvestCollector:
     ):
         if measurement_mode not in ("both", "x0_only", "residual_only"):
             raise ValueError(f"unsupported measurement_mode: {measurement_mode}")
-        if not 0.0 < smoothing_alpha < 1.0:
-            raise ValueError("smoothing_alpha must be in (0, 1)")
+        if not 0.0 < smoothing_alpha <= 1.0:
+            raise ValueError("smoothing_alpha must be in (0, 1]")
         if analysis_stride < 1:
             raise ValueError("analysis_stride must be >= 1")
         self.delta = float(delta)
@@ -451,18 +455,18 @@ class SpeedHarvestCollector:
             # Plan §21: fit only the canonical range, capped at half the
             # current stage's smaller spatial dimension, never DC.
             omega_max = min(event.stage_h, event.stage_w) / 2.0
+            freqs, profile = radial_dct_power_torch(x0_video)
             fit = fit_power_law_torch(
-                *radial_dct_power_torch(x0_video),
+                freqs, profile,
                 omega_min=DEFAULT_OMEGA_MIN,
                 omega_max=omega_max,
             )
             x0_block: dict[str, Any] = {"fit": build_fit_record(fit)}
-            boundary = self._boundary_block(event, x0_video)
+            boundary = self._boundary_block(event, freqs, profile)
             if boundary is not None:
                 x0_block["current_boundary"] = boundary
             x0_block["fit_predictions"] = self._fit_predictions(fit)
             if self.store_radial_profiles:
-                freqs, profile = radial_dct_power_torch(x0_video)
                 x0_block["radial_profile"] = {
                     "freqs": [float(v) for v in freqs.detach().cpu().tolist()],
                     "power": [float(v) for v in profile.detach().cpu().tolist()],
@@ -534,19 +538,19 @@ class SpeedHarvestCollector:
             block["ema_power"] = None
         return block
 
-    def _boundary_block(self, event, x0_video) -> dict[str, Any] | None:
+    def _boundary_block(self, event, freqs, profile) -> dict[str, Any] | None:
         """Direct boundary-power measurement for the stage's next transition.
 
         Plans §27-§31 (direct point/band power + live activation thresholds
         and eligibility) and §35 (per-stage log-space EMA of the raw x0
         boundary power, seeded from the stage's first valid measurement —
-        never from the static A/beta). ``None`` when the stage has no next
-        transition (final stage).
+        never from the static A/beta). Reads the stage's already-computed
+        radial profile. ``None`` when the stage has no next transition
+        (final stage).
         """
         omega = self._omega_boundary
         if omega is None:
             return None
-        freqs, profile = radial_dct_power_torch(x0_video)
         direct_available = bool(freqs.numel()) and omega <= float(freqs[-1])
         power_point = sample_radial_power(freqs, profile, omega)
         power_band = sample_radial_band_power(

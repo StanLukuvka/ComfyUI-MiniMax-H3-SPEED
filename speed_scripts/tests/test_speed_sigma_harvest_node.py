@@ -362,6 +362,48 @@ def test_ema_seeded_from_first_measurement_not_calibration():
     assert first["ema_power"] == pytest.approx(first["power_point"])
 
 
+def test_alpha_one_records_raw_boundary_power_as_ema():
+    """§35 with the full widget range: smoothing_alpha=1.0 disables
+    smoothing, so every recorded EMA power equals the raw boundary power
+    of the same step."""
+    document, _ = _run_node(measurement_mode="x0_only", smoothing_alpha=1.0)
+
+    boundaries = [
+        r["x0_signal"]["current_boundary"]
+        for r in document["records"]
+        if r.get("x0_signal", {}).get("current_boundary") is not None
+    ]
+    assert boundaries, "no boundary measurements recorded"
+    for boundary in boundaries:
+        assert boundary["ema_power"] == pytest.approx(boundary["power_point"])
+        assert boundary["eligible_ema"] == boundary["eligible_point"]
+
+
+def test_single_dct_per_measured_callback(monkeypatch):
+    """Exactly one radial_dct_power_torch call per measured x0 callback,
+    whether or not radial profiles are stored (x0_only isolates the x0
+    path; the residual basis adds its own single call per callback)."""
+    import speed_scripts.online_harvest as online_harvest
+
+    calls = {"count": 0}
+    original = online_harvest.radial_dct_power_torch
+
+    def counting(video):
+        calls["count"] += 1
+        return original(video)
+
+    monkeypatch.setattr(online_harvest, "radial_dct_power_torch", counting)
+    document, _ = _run_node(
+        latent=make_latent(t=2, h=72, w=80),
+        measurement_mode="x0_only",
+        store_radial_profiles=True,
+    )
+
+    measured = [r for r in document["records"] if "x0_signal" in r]
+    assert len(measured) == 10
+    assert calls["count"] == 10
+
+
 def test_stride_respects_analysis_stride():
     """§25: stride=2 analyses every second callback; unmeasured callbacks
     still get skeleton records."""

@@ -260,7 +260,8 @@ def test_coincident_transitions_zero_step_stage():
     )
 
     # The fake guider runs the zero-step intermediate stage as a single-entry
-    # sample call: no callbacks fire inside it.
+    # sample call: no callbacks fire inside it. This is CURRENT H3-runtime
+    # behavior — upstream SPEED skips the sampler for zero-step segments.
     assert len(guider.sigma_calls) == 3
     assert len(guider.sigma_calls[1]) == 1
 

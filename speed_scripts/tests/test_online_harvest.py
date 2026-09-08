@@ -16,6 +16,7 @@ _install_comfy_stubs()
 
 from speed_scripts.harvest import fit_power_law, radial_dct_power
 from speed_scripts.online_harvest import (
+    SpeedHarvestCollector,
     build_fit_record,
     dumps_strict,
     fit_power_law_torch,
@@ -161,6 +162,33 @@ class TestDirectSampling:
         profile = torch.tensor([8.0, 4.0, 12.0])  # P(x) = 2x, scrambled order
         assert sample_radial_power(freqs, profile, 5.0) == 10.0
 
+    def test_point_sample_builds_operand_on_input_device(self, monkeypatch):
+        """The searchsorted operand is built from the input tensor
+        (``x.new_tensor``), never with an implicit CPU ``torch.tensor``."""
+        import speed_scripts.online_harvest as online_harvest
+
+        def no_implicit_cpu_tensor(*args, **kwargs):
+            raise AssertionError("implicit torch.tensor() call in sampling path")
+
+        monkeypatch.setattr(online_harvest.torch, "tensor", no_implicit_cpu_tensor)
+        freqs = torch.arange(0.0, 9.0)
+        profile = 2.0 * freqs
+        assert sample_radial_power(freqs, profile, 5.0) == 10.0
+        assert sample_radial_power(freqs, profile, 5.5) == 11.0
+
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(),
+        reason="device-mismatch guard needs CUDA; runs on GPU hosts",
+    )
+    def test_point_sample_cuda_profile_stays_on_device(self):
+        """A CUDA profile must not crash searchsorted with a CPU operand."""
+        freqs = torch.arange(0.0, 9.0, device="cuda")
+        profile = 2.0 * freqs
+        assert sample_radial_power(freqs, profile, 5.5) == pytest.approx(11.0)
+        assert sample_radial_band_power(freqs, profile, 5.0, half_width=1.0) == pytest.approx(
+            (8.0 + 10.0 + 12.0) / 3.0
+        )
+
 
 class TestEmaAndJsonSafety:
     def test_ema_seeds_from_first_valid_measurement(self):
@@ -171,17 +199,36 @@ class TestEmaAndJsonSafety:
         expected = math.exp(0.75 * math.log(4.0) + 0.25 * math.log(1.0))
         assert math.isclose(ema, expected)
 
+    def test_ema_alpha_one_equals_raw_measurement(self):
+        """alpha=1.0 disables smoothing: the EMA is the raw measurement,
+        both when seeding and when a previous EMA exists."""
+        assert update_log_ema(None, 4.0, alpha=1.0) == 4.0
+        assert update_log_ema(9.0, 4.0, alpha=1.0) == 4.0
+
     def test_ema_ignores_nonpositive_raw(self):
         assert update_log_ema(4.0, 0.0) == 4.0
         assert update_log_ema(4.0, -1.0) == 4.0
 
-    def test_ema_rejects_invalid_alpha(self):
-        try:
-            update_log_ema(4.0, 1.0, alpha=0.0)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("alpha=0 must be rejected")
+    def test_ema_rejects_alpha_outside_open_closed_interval(self):
+        for alpha in (0.0, -0.5, 1.5):
+            with pytest.raises(ValueError, match="alpha"):
+                update_log_ema(4.0, 1.0, alpha=alpha)
+
+    def test_collector_accepts_full_alpha_range_and_rejects_outside(self):
+        """The collector boundary validates smoothing_alpha over (0, 1]."""
+
+        def collector(smoothing_alpha):
+            return SpeedHarvestCollector(
+                delta=0.01,
+                noise_amplitude=1.0,
+                noise_decay_exponent=1.0,
+                smoothing_alpha=smoothing_alpha,
+            )
+
+        assert collector(1.0).smoothing_alpha == 1.0
+        for alpha in (0.0, -0.5, 1.5):
+            with pytest.raises(ValueError, match="smoothing_alpha"):
+                collector(alpha)
 
     def test_finite_or_none(self):
         assert finite_or_none(1.5) == 1.5
