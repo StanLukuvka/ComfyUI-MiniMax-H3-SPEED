@@ -52,22 +52,22 @@ class MiniMaxH3SPEEDSampler:
                 "latent_image": ("LATENT",),
                 "stages": ("INT", {"default": 3, "min": 2, "max": 4}),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
-                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6, "step": 0.001, "round": 0.001}),
-                "noise_decay_exponent": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 10.0, "step": 0.001, "round": 0.001}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "noise_amplitude": ("FLOAT", {"default": 12.105, "min": 0.0, "max": 1e6, "step": 0.001, "round": 0.001}),
+                "noise_decay_exponent": ("FLOAT", {"default": 0.773, "min": 0.0, "max": 10.0, "step": 0.001, "round": 0.001}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
             },
         }
 
     def sample(self, noise, guider, sigmas, latent_image, stages=3,
                noise_policy="direct_coarse",
-               noise_amplitude=7.394, noise_decay_exponent=0.62,
+               noise_amplitude=12.105, noise_decay_exponent=0.773,
                seed_offset=10000, **kwargs):
         # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
         delta = kwargs.get("Tolerance (Delta)",
                 kwargs.get("Tolerance",
                 kwargs.get("tolerance",
-                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
+                kwargs.get("delta", kwargs.get("Delta", 0.005)))))
         if "preset" in kwargs:
             preset = kwargs.pop("preset")
             stages = PRESET_TO_STAGES.get(preset, stages)
