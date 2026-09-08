@@ -61,32 +61,25 @@ These are three distinct diagnostics: Sigma Harvest is not SPEED Sigma Harvest, 
 
 ## Speed Improvements
 
-Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed:
+Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, corrected scheduler (post-PR-#37). Native Euler baseline: 571s. Per-resolution harvest calibrations were used for each fit.
 
-**Default fit (`Δ0.01 A7.394 β0.62`):**
-| Mode | Time | Quality |
-|------|------|---------|
-| Native (no SPEED) | 833s cold | reference |
-| 2-stage `direct` | 651s cold | mostly equal to reference |
-| 2-stage `coupled` | 608s | mostly equal to reference as well |
-| 3-stage `direct` | 415s | notable quality losses |
-| 3-stage `coupled` | 616s | sharp again, but no faster than 2-stage |
-| 4-stage `direct` | 262s | **unusable** |
-| 4-stage `coupled` | 608s | coherent but blurry |
+| Fit | Mode | Time | Speedup | Quality |
+|------|------|------|---------|---------|
+| Δ0.005 `A12.105 β0.773` | 2-stage | 463s | 1.23× | beats native on text + beats |
+| Δ0.005 | 3-stage | 439s | 1.30× | best text of the class — **quality pick** |
+| Δ0.005 | 4-stage | 435s | 1.31× | same quality, mildest melt artifact |
+| Δ0.01 `A12.436 β0.786` | 2-stage | 450s | 1.27× | near parity, sharp toss — **balanced pick** |
+| Δ0.01 | 3-stage | 410s | 1.39× | cleanest mug-landing beat |
+| Δ0.01 | 4-stage | 384s | 1.49× | no artifacts found |
+| Δ0.05 `A6.920 β0.766` | 2-stage | 278s | 2.05× | transition pops, all beats hold |
+| Δ0.05 | 3-stage | 262s | 2.18× | draft tier |
+| Δ0.05 | 4-stage | 238s | 2.41× | most stable of the budget class — **budget pick** |
 
-**Conservative fit (`Δ0.005 A12.454 β0.819`, optional):**
-| Mode | Time | Quality |
-|------|------|---------|
-| 2-stage `direct` | 672s | roughly identical quality to Native |
-| 3-stage `direct` | 540s | good quality, prompt drift from Native |
-| 4-stage `direct` | 400s | usable, however major halo effect appears |
+The multi-stage pipeline suppresses the native blinds-melt artifact at every delta. Old pre-fix failure modes (garbled mug text, face doubling, splatter) do not reproduce on the corrected scheduler.
 
-`direct_coarse` = fastest. `coupled_full_grid` = ~30-50% slower, can rescue 3-stage text. 
-See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and mp4s.
+See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and the review rubric.
 
-⚠️ **Old benchmark warning:** the 3/4-stage timings and quality notes above (and the matching evidence tables) predate the global transition-schedule fix (PR #37). Under the old scheduler, stages did not run where the configuration said they would, so that evidence must be rerun before being compared against anything new. The SPEED Sigma Harvest (Continuous) diagnostic must only be interpreted on the corrected (post-PR-#37) scheduler.
-
-**Rule of thumb:** Use `stages 2`. Try `3` if the quality holds, or use the conservative settings.
+**Rule of thumb:** quality-first use `stages 3` at Δ0.005; balanced use `stages 2` at Δ0.01; fast drafts use `stages 4` at Δ0.05.
 
 ## Troubleshooting
 
