@@ -1,0 +1,22 @@
+name: review-test-suite
+
+on:
+  push:
+    branches: [review/focused-test-suite]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest numpy networkx
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Run focused suite
+        run: python -m pytest speed_scripts/tests/ -q
