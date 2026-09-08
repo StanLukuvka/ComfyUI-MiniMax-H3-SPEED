@@ -1,3 +1,4 @@
+# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §4-6, 17, 48 (commit 4) — flow-produced, do not hand-edit
 """SPEED Sigma Harvest (Continuous) — diagnostic node.
 
 Runs ONE real multi-stage SPEED generation (the same `run_speed_pipeline` the

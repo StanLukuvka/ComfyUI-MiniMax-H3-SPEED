@@ -1,3 +1,4 @@
+# FLOW-PRODUCED
 # SPEED Sigma Harvest (Continuous) — measurement reference
 
 `SPEED Sigma Harvest (Continuous)` is the node

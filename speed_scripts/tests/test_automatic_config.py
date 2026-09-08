@@ -1,3 +1,4 @@
+# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §56 (commit 1) — flow-produced, do not hand-edit
 """Config-equivalence and schema regression tests for the shared automatic
 SPEED config builder (speed_scripts/automatic_config.py).
 
