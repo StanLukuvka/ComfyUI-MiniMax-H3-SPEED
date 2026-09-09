@@ -42,17 +42,13 @@ def _register(_mod, _name):
 
 
 # All nodes — flat files under nodes/.
-# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
+# sampler_node = automatic (delta_custom, baked conservative fit)
 # sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
 # sampler_sigma_harvest_node = native-Euler power-law calibration
-# sampler_sigma_trace_node = native-Euler per-step telemetry
-# sampler_speed_sigma_harvest_node = continuous SPEED sigma harvest (observer collector)
 _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",
     "sampler_sigma_harvest_node",
-    "sampler_sigma_trace_node",
-    "sampler_speed_sigma_harvest_node",
 )
 
 for _name in _NODE_MODULES:

@@ -14,7 +14,5 @@ def test_package_registers_all_shipped_nodes():
         "MiniMaxH3SPEEDSampler",
         "MiniMaxH3SPEEDSamplerManual",
         "MiniMaxH3HarvestToConfig",
-        "MiniMaxH3SigmaTrace",
-        "MiniMaxH3SPEEDSigmaHarvest",
     }
     assert set(module.NODE_DISPLAY_NAME_MAPPINGS) == set(module.NODE_CLASS_MAPPINGS)

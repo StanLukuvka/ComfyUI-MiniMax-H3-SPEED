@@ -21,7 +21,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 ```
 
 1. Replace your `KSampler` / `SamplerCustomAdvanced` with **MiniMax H3 SPEED — Sampler (Automatic)**. Wire the same `noise`, `guider`, `sigmas`, `latent_image`.
-2. Set **`stages = 2`** (fastest) or **`3`** (balanced, default) and hit Queue. Current default settings are the sigma harvests at 1% delta.
+2. Set **`stages = 2`** (fastest) or **`3`** (balanced, default) and hit Queue. Current default settings are the conservative sigma harvest at 0.5% delta.
 
 
 ## Which node do I need?
@@ -44,20 +44,16 @@ If you are using LoRAs, or other models, addons, or optimisations that change ho
 
 You can instead use the following values for base H3:
 
-- **Default (baked, 1%):** `Tolerance (Delta)=0.01, noise_amplitude=7.394, noise_decay_exponent=0.62` — `r² 0.60`
-- **Conservative (0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.454, noise_decay_exponent=0.819` — `r² 0.70`
+- **Default (baked, 0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
+- **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — near parity, faster
 
 See the [evidence section](evidence/README.md) for what changes in generation.
 
 Workflow wires are the same for all three: `noise` → `guider` → `sigmas` → `latent_image` → `output_latent` → `VAE Decode`.
 
-## Diagnostics — three different tools
+## Diagnostics
 
 - **Sigma Harvest (Native Euler)** runs one native full-res Euler pass and outputs one aggregate residual calibration (`A / β`) to paste into Automatic.
-- **Sigma Trace (Per-Step Telemetry)** runs one native full-res Euler pass and records per-step x0 statistics with normalized low/mid/high band powers.
-- **SPEED Sigma Harvest (Continuous)** runs a normal SPEED generation but records the model's spectral state at every denoising step. It reports both the residual spectrum used by this project's existing empirical calibration and the denoised/x0 spectrum used by SPEED's theoretical power-spectrum model. This node is observational only. It does not currently move stage transitions during generation. See [docs/SPEED_SIGMA_HARVEST.md](docs/SPEED_SIGMA_HARVEST.md) for the output schema and how to read it.
-
-These are three distinct diagnostics: Sigma Harvest is not SPEED Sigma Harvest, and Sigma Trace is not SPEED Sigma Harvest. Only the continuous one runs the real multi-stage SPEED chain, and only it measures absolute (not normalized) per-step spectra.
 
 ## Speed Improvements
 
@@ -84,7 +80,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 - **"Sigma schedule too short"** → increase `BasicScheduler` steps. The last stage boundary must leave at least one denoising step: with the final boundary at step `g`, you need ≥ `g + 2` sigmas (e.g. a 4-stage run with boundaries 3/5/8 needs ≥10 sigmas = 9 steps).
 - **"H3 model required"** → this only works with a real MiniMax-H3 model (one that has `sigma_shift_video` / `sigma_shift_audio`). Not SD/Flux/WAN.
-- **Text looks blurry / wobbly** → try `noise_policy = coupled_full_grid`, or lower `Tolerance (Delta)` from `0.01` (1%) to `0.005` (0.5% — more conservative, slower but sharper).
+- **Text looks blurry / wobbly** → try `noise_policy = coupled_full_grid`, or lower `Tolerance (Delta)` from `0.005` (0.5%) to `0.001` — more conservative, slower but sharper.
 - **Prompt drifts / objects disappear on 4-stage** → too many hops. Drop to 2 or 3 stages.
 
 ## Advanced — you don't need this to use it
