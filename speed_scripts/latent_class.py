@@ -54,7 +54,10 @@ class LatentClass:
         self.holder = holder
         self.is_ref = is_ref
         # pristine is the ONLY source for every resize — never degrade.
-        self.pristine = lc_z.clone()
+        # Refs are never resized (downscale/upscale skip them), so no
+        # snapshot is needed: alias the live tensor instead of cloning a
+        # full-res copy that would never be read.
+        self.pristine = lc_z if is_ref else lc_z.clone()
         self.original_hw: tuple[int, int] = (int(lc_z.shape[-2]), int(lc_z.shape[-1]))
         self.current_hw: tuple[int, int] = self.original_hw
         self.stage = LatentStage.INPUT

@@ -11,27 +11,11 @@ from __future__ import annotations
 
 import comfy.samplers
 
-from speed_scripts.config import SpeedConfig
+from speed_scripts.automatic_config import (
+    PRESET_TO_STAGES,
+    build_automatic_speed_config,
+)
 from speed_scripts.h3_runtime import run_speed_pipeline
-from speed_scripts.latent_class import LatentWalker
-from speed_scripts.nodes_common import full_res_dims
-
-
-# Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
-# 2: 0.5 → 1.0, 3: 0.33 → 0.66 → 1.0, 4: 0.25 → 0.5 → 0.75 → 1.0
-STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
-    2: (0.5, 1.0),
-    3: (0.3333333333, 0.6666666667, 1.0),
-    4: (0.25, 0.5, 0.75, 1.0),
-}
-# Backwards compat: old preset names -> stages (for workflows saved before the rename)
-PRESET_TO_STAGES: dict[str, int] = {
-    "half_then_full": 2,
-    "three_quarter_then_full": 2,
-    "quarter_half_full": 3,
-    "aggressive": 3,
-    "quarter_half_3q_full": 4,
-}
 
 
 class MiniMaxH3SPEEDSampler:
@@ -48,7 +32,7 @@ class MiniMaxH3SPEEDSampler:
     DESCRIPTION = (
         "Automatic SPEED sampler — pick stages (2, 3, or 4) and go. "
         "Starts cheap at low resolution, then upsamples when the detail "
-        "matters. Set Tolerance (1% = 0.01) to trade blur for speed. "
+        "matters. Set Tolerance (0.5% = 0.005) to trade blur for speed. "
         "Uses baked A/beta; re-calibrate with the Harvest node if you "
         "change checkpoint."
     )
@@ -67,23 +51,22 @@ class MiniMaxH3SPEEDSampler:
                 "latent_image": ("LATENT",),
                 "stages": ("INT", {"default": 3, "min": 2, "max": 4}),
                 "noise_policy": (["direct_coarse", "coupled_full_grid"], {"default": "direct_coarse"}),
-                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "noise_amplitude": ("FLOAT", {"default": 7.394, "min": 0.0, "max": 1e6}),
-                "noise_decay_exponent": ("FLOAT", {"default": 0.62, "min": 0.0, "max": 10.0}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "noise_amplitude": ("FLOAT", {"default": 12.105, "min": 0.0, "max": 1e6, "step": 0.001, "round": 0.001}),
+                "noise_decay_exponent": ("FLOAT", {"default": 0.773, "min": 0.0, "max": 10.0, "step": 0.001, "round": 0.001}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
             },
         }
 
     def sample(self, noise, guider, sigmas, latent_image, stages=3,
                noise_policy="direct_coarse",
-               noise_amplitude=7.394, noise_decay_exponent=0.62,
+               noise_amplitude=12.105, noise_decay_exponent=0.773,
                seed_offset=10000, **kwargs):
         # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
         delta = kwargs.get("Tolerance (Delta)",
                 kwargs.get("Tolerance",
                 kwargs.get("tolerance",
-                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
-        delta = float(delta)
+                kwargs.get("delta", kwargs.get("Delta", 0.005)))))
         if "preset" in kwargs:
             preset = kwargs.pop("preset")
             stages = PRESET_TO_STAGES.get(preset, stages)
@@ -92,30 +75,19 @@ class MiniMaxH3SPEEDSampler:
         except Exception:
             stages = 3
         stages = max(2, min(4, stages))
-        scales = STAGES_TO_SCALES[stages]
-        # Dummy steps — validated then overridden by delta_custom power-spectrum thresholds
-        transition_steps = tuple(range(1, len(scales)))
-
-        # Resolve the live full-res dims, build the SpeedConfig.
-        full_h, full_w = full_res_dims(latent_image)
-        config = SpeedConfig(
-            scales=tuple(scales),
-            transition_steps=tuple(transition_steps),
-            transition_mode="delta_custom",
+        config = build_automatic_speed_config(
+            latent_image,
+            stages=stages,
             noise_policy=noise_policy,
-            delta=float(delta),
-            noise_amplitude=float(noise_amplitude),
-            noise_decay_exponent=float(noise_decay_exponent),
-            transition_seed_offset=int(seed_offset),
-            full_latent_h=full_h,
-            full_latent_w=full_w,
+            delta=delta,
+            noise_amplitude=noise_amplitude,
+            noise_decay_exponent=noise_decay_exponent,
+            seed_offset=seed_offset,
         )
 
-        # Snapshot pristine for every keyframe/ref on the guider before the
-        # first stage boundary. The runtime will call apply_stage again at
-        # every boundary (via the h3_runtime shim) to do the actual resize.
-        LatentWalker(guider)
-
+        # The runtime owns the walker lifecycle: it creates (or reuses) the
+        # per-run walker, applies every stage, restores full res, and drops
+        # it — including on failure (exception-safe).
         return run_speed_pipeline(
             noise,
             guider,

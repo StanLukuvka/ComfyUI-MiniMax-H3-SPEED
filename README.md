@@ -21,7 +21,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 ```
 
 1. Replace your `KSampler` / `SamplerCustomAdvanced` with **MiniMax H3 SPEED — Sampler (Automatic)**. Wire the same `noise`, `guider`, `sigmas`, `latent_image`.
-2. Set **`stages = 2`** (fastest) or **`3`** (balanced, default) and hit Queue. Current default settings are the sigma harvests at 1% delta.
+2. Set **`stages = 2`** (fastest) or **`3`** (balanced, default) and hit Queue. Current default settings are the conservative sigma harvest at 0.5% delta.
 
 
 ## Which node do I need?
@@ -44,45 +44,43 @@ If you are using LoRAs, or other models, addons, or optimisations that change ho
 
 You can instead use the following values for base H3:
 
-- **Default (baked, 1%):** `Tolerance (Delta)=0.01, noise_amplitude=7.394, noise_decay_exponent=0.62` — `r² 0.60`
-- **Conservative (0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.454, noise_decay_exponent=0.819` — `r² 0.70`
+- **Default (baked, 0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
+- **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — near parity, faster
 
 See the [evidence section](evidence/README.md) for what changes in generation.
 
 Workflow wires are the same for all three: `noise` → `guider` → `sigmas` → `latent_image` → `output_latent` → `VAE Decode`.
 
+## Diagnostics
+
+- **Sigma Harvest (Native Euler)** runs one native full-res Euler pass and outputs one aggregate residual calibration (`A / β`) to paste into Automatic.
+
 ## Speed Improvements
 
-Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed:
+Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, corrected scheduler (post-PR-#37). Native Euler baseline: 571s. Per-resolution harvest calibrations were used for each fit.
 
-**Default fit (`Δ0.01 A7.394 β0.62`):**
-| Mode | Time | Quality |
-|------|------|---------|
-| Native (no SPEED) | 833s cold | reference |
-| 2-stage `direct` | 651s cold | mostly equal to reference |
-| 2-stage `coupled` | 608s | mostly equal to reference as well |
-| 3-stage `direct` | 415s | notable quality losses |
-| 3-stage `coupled` | 616s | sharp again, but no faster than 2-stage |
-| 4-stage `direct` | 262s | **unusable** |
-| 4-stage `coupled` | 608s | coherent but blurry |
+| Fit | Mode | Time | Speedup | Quality |
+|------|------|------|---------|---------|
+| Δ0.005 `A12.105 β0.773` | 2-stage | 463s | 1.23× | native equivalent|
+| Δ0.005 | 3-stage | 439s | 1.30× | native equivalent |
+| Δ0.005 | 4-stage | 435s | 1.31× | native equivalent, mildest melt artifact |
+| Δ0.01 `A12.436 β0.786` | 2-stage | 450s | 1.27× | near parity |
+| Δ0.01 | 3-stage | 410s | 1.39× | cleanest mug-landing beat |
+| Δ0.01 | 4-stage | 384s | 1.49× | inconsistencies start appearing |
+| Δ0.05 `A6.920 β0.766` | 2-stage | 278s | 2.05× | noticable artifacting |
+| Δ0.05 | 3-stage | 262s | 2.18× | very noticable artifacting but still usable |
+| Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
 
-**Conservative fit (`Δ0.005 A12.454 β0.819`, optional):**
-| Mode | Time | Quality |
-|------|------|---------|
-| 2-stage `direct` | 672s | roughly identical quality to Native |
-| 3-stage `direct` | 540s | good quality, prompt drift from Native |
-| 4-stage `direct` | 400s | usable, however major halo effect appears |
 
-`direct_coarse` = fastest. `coupled_full_grid` = ~30-50% slower, can rescue 3-stage text. 
-See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and mp4s.
+See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and the review rubric.
 
-**Rule of thumb:** Use `stages 2`. Try `3` if the quality holds, or use the conservative settings.
+**Rule of thumb:** quality-first use `stages 3` at Δ0.005; balanced use `stages 2` at Δ0.01; fast drafts use `stages 4` at Δ0.05.
 
 ## Troubleshooting
 
-- **"Sigma schedule too short"** → increase `BasicScheduler` steps. Need at least `stages × 2` sigmas (e.g. stages 3 needs ≥6 steps).
+- **"Sigma schedule too short"** → increase `BasicScheduler` steps. The last stage boundary must leave at least one denoising step: with the final boundary at step `g`, you need ≥ `g + 2` sigmas (e.g. a 4-stage run with boundaries 3/5/8 needs ≥10 sigmas = 9 steps).
 - **"H3 model required"** → this only works with a real MiniMax-H3 model (one that has `sigma_shift_video` / `sigma_shift_audio`). Not SD/Flux/WAN.
-- **Text looks blurry / wobbly** → try `noise_policy = coupled_full_grid`, or lower `Tolerance (Delta)` from `0.01` (1%) to `0.005` (0.5% — more conservative, slower but sharper).
+- **Text looks blurry / wobbly** → try `noise_policy = coupled_full_grid`, or lower `Tolerance (Delta)` from `0.005` (0.5%) to `0.001` — more conservative, slower but sharper.
 - **Prompt drifts / objects disappear on 4-stage** → too many hops. Drop to 2 or 3 stages.
 
 ## Advanced — you don't need this to use it
@@ -90,7 +88,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 <details>
 <summary>How Automatic picks the steps (click to expand)</summary>
 
-It measures how noise power falls with frequency on a full-res run: `P(ω) = A·|ω|^-β` (β ~0.6 for MiniMax-H3). For each scale `s`, `ω = s·min(H,W)/2`, `P = A·ω^-β`, then `thr = 1/(1+√(δ/(P·(1+P-δ))))` (δ = Tolerance, 0.01 = 1% allowed error). The first `sigmas[i] ≤ thr` is where that stage ends. Continuous sigma, just quantized to your sigma schedule.
+It measures how noise power falls with frequency on a full-res run: `P(ω) = A·|ω|^-β` (β ~0.77 for MiniMax-H3's validated fits; see Defaults below). For each scale `s`, `ω = s·min(H,W)/2`, `P = A·ω^-β`, then `thr = 1/(1+√(δ/(P·(1+P-δ))))` (δ = Tolerance, 0.005 = 0.5% allowed error). The first `sigmas[i] ≤ thr` is where that stage ends. Continuous sigma, just quantized to your sigma schedule.
 
 Re-calibrate with the Harvest node if you change checkpoint: wire `noise/guider/sigmas/latent + Tolerance`, run a native Euler generation at 28-32 steps with `sampler = simple`, copy `calibration` JSON into Automatic's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
 

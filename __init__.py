@@ -42,7 +42,7 @@ def _register(_mod, _name):
 
 
 # All nodes — flat files under nodes/.
-# sampler_node = automatic (delta_custom, baked A7.394 b0.62)
+# sampler_node = automatic (delta_custom, baked conservative fit)
 # sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
 # sampler_sigma_harvest_node = native-Euler power-law calibration
 _NODE_MODULES = (

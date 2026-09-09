@@ -1,0 +1,21 @@
+NATIVE
+
+571.49 Seconds
+
+(Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773
+
+2 stage 462.96
+3 stage 438.85
+4 stage 435.21
+
+(Delta)=0.010, noise_amplitude=12.436, noise_decay_exponent=0.786
+
+2 Stage 450.38
+3 Stage 409.83
+4 Stage 384.13
+
+(Delta)=0.050, noise_amplitude=6.920, noise_decay_exponent=0.766
+
+2 stage 278.44
+3 stage 262.32
+4 stage 237.57
