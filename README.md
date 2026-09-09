@@ -51,13 +51,9 @@ See the [evidence section](evidence/README.md) for what changes in generation.
 
 Workflow wires are the same for all three: `noise` → `guider` → `sigmas` → `latent_image` → `output_latent` → `VAE Decode`.
 
-## Diagnostics — three different tools
+## Diagnostics
 
 - **Sigma Harvest (Native Euler)** runs one native full-res Euler pass and outputs one aggregate residual calibration (`A / β`) to paste into Automatic.
-- **Sigma Trace (Per-Step Telemetry)** runs one native full-res Euler pass and records per-step x0 statistics with normalized low/mid/high band powers.
-- **SPEED Sigma Harvest (Continuous)** runs a normal SPEED generation but records the model's spectral state at every denoising step. It reports both the residual spectrum used by this project's existing empirical calibration and the denoised/x0 spectrum used by SPEED's theoretical power-spectrum model. This node is observational only. It does not currently move stage transitions during generation. See [docs/SPEED_SIGMA_HARVEST.md](docs/SPEED_SIGMA_HARVEST.md) for the output schema and how to read it.
-
-These are three distinct diagnostics: Sigma Harvest is not SPEED Sigma Harvest, and Sigma Trace is not SPEED Sigma Harvest. Only the continuous one runs the real multi-stage SPEED chain, and only it measures absolute (not normalized) per-step spectra.
 
 ## Speed Improvements
 
