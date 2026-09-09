@@ -22,7 +22,7 @@ from .flow import (
 )
 from .spectral import (
     dct2, idct2, idct_temporal, lowpass_dct,
-    spectral_expand, spectral_expand_3d, spectral_expand_coupled,
+    spectral_expand, spectral_expand_3d,
     dct_temporal,
 )
 
@@ -502,45 +502,35 @@ def run_speed_pipeline(
             working_sigmas[global_end] = new_q
 
             # DCT-expand the video (coupled or fresh band) and rescale by kappa.
-            # Coupled paths must expand only to the NEXT stage's target grid:
-            # slice the full-res noise to (next_t, next_h, next_w) so the coupled
-            # high-band fills exactly the next stage's resolution instead of
-            # implicitly jumping to full res (which breaks multi-stage ladders
-            # and crashes spectral_expand_coupled once the source passes an
-            # intermediate size).
+            # Coupled policy: the SAME full-grid noise field projected onto
+            # each stage's resolution — in the spectral domain. Pixel-space
+            # cropping would change the DCT spectrum, so take the combined
+            # temporal+spatial DCT of the ORIGINAL full-res noise once and
+            # keep only the low-frequency coefficient block matching the
+            # next stage's (t, h, w). (With a full-length temporal block this
+            # reduces exactly to the spatial-only projection.)
             next_h, next_w, next_t = stage_hw_t[stage_idx + 1]
-            if next_t > internal_video.shape[-3]:
-                # Temporal expansion needed: use the 3D spectral path.
-                if config.noise_policy == "coupled_full_grid":
-                    full_noise_video, _ = unpack_latent(full_noise)
-                    # For coupled 3D: re-DCT-expand using full noise + cropped source.
-                    # Combined low-freq block = DCT of source (3D); high-freq = scaled noise.
-                    full_noise_video_dev = full_noise_video.to(
-                        device=internal_video.device, dtype=internal_video.dtype,
-                    )
-                    # Slice full noise to the NEXT stage's (t, h, w), then use
-                    # 3D coupled-style expansion: source DCT coefs go in
-                    # low-freq corner, noise coefs elsewhere.
-                    source_dct = dct2(dct_temporal(internal_video))
-                    target_noise = full_noise_video_dev[..., :next_t, :next_h, :next_w]
-                    target_dct = dct2(dct_temporal(target_noise)) * float(rsp_q)
-                    target_dct[..., :internal_video.shape[-3], :internal_video.shape[-2], :internal_video.shape[-1]] = source_dct
-                    expanded_video = idct_temporal(idct2(target_dct))
-                else:
-                    expanded_video = spectral_expand_3d(
-                        internal_video,
-                        (next_t, next_h, next_w),
-                        rsp_q,
-                        int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
-                    )
-            elif config.noise_policy == "coupled_full_grid":
+            if config.noise_policy == "coupled_full_grid":
                 full_noise_video, _ = unpack_latent(full_noise)
-                expanded_video = spectral_expand_coupled(
+                full_noise_video = full_noise_video.to(
+                    device=internal_video.device, dtype=internal_video.dtype,
+                )
+                source_t, source_h, source_w = internal_video.shape[-3:]
+                full_dct = dct2(dct_temporal(full_noise_video))
+                target_dct = full_dct[..., :next_t, :next_h, :next_w] * float(rsp_q)
+                target_dct[..., :source_t, :source_h, :source_w] = dct2(
+                    dct_temporal(internal_video)
+                )
+                expanded_video = idct_temporal(idct2(target_dct)).to(
+                    dtype=internal_video.dtype
+                )
+            elif next_t > internal_video.shape[-3]:
+                # Temporal expansion needed: use the 3D spectral path.
+                expanded_video = spectral_expand_3d(
                     internal_video,
-                    full_noise_video[..., :next_t, :next_h, :next_w].to(
-                        device=internal_video.device, dtype=internal_video.dtype,
-                    ),
+                    (next_t, next_h, next_w),
                     rsp_q,
+                    int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
                 )
             else:
                 expanded_video = spectral_expand(
