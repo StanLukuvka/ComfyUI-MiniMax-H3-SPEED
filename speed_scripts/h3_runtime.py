@@ -22,7 +22,7 @@ from .flow import (
 )
 from .spectral import (
     dct2, idct2, idct_temporal, lowpass_dct,
-    spectral_expand, spectral_expand_3d, spectral_expand_coupled,
+    spectral_expand, spectral_expand_3d,
     dct_temporal,
 )
 
@@ -422,214 +422,223 @@ def run_speed_pipeline(
     global_done = 0
     global_start = 0  # GLOBAL index the next stage begins at (into working_sigmas).
 
-    for stage_idx in range(n_stages - 1):
-        # Boundary for this stage: transition_steps[stage_idx] is a GLOBAL
-        # index into the sigma schedule identifying where the NEXT scale
-        # begins. The final stage's global_end is len(sigmas) - 1.
-        global_end = int(transition_steps[stage_idx])
+    # Run-scoped I2V lifecycle: the walker is created up front and EVERY exit
+    # path (success, failure in a stage, transition, audio handling, spectral
+    # expansion, or final sampling) passes through the finally block, which
+    # restores pristine conditioning latents and removes `_speed_latent_walker`
+    # from the guider. The guider never keeps a half-resized cond latent.
+    walker = _get_or_create_walker(guider)
+    try:
+        for stage_idx in range(n_stages - 1):
+            # Boundary for this stage: transition_steps[stage_idx] is a GLOBAL
+            # index into the sigma schedule identifying where the NEXT scale
+            # begins. The final stage's global_end is len(sigmas) - 1.
+            global_end = int(transition_steps[stage_idx])
 
-        log.info("[SPEED] stage %d start: latent=%s pub=%s sigmas=%d boundary=%d",
-                 stage_idx,
-                 list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
-                 list(stage_start_pub.shape) if hasattr(stage_start_pub, 'shape') else stage_start_pub,
-                 global_end - global_start + 1, global_end)
+            log.info("[SPEED] stage %d start: latent=%s pub=%s sigmas=%d boundary=%d",
+                     stage_idx,
+                     list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
+                     list(stage_start_pub.shape) if hasattr(stage_start_pub, 'shape') else stage_start_pub,
+                     global_end - global_start + 1, global_end)
 
-        # I2V per-stage fix: rescale the STORED keyframe/ref latents in
-        # guider.original_conds so the per-stage guider.sample() ->
-        # process_conds -> model.extra_conds rebuild of minimax_payload
-        # picks up cond_video_latents matching this stage's coarse latent.
-        # (The payload dict from a previous stage is rebuilt from these
-        # sources every call, so these sources are the only patch point.)
-        rsp_sh, rsp_sw, _ = stage_resolution(config, stage_idx, full_h, full_w, full_t)
-        walker = _get_or_create_walker(guider)
-        walker.apply_stage(rsp_sh, rsp_sw)
+            # I2V per-stage fix: rescale the STORED keyframe/ref latents in
+            # guider.original_conds so the per-stage guider.sample() ->
+            # process_conds -> model.extra_conds rebuild of minimax_payload
+            # picks up cond_video_latents matching this stage's coarse latent.
+            # (The payload dict from a previous stage is rebuilt from these
+            # sources every call, so these sources are the only patch point.)
+            rsp_sh, rsp_sw, _ = stage_resolution(config, stage_idx, full_h, full_w, full_t)
+            walker.apply_stage(rsp_sh, rsp_sw)
 
-        # Run the current stage over its global slice
-        # (`working_sigmas[global_start : global_end + 1]`). The wrapped
-        # callback forwards to the shared stock callback
-        # (`latent_preview.prepare_callback`) with the step remapped to the
-        # global timeline, so the bar runs continuously and preview bytes
-        # flow through the same PROGRESS_BAR_HOOK every other ComfyUI node
-        # uses. The wrapper writes x0 into the shared `x0_output` dict for
-        # `clock_reindex` audio and the denoised fallback.
-        preview_cb = _wrap_preview_callback(
-            stock_cb, x0_output, global_done, global_total,
-        )
-        stage_sigmas = working_sigmas[global_start:global_end + 1]
+            # Run the current stage over its global slice
+            # (`working_sigmas[global_start : global_end + 1]`). The wrapped
+            # callback forwards to the shared stock callback
+            # (`latent_preview.prepare_callback`) with the step remapped to the
+            # global timeline, so the bar runs continuously and preview bytes
+            # flow through the same PROGRESS_BAR_HOOK every other ComfyUI node
+            # uses. The wrapper writes x0 into the shared `x0_output` dict for
+            # `clock_reindex` audio and the denoised fallback.
+            preview_cb = _wrap_preview_callback(
+                stock_cb, x0_output, global_done, global_total,
+            )
+            stage_sigmas = working_sigmas[global_start:global_end + 1]
 
-        callback = preview_cb
-        # H3-runtime behavior: a zero-step intermediate stage still invokes
-        # guider.sample once with a single-sigma schedule (zero denoising
-        # steps). Upstream SPEED skips the sampler for such segments.
-        public = guider.sample(
-            stage_start_pub,
-            stage_start_latent,
-            sampler,
-            stage_sigmas,
-            callback=callback,
-            disable_pbar=disable_pbar,
-            seed=noise.seed,
-        )
-        last_public = public
-        global_done += len(stage_sigmas) - 1
-        # Kappa alignment uses the transition sigma at the GLOBAL boundary
-        # index of the working schedule — which previous transitions may have
-        # already patched with an aligned coordinate.
-        rsp_q = float(working_sigmas[global_end])
-        public_video, public_audio = unpack_latent(public)
-        log.info("[SPEED] stage %d output: video=%s audio=%s rsp_q=%.4f",
-                 stage_idx, list(public_video.shape), list(public_audio.shape), rsp_q)
+            callback = preview_cb
+            # H3-runtime behavior: a zero-step intermediate stage still invokes
+            # guider.sample once with a single-sigma schedule (zero denoising
+            # steps). Upstream SPEED skips the sampler for such segments.
+            public = guider.sample(
+                stage_start_pub,
+                stage_start_latent,
+                sampler,
+                stage_sigmas,
+                callback=callback,
+                disable_pbar=disable_pbar,
+                seed=noise.seed,
+            )
+            last_public = public
+            global_done += len(stage_sigmas) - 1
+            # Kappa alignment uses the transition sigma at the GLOBAL boundary
+            # index of the working schedule — which previous transitions may have
+            # already patched with an aligned coordinate.
+            rsp_q = float(working_sigmas[global_end])
+            public_video, public_audio = unpack_latent(public)
+            log.info("[SPEED] stage %d output: video=%s audio=%s rsp_q=%.4f",
+                     stage_idx, list(public_video.shape), list(public_audio.shape), rsp_q)
 
-        # Recover internal state (public -> carry-representation).
-        internal_video, internal_audio = to_internal_state(
-            public_video, public_audio, rsp_q, audio_scale
-        )
+            # Recover internal state (public -> carry-representation).
+            internal_video, internal_audio = to_internal_state(
+                public_video, public_audio, rsp_q, audio_scale
+            )
 
-        # Align (kappa) for this transition: rsp_r = next_scale / current_scale.
-        ratio = scales[stage_idx + 1] / scales[stage_idx]
-        if config.sigma_policy == "canonical":
-            kappa, new_q = aligned_sigma(rsp_q, ratio)
-        else:
-            kappa, new_q = 1.0, rsp_q
-        # Patch the boundary coordinate in the working schedule with the
-        # aligned sigma (upstream: `scheduler.sigmas[end] = t_tilde`).
-        working_sigmas[global_end] = new_q
+            # Align (kappa) for this transition: rsp_r = next_scale / current_scale.
+            ratio = scales[stage_idx + 1] / scales[stage_idx]
+            if config.sigma_policy == "canonical":
+                kappa, new_q = aligned_sigma(rsp_q, ratio)
+            else:
+                kappa, new_q = 1.0, rsp_q
+            # Patch the boundary coordinate in the working schedule with the
+            # aligned sigma (upstream: `scheduler.sigmas[end] = t_tilde`).
+            working_sigmas[global_end] = new_q
 
-        # DCT-expand the video (coupled or fresh band) and rescale by kappa.
-        next_h, next_w, next_t = stage_hw_t[stage_idx + 1]
-        if next_t > internal_video.shape[-3]:
-            # Temporal expansion needed: use the 3D spectral path.
+            # DCT-expand the video (coupled or fresh band) and rescale by kappa.
+            # Coupled policy: the SAME full-grid noise field projected onto
+            # each stage's resolution — in the spectral domain. Pixel-space
+            # cropping would change the DCT spectrum, so take the combined
+            # temporal+spatial DCT of the ORIGINAL full-res noise once and
+            # keep only the low-frequency coefficient block matching the
+            # next stage's (t, h, w). (With a full-length temporal block this
+            # reduces exactly to the spatial-only projection.)
+            next_h, next_w, next_t = stage_hw_t[stage_idx + 1]
             if config.noise_policy == "coupled_full_grid":
                 full_noise_video, _ = unpack_latent(full_noise)
-                # For coupled 3D: re-DCT-expand using full noise + cropped source.
-                # Combined low-freq block = DCT of source (3D); high-freq = scaled noise.
-                full_noise_video_dev = full_noise_video.to(
+                full_noise_video = full_noise_video.to(
                     device=internal_video.device, dtype=internal_video.dtype,
                 )
-                # Slice full noise to next_t in temporal axis, then use 3D coupled-style
-                # expansion: source DCT coefs go in low-freq corner, full noise coefs elsewhere.
-                source_dct = dct2(dct_temporal(internal_video))
-                target_noise = full_noise_video_dev[..., :next_t, :, :]
-                target_dct = dct2(dct_temporal(target_noise)) * float(rsp_q)
-                target_dct[..., :internal_video.shape[-3], :internal_video.shape[-2], :internal_video.shape[-1]] = source_dct
-                expanded_video = idct_temporal(idct2(target_dct))
-            else:
+                source_t, source_h, source_w = internal_video.shape[-3:]
+                full_dct = dct2(dct_temporal(full_noise_video))
+                target_dct = full_dct[..., :next_t, :next_h, :next_w] * float(rsp_q)
+                target_dct[..., :source_t, :source_h, :source_w] = dct2(
+                    dct_temporal(internal_video)
+                )
+                expanded_video = idct_temporal(idct2(target_dct)).to(
+                    dtype=internal_video.dtype
+                )
+            elif next_t > internal_video.shape[-3]:
+                # Temporal expansion needed: use the 3D spectral path.
                 expanded_video = spectral_expand_3d(
                     internal_video,
                     (next_t, next_h, next_w),
                     rsp_q,
                     int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
                 )
-        elif config.noise_policy == "coupled_full_grid":
-            full_noise_video, _ = unpack_latent(full_noise)
-            expanded_video = spectral_expand_coupled(
-                internal_video,
-                full_noise_video.to(device=internal_video.device, dtype=internal_video.dtype),
-                rsp_q,
-            )
-        else:
-            expanded_video = spectral_expand(
-                internal_video,
-                (next_h, next_w),
-                rsp_q,
-                int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
-            )
-        transitioned_video = expanded_video * kappa
+            else:
+                expanded_video = spectral_expand(
+                    internal_video,
+                    (next_h, next_w),
+                    rsp_q,
+                    int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
+                )
+            transitioned_video = expanded_video * kappa
 
-        # Audio handling at this boundary.
-        old_audio_sigma = time_shift_sigma(rsp_q, video_shift, audio_shift)
-        new_audio_sigma = time_shift_sigma(new_q, video_shift, audio_shift)
-        if config.audio_policy == "carry_preserve":
-            transitioned_audio = carry_preserved_audio(
-                internal_audio, rsp_q, new_q, old_audio_sigma, new_audio_sigma
-            )
-        elif config.audio_policy == "clock_reindex":
-            if "x0" not in x0_output:
-                raise RuntimeError("clock_reindex requires an x0 callback from this stage")
-            _, clean_audio = unpack_latent(x0_output["x0"])
-            transitioned_audio = clock_reindex_audio_state(
-                internal_audio,
-                clean_audio,
-                rsp_q,
-                new_q,
-                old_audio_sigma,
-                new_audio_sigma,
-                audio_scale,
-            )
-        else:
-            transitioned_audio = internal_audio
+            # Audio handling at this boundary.
+            old_audio_sigma = time_shift_sigma(rsp_q, video_shift, audio_shift)
+            new_audio_sigma = time_shift_sigma(new_q, video_shift, audio_shift)
+            if config.audio_policy == "carry_preserve":
+                transitioned_audio = carry_preserved_audio(
+                    internal_audio, rsp_q, new_q, old_audio_sigma, new_audio_sigma
+                )
+            elif config.audio_policy == "clock_reindex":
+                if "x0" not in x0_output:
+                    raise RuntimeError("clock_reindex requires an x0 callback from this stage")
+                _, clean_audio = unpack_latent(x0_output["x0"])
+                transitioned_audio = clock_reindex_audio_state(
+                    internal_audio,
+                    clean_audio,
+                    rsp_q,
+                    new_q,
+                    old_audio_sigma,
+                    new_audio_sigma,
+                    audio_scale,
+                )
+            else:
+                transitioned_audio = internal_audio
 
-        # Set up re-entry with the aligned boundary + zero latent for the next stage.
-        next_noise = pack_latent(
-            reentry_noise(transitioned_video, new_q),
-            reentry_noise(transitioned_audio, new_q),
+            # Set up re-entry with the aligned boundary + zero latent for the next stage.
+            next_noise = pack_latent(
+                reentry_noise(transitioned_video, new_q),
+                reentry_noise(transitioned_audio, new_q),
+            )
+            next_zero = pack_latent(
+                torch.zeros_like(transitioned_video),
+                torch.zeros_like(transitioned_audio),
+            )
+            log.info("[SPEED] stage %d → %d: expanded=%s next_zero=%s new_q=%.4f",
+                     stage_idx, stage_idx + 1,
+                     list(transitioned_video.shape) if hasattr(transitioned_video, "shape") else transitioned_video,
+                     list(next_zero.shape) if hasattr(next_zero, "shape") else next_zero,
+                     new_q)
+
+            # Advance to the next stage. The next stage's sigma slice derives
+            # from GLOBAL boundaries of the working schedule; the boundary
+            # coordinate was just patched in place with the aligned sigma.
+            stage_start_pub = next_noise
+            stage_start_latent = next_zero
+            global_start = global_end
+
+        # After the final transition, run the last full-res stage over the
+        # remaining working-schedule tail, entering at the aligned boundary sigma
+        # (patched into working_sigmas by the last transition).
+        log.info("[SPEED] final stage: latent=%s sigmas=%d",
+                 list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
+                 len(sigmas) - global_start)
+        # Final stage is at scale 1.0 (stage n_stages-1) so target == full res.
+        # Restore the pristine full-res keyframe/ref latents in the original conds
+        # (kept since our first downscale) so the final stage runs exactly like
+        # the normal full-res I2V path.
+        walker.apply_final()
+        final_preview_cb = _wrap_preview_callback(
+            stock_cb, x0_output, global_done, global_total,
         )
-        next_zero = pack_latent(
-            torch.zeros_like(transitioned_video),
-            torch.zeros_like(transitioned_audio),
+        final_sigmas = working_sigmas[global_start:]
+        final_callback = final_preview_cb
+        final_public = guider.sample(
+            stage_start_pub,
+            stage_start_latent,
+            sampler,
+            final_sigmas,
+            callback=final_callback,
+            disable_pbar=disable_pbar,
+            seed=noise.seed,
         )
-        log.info("[SPEED] stage %d → %d: expanded=%s next_zero=%s new_q=%.4f",
-                 stage_idx, stage_idx + 1,
-                 list(transitioned_video.shape) if hasattr(transitioned_video, "shape") else transitioned_video,
-                 list(next_zero.shape) if hasattr(next_zero, "shape") else next_zero,
-                 new_q)
+        last_public = final_public
 
-        # Advance to the next stage. The next stage's sigma slice derives
-        # from GLOBAL boundaries of the working schedule; the boundary
-        # coordinate was just patched in place with the aligned sigma.
-        stage_start_pub = next_noise
-        stage_start_latent = next_zero
-        global_start = global_end
+        if output_device is not None and last_public is not None:
+            last_public = last_public.to(output_device)
+        out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out.pop("downscale_ratio_temporal", None)
+        out["samples"] = last_public
 
-    # After the final transition, run the last full-res stage over the
-    # remaining working-schedule tail, entering at the aligned boundary sigma
-    # (patched into working_sigmas by the last transition).
-    log.info("[SPEED] final stage: latent=%s sigmas=%d",
-             list(stage_start_latent.shape) if hasattr(stage_start_latent, 'shape') else stage_start_latent,
-             len(sigmas) - global_start)
-    # Final stage is at scale 1.0 (stage n_stages-1) so target == full res.
-    # Restore the pristine full-res keyframe/ref latents in the original conds
-    # (kept since our first downscale) so the final stage runs exactly like
-    # the normal full-res I2V path.
-    walker = _get_or_create_walker(guider)
-    walker.apply_final()
-    _drop_walker(guider)
-    final_preview_cb = _wrap_preview_callback(
-        stock_cb, x0_output, global_done, global_total,
-    )
-    final_sigmas = working_sigmas[global_start:]
-    final_callback = final_preview_cb
-    final_public = guider.sample(
-        stage_start_pub,
-        stage_start_latent,
-        sampler,
-        final_sigmas,
-        callback=final_callback,
-        disable_pbar=disable_pbar,
-        seed=noise.seed,
-    )
-    last_public = final_public
-
-    if output_device is not None and last_public is not None:
-        last_public = last_public.to(output_device)
-    out = latent.copy()
-    out.pop("downscale_ratio_spacial", None)
-    out.pop("downscale_ratio_temporal", None)
-    out["samples"] = last_public
-
-    denoised = out
-    # The shared x0_output dict holds the most recent denoised x0 (written
-    # by the stock callback or the fallback wrapper each step).
-    x0 = x0_output.get("x0", None)
-    if x0 is not None:
-        # x0 may be a NestedTensor — extract video stream
-        if getattr(x0, "is_nested", False):
-            x0_streams = list(x0.unbind())
-            x0_video = next((s for s in x0_streams if s.ndim == 5), None)
-            if x0_video is not None:
-                x0 = x0_video
-        denoised = latent.copy()
-        denoised["samples"] = guider.model_patcher.model.process_latent_out(
-            x0.cpu() if hasattr(x0, "cpu") else x0
-        )
-    return out, denoised
+        denoised = out
+        # The shared x0_output dict holds the most recent denoised x0 (written
+        # by the stock callback or the fallback wrapper each step). It is the
+        # FULL nested video+audio latent — process_latent_out maps it through
+        # whole, so both output LATENTs keep valid video AND audio streams.
+        x0 = x0_output.get("x0", None)
+        if x0 is not None:
+            denoised = latent.copy()
+            denoised["samples"] = guider.model_patcher.model.process_latent_out(
+                x0.cpu() if hasattr(x0, "cpu") else x0
+            )
+        return out, denoised
+    finally:
+        # Run-scoped I2V lifecycle cleanup: on EVERY exit path (including any
+        # failure in a stage, transition, audio handling, spectral expansion,
+        # or the final sample), restore pristine conditioning latents and
+        # remove the walker from the guider. On success apply_final() has
+        # already restored + released every wrapper, so this is a no-op.
+        try:
+            walker.apply_final()
+        finally:
+            _drop_walker(guider)

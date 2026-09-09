@@ -16,7 +16,6 @@ import comfy.utils
 
 from speed_scripts.config import RATIO_MODES, SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
-from speed_scripts.latent_class import LatentWalker
 from speed_scripts.nodes_common import full_res_dims, validate_transition_steps
 
 
@@ -162,7 +161,9 @@ class MiniMaxH3SPEEDSamplerManual:
             full_latent_w=full_w,
         )
 
-        LatentWalker(guider)
+        # The runtime owns the walker lifecycle: it creates (or reuses) the
+        # per-run walker, applies every stage, restores full res, and drops
+        # it — including on failure (exception-safe).
         return run_speed_pipeline(
             noise,
             guider,

@@ -16,7 +16,6 @@ from speed_scripts.automatic_config import (
     build_automatic_speed_config,
 )
 from speed_scripts.h3_runtime import run_speed_pipeline
-from speed_scripts.latent_class import LatentWalker
 
 
 class MiniMaxH3SPEEDSampler:
@@ -86,11 +85,9 @@ class MiniMaxH3SPEEDSampler:
             seed_offset=seed_offset,
         )
 
-        # Snapshot pristine for every keyframe/ref on the guider before the
-        # first stage boundary. The runtime will call apply_stage again at
-        # every boundary (via the h3_runtime shim) to do the actual resize.
-        LatentWalker(guider)
-
+        # The runtime owns the walker lifecycle: it creates (or reuses) the
+        # per-run walker, applies every stage, restores full res, and drops
+        # it — including on failure (exception-safe).
         return run_speed_pipeline(
             noise,
             guider,
