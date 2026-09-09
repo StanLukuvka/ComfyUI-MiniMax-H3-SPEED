@@ -21,7 +21,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 ```
 
 1. Replace your `KSampler` / `SamplerCustomAdvanced` with **MiniMax H3 SPEED — Sampler (Automatic)**. Wire the same `noise`, `guider`, `sigmas`, `latent_image`.
-2. Set **`stages = 2`** (fastest) or **`3`** (balanced, default) and hit Queue. Current default settings are the sigma harvests at 1% delta.
+2. Set **`stages = 2`** (fastest) or **`3`** (balanced, default) and hit Queue. Current default settings are the conservative sigma harvest at 0.5% delta.
 
 
 ## Which node do I need?
@@ -44,8 +44,8 @@ If you are using LoRAs, or other models, addons, or optimisations that change ho
 
 You can instead use the following values for base H3:
 
-- **Default (baked, 1%):** `Tolerance (Delta)=0.01, noise_amplitude=7.394, noise_decay_exponent=0.62` — `r² 0.60`
-- **Conservative (0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.454, noise_decay_exponent=0.819` — `r² 0.70`
+- **Default (baked, 0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
+- **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — near parity, faster
 
 See the [evidence section](evidence/README.md) for what changes in generation.
 
@@ -80,7 +80,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 - **"Sigma schedule too short"** → increase `BasicScheduler` steps. The last stage boundary must leave at least one denoising step: with the final boundary at step `g`, you need ≥ `g + 2` sigmas (e.g. a 4-stage run with boundaries 3/5/8 needs ≥10 sigmas = 9 steps).
 - **"H3 model required"** → this only works with a real MiniMax-H3 model (one that has `sigma_shift_video` / `sigma_shift_audio`). Not SD/Flux/WAN.
-- **Text looks blurry / wobbly** → try `noise_policy = coupled_full_grid`, or lower `Tolerance (Delta)` from `0.01` (1%) to `0.005` (0.5% — more conservative, slower but sharper).
+- **Text looks blurry / wobbly** → try `noise_policy = coupled_full_grid`, or lower `Tolerance (Delta)` from `0.005` (0.5%) to `0.001` — more conservative, slower but sharper.
 - **Prompt drifts / objects disappear on 4-stage** → too many hops. Drop to 2 or 3 stages.
 
 ## Advanced — you don't need this to use it

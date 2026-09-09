@@ -1,4 +1,3 @@
-# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §7 (commit 1) — flow-produced, do not hand-edit
 """Automatic SPEED sampler — uses LatentWalker to own the I2V keyframe
 lifecycle across the SPEED stage boundaries.
 

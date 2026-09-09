@@ -1,12 +1,11 @@
-# FLOW-PRODUCED — Implementation Plan — Continuous SPEED Sigma Harvester.md §7 (commit 1) — flow-produced, do not hand-edit
 """Shared automatic SPEED config construction.
 
-The Automatic SPEED sampler and the SPEED Sigma Harvest diagnostic node must
-build identical SpeedConfig values from the same widget inputs. This module
-owns that construction so the two nodes cannot drift: the stage->scale
-ladder and the SpeedConfig fields all live here, and both nodes call
-`build_automatic_speed_config`. The delta value arrives already
-alias-resolved — the widget-label alias handling stays in the node layer.
+Centralizes the Automatic SPEED sampler's stage ladder and SpeedConfig
+construction: the stages->scale mapping, the legacy preset-name aliases, and
+the assembly of a validated `SpeedConfig` from the node's widget inputs all
+live here, and the node calls `build_automatic_speed_config` instead of
+building configs inline. The delta value arrives already alias-resolved —
+the widget-label alias handling stays in the node layer.
 """
 
 from __future__ import annotations

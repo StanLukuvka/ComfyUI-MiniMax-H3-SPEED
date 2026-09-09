@@ -28,7 +28,7 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-from .latent_class import LatentClass, LatentStage, LatentWalker
+from .latent_class import LatentWalker
 
 
 # Per-pipeline-run walker, stashed on the guider so the same wrapper dict
@@ -456,7 +456,6 @@ def run_speed_pipeline(
             stock_cb, x0_output, global_done, global_total,
         )
         stage_sigmas = working_sigmas[global_start:global_end + 1]
-        stage_h, stage_w, stage_t = stage_hw_t[stage_idx]
 
         callback = preview_cb
         # H3-runtime behavior: a zero-step intermediate stage still invokes
@@ -592,7 +591,6 @@ def run_speed_pipeline(
     # Restore the pristine full-res keyframe/ref latents in the original conds
     # (kept since our first downscale) so the final stage runs exactly like
     # the normal full-res I2V path.
-    fh, fw, _ = stage_resolution(config, n_stages - 1, full_h, full_w, full_t)
     walker = _get_or_create_walker(guider)
     walker.apply_final()
     _drop_walker(guider)
