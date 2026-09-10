@@ -44,9 +44,12 @@ class SpeedConfig:
     transition_seed_offset: int = 10_000
     transition_mode: str = "explicit"  # "explicit" uses transition_steps; "delta_custom" computes from power spectrum
     delta: float = 0.01
-    # Calibrated on H3 0.6MP 40-step harvest (β0.59-0.62, r² fair-good) — 0.6MP sweep stable
-    noise_amplitude: float = 7.394
-    noise_decay_exponent: float = 0.62
+    # Conservative bake from the H3 Sigma-Harvest calibration (Delta 0.005,
+    # A 12.105, beta 0.773, full-res native Euler). The Automatic node always
+    # overrides these explicitly; the defaults exist so a bare SpeedConfig
+    # matches the pack's shipped calibration.
+    noise_amplitude: float = 12.105
+    noise_decay_exponent: float = 0.773
     full_latent_h: int = 45
     full_latent_w: int = 80
     certification: str = "requires_h3_gpu_validation"
