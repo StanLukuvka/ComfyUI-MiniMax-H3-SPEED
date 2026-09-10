@@ -255,14 +255,14 @@ class MiniMaxH3HarvestToConfig:
 
         # Human-readable report — just the plug-and-play values
         lines = [
-            f"Empirical H3 residual calibration: noise_amplitude={A:.3f}  noise_decay_exponent={beta:.3f}  r²={r2:.4f}  health={health}",
+            f"Empirical H3 residual calibration: noise_amplitude={A:.4f}  noise_decay_exponent={beta:.4f}  r²={r2:.4f}  health={health}",
         ]
         if health in ("suspect", "weak", "invalid"):
             lines.append(
-                f"WARNING: fit is {health.upper()} — beta={beta:.3f} with "
+                f"WARNING: fit is {health.upper()} — beta={beta:.4f} with "
                 f"r²={r2:.4f}. Not cleanly decaying. Rerun harvest or use manual preset."
             )
-        lines.append(f"Paste into SPEED Sampler: Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.3f}, noise_decay_exponent={beta:.3f} (transition_mode=delta_custom)")
+        lines.append(f"Paste into SPEED Sampler: Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)")
         # Diagnostic only — not part of the JSON to paste. Shows where delta_custom
         # will place the two most common reference scales for this sigmas length.
         # Derived exactly as runtime does: omega = scale * min(H,W)/2 -> P(omega) -> thr -> first step <= thr.

@@ -77,6 +77,16 @@ def test_harvest_runs_one_native_euler_pass_and_emits_calibration():
     assert {"r2", "health", "report"} <= set(calibration)
     assert isinstance(diagnostic, dict) and "samples" in diagnostic
 
+    # Paste line mirrors the Automatic widget's 4-decimal A/beta precision;
+    # delta stays at 3 decimals.
+    paste_line = next(
+        line for line in calibration["report"].splitlines()
+        if line.startswith("Paste into SPEED Sampler:")
+    )
+    assert "noise_amplitude=" + format(calibration["noise_amplitude"], ".4f") in paste_line
+    assert "noise_decay_exponent=" + format(calibration["noise_decay_exponent"], ".4f") in paste_line
+    assert "Tolerance (Delta)=" + format(calibration["delta"], ".3f") in paste_line
+
 
 def test_harvest_reports_no_captures_instead_of_inventing_fit():
     cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig

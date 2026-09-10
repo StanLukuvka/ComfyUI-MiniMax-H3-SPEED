@@ -43,6 +43,11 @@ def test_automatic_node_public_surface_and_defaults():
     assert required["Tolerance (Delta)"][1]["default"] == 0.005
     assert required["noise_amplitude"][1]["default"] == 12.105
     assert required["noise_decay_exponent"][1]["default"] == 0.773
+    assert required["noise_amplitude"][1]["step"] == 0.0001
+    assert required["noise_amplitude"][1]["round"] == 0.0001
+    assert required["noise_decay_exponent"][1]["step"] == 0.0001
+    assert required["noise_decay_exponent"][1]["round"] == 0.0001
+    assert required["Tolerance (Delta)"][1]["step"] == 0.001
 
 
 @pytest.mark.parametrize("stages", [2, 3, 4])
@@ -78,6 +83,16 @@ def test_node_forwards_generation_configuration_to_shared_builder(monkeypatch):
     assert (cfg.delta, cfg.noise_amplitude, cfg.noise_decay_exponent) == (0.007, 13.5, 0.9)
     assert cfg.transition_seed_offset == 777
     assert (cfg.full_latent_h, cfg.full_latent_w) == (45, 80)
+
+    # The widget accepts 4-decimal A/beta (step/round 0.0001); the node must
+    # forward them to the shared builder unrounded.
+    four_digit = _capture_node_config(
+        monkeypatch,
+        noise_amplitude=12.1054,
+        noise_decay_exponent=0.7732,
+    )
+    assert four_digit.noise_amplitude == 12.1054
+    assert four_digit.noise_decay_exponent == 0.7732
 
 
 def test_legacy_aliases_still_resolve(monkeypatch):

@@ -33,6 +33,29 @@ def test_manual_node_public_surface():
     assert required["transition_resolution_4"][1]["default"] == 1.0
 
 
+def test_manual_config_stays_explicit_with_inherited_noise_fit(monkeypatch):
+    mod = importlib.import_module("sampler_node_manual")
+    captured = {}
+
+    def fake_pipeline(noise, guider, sigmas, latent_image, config, **kwargs):
+        captured["config"] = config
+        return latent_image, latent_image
+
+    monkeypatch.setattr(mod, "run_speed_pipeline", fake_pipeline)
+    mod.MiniMaxH3SPEEDSamplerManual().sample(
+        make_fake_noise(),
+        make_recording_guider(),
+        torch.linspace(1.0, 0.0, 11),
+        make_latent(h=8, w=8),
+    )
+    cfg = captured["config"]
+    # The runtime reads A/beta only under delta_custom; Manual is explicit,
+    # so its noise fit is inherited from SpeedConfig defaults and is inert.
+    assert cfg.transition_mode == "explicit"
+    assert cfg.delta == 0.01
+    assert (cfg.noise_amplitude, cfg.noise_decay_exponent) == (12.105, 0.773)
+
+
 def test_steps_mode_executes_global_boundaries_and_alignment():
     sigmas = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
     (_out, _denoised), calls, shapes = _run_manual(
