@@ -154,8 +154,6 @@ class MiniMaxH3SPEEDSamplerManual:
             transition_mode="explicit",
             noise_policy=noise_policy,
             delta=0.01,
-            noise_amplitude=7.394,
-            noise_decay_exponent=0.62,
             transition_seed_offset=int(seed_offset),
             full_latent_h=full_h,
             full_latent_w=full_w,
