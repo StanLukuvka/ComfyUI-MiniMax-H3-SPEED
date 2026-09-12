@@ -223,6 +223,42 @@ def spectral_expand_3d(
     return idct_temporal(idct2(dct_full)).to(dtype=original_dtype)
 
 
+def spectral_expand_clean_3d(
+    value: torch.Tensor,           # [..., T_coarse, H_coarse, W_coarse]
+    target_thw: tuple[int, int, int],
+) -> torch.Tensor:
+    """Clean-history 3D spectral projection: deterministic, no noise.
+
+    Input is a clean denoised estimate (solver history), not noisy state, so
+    the target's new high-frequency DCT coefficients are zero — never random.
+    Combined temporal + spatial DCT, zero-filled target coefficient tensor,
+    copy of the source low-frequency block, inverse combined DCT. Deterministic
+    and sigma-free by construction.
+    """
+    target_t, target_h, target_w = (int(target_thw[0]), int(target_thw[1]), int(target_thw[2]))
+    if value.ndim < 3:
+        raise ValueError("spectral_expand_clean_3d expects at least 3 dims")
+    source_t, source_h, source_w = value.shape[-3:]
+    if target_t < source_t or target_h < source_h or target_w < source_w:
+        raise ValueError(
+            f"3D DCT cannot expand {value.shape[-3:]} to {(target_t, target_h, target_w)}"
+        )
+
+    original_dtype = value.dtype
+    # Combined temporal+spatial DCT of the clean source. Same composition as
+    # spectral_expand_3d: the two transforms act on disjoint axes, so the
+    # order is irrelevant.
+    source_dct = dct2(dct_temporal(value))
+    target_dct = torch.zeros(
+        value.shape[:-3] + (target_t, target_h, target_w),
+        device=value.device,
+        dtype=source_dct.dtype,
+    )
+    target_dct[..., :source_t, :source_h, :source_w] = source_dct
+    return idct_temporal(idct2(target_dct)).to(dtype=original_dtype)
+
+
 __all__ = ["dct2", "idct2", "lowpass_dct", "lowpass_filter",
            "spectral_expand", "spectral_expand_coupled",
-           "dct_temporal", "idct_temporal", "spectral_expand_3d"]
+           "dct_temporal", "idct_temporal", "spectral_expand_3d",
+           "spectral_expand_clean_3d"]
