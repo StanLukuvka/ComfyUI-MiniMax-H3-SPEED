@@ -21,7 +21,12 @@ native sampler objects and is never re-implemented or inspected here.
 import pytest
 import torch
 
-from conftest import make_latent
+from conftest import (
+    LADDER_BOUNDARIES,
+    RecordingEchoGuider,
+    SeededRandomNoise,
+    make_latent,
+)
 from speed_scripts.automatic_config import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
@@ -34,11 +39,6 @@ SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
 
 #: The three samplers this slice adds on top of the Euler regression anchor.
 NEW_SAMPLERS = ("heun", "dpm_2", "exp_heun_2_x0")
-
-#: Explicit stage ladders for the 2/3/4-stage completion tests: production
-#: Automatic scale ladders with unique, strictly increasing global boundaries
-#: that tile the 10-interval schedule (5 + 5, 3 + 2 + 5, 2 + 2 + 3 + 3).
-LADDER_BOUNDARIES = {2: (5,), 3: (3, 5), 4: (2, 4, 7)}
 
 
 def _nested(video, audio):
@@ -75,57 +75,6 @@ def _automatic_calibrated_cfg(stages):
         full_latent_h=8,
         full_latent_w=8,
     )
-
-
-class RecordingEchoGuider:
-    """Echo guider that records what every stage call received.
-
-    The public output is the stage's noise video plus a fixed offset, so a
-    finished run carries non-trivial signal. Records the sampler object, the
-    sigma schedule, and the noise geometry of each ``sample`` call.
-    """
-
-    class Model:
-        sigma_shift_video = 12.0
-        sigma_shift_audio = 3.0
-
-        def process_latent_out(self, x):
-            return x
-
-    def __init__(self, video_offset=0.0):
-        self.model_patcher = type("P", (), {"model": self.Model()})()
-        self.video_offset = video_offset
-        self.samplers = []
-        self.sigma_calls = []
-        self.noise_shapes = []
-
-    def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-        self.samplers.append(sampler)
-        self.sigma_calls.append([float(s) for s in sigmas])
-        pub_video, pub_audio = list(noise.unbind())
-        self.noise_shapes.append(tuple(pub_video.shape))
-        out = _nested(pub_video + self.video_offset, pub_audio)
-        count = len(sigmas) - 1
-        if callback is not None:
-            for i in range(count):
-                callback(i, out, out, count)
-        return out
-
-
-class SeededRandomNoise:
-    """Noise source returning seeded random noise, so run outputs are
-    non-trivial and determinism is not vacuously true over zero inputs."""
-
-    def __init__(self, seed=42):
-        self.seed = seed
-
-    def generate_noise(self, latent):
-        video, audio = list(latent["samples"].unbind())
-        generator = torch.Generator().manual_seed(self.seed)
-        return _nested(
-            torch.randn(video.shape, generator=generator),
-            torch.randn(audio.shape, generator=generator),
-        )
 
 
 def _run(sampler, cfg, guider, **kwargs):

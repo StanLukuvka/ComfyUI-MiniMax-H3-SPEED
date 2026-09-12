@@ -1,5 +1,9 @@
 """Sampler-support contracts: public selector, run-scoped handle lifecycle,
-and Euler regression through the new handle layer.
+Euler regression through the new handle layer, and the S6 suite-level gates
+that are not tied to one sampler: both noise policies on every public
+sampler, the global progress/preview timeline, the coincident-boundary
+Turbo torture ladder, the I2V conditioning matrix, and failure cleanup with
+a clean second generation.
 
 The selector tests pin the fail-closed public surface. The Euler regression
 tests replay the same fake-model run the pre-handle suite used and assert the
@@ -17,8 +21,16 @@ is covered separately.
 import pytest
 import torch
 
-from conftest import make_fake_noise, make_latent, make_recording_guider
+from conftest import (
+    LADDER_BOUNDARIES,
+    RecordingEchoGuider,
+    SeededRandomNoise,
+    make_fake_noise,
+    make_latent,
+    make_recording_guider,
+)
 from speed_scripts import h3_runtime
+from speed_scripts.automatic_config import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
 from speed_scripts.flow import aligned_sigma
 from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
@@ -39,6 +51,48 @@ def _cfg(**kwargs):
     kwargs.setdefault("scales", (.33, .66, 1.0))
     kwargs.setdefault("transition_steps", (3, 5))
     return SpeedConfig(transition_mode="explicit", **kwargs)
+
+
+def _explicit_ladder_cfg(stages):
+    return SpeedConfig(
+        scales=STAGES_TO_SCALES[stages],
+        transition_steps=LADDER_BOUNDARIES[stages],
+        transition_mode="explicit",
+    )
+
+
+def _automatic_calibrated_cfg(stages):
+    """The Automatic node's delta_custom config for ``stages`` stages.
+
+    With the baked calibration constants on the 10-interval schedule every
+    transition quantizes onto schedule index 1, so the middle stages get a
+    single-sigma schedule (zero denoising steps) — the legal
+    coincident-boundary case the runtime must support.
+    """
+    return SpeedConfig(
+        scales=STAGES_TO_SCALES[stages],
+        transition_steps=tuple(range(1, len(STAGES_TO_SCALES[stages]))),
+        transition_mode="delta_custom",
+        delta=.005,
+        noise_amplitude=12.105,
+        noise_decay_exponent=.773,
+        full_latent_h=8,
+        full_latent_w=8,
+    )
+
+
+def _run(sampler, cfg, guider, **kwargs):
+    return run_speed_pipeline(
+        SeededRandomNoise(), guider, SIGMAS, make_latent(), cfg,
+        sampler_name=sampler, disable_pbar=True, **kwargs,
+    )
+
+
+def _assert_full_res_nested(latent):
+    """Both H3 streams survived: 5-dim video + 4-dim audio at full 8x8."""
+    video, audio = latent["samples"].unbind()
+    assert video.ndim == 5 and audio.ndim == 4
+    assert tuple(video.shape[-2:]) == (8, 8)
 
 
 def _nested(video, audio):
@@ -505,3 +559,277 @@ def test_run_rejects_unsupported_sampler_name_fail_closed():
     assert "dpmpp_2m" in message
     for supported in SUPPORTED_SPEED_SAMPLERS:
         assert supported in message
+
+
+# ---------------------------------------------------------------------------
+# S6: Noise policies (source §9 remainder) — both policies smoke on every
+# public sampler through the real selector path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_noise_policy_direct_coarse_smoke_per_sampler(sampler):
+    guider = RecordingEchoGuider(video_offset=.5)
+    out, denoised = _run(sampler, _explicit_ladder_cfg(3), guider)
+    assert len(guider.noise_shapes) == 3
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_noise_policy_coupled_full_grid_smoke_per_sampler(sampler):
+    cfg = _cfg(noise_policy="coupled_full_grid")
+    guider = RecordingEchoGuider(video_offset=.5)
+    out, denoised = _run(sampler, cfg, guider)
+    assert len(guider.noise_shapes) == 3
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+
+
+# ---------------------------------------------------------------------------
+# S6: Progress / preview (source §22, PR A scope) — the public timeline is
+# one continuous 0..total denoising pass for every sampler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_public_progress_is_monotonic_across_stages(sampler):
+    """Callback indices rise on one global timeline: no per-stage restart,
+    and each stage's local steps continue where the previous stage stopped."""
+    seen = []
+    guider = RecordingEchoGuider(video_offset=.5)
+    _run(
+        sampler, _explicit_ladder_cfg(3), guider,
+        preview_callback=lambda step, x0, x, total: seen.append(step),
+    )
+    assert seen == list(range(10))
+
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_shared_x0_output_and_final_denoised_are_valid_nested_h3(sampler):
+    """The shared x0 dict stays valid across stages and the denoised output
+    keeps the full nested H3 video+audio structure at full resolution."""
+    x0_output = {}
+    guider = RecordingEchoGuider(video_offset=.5)
+    _out, denoised = _run(
+        sampler, _explicit_ladder_cfg(3), guider, x0_output=x0_output,
+    )
+    assert "x0" in x0_output
+    _assert_full_res_nested(denoised)
+    _assert_full_res_nested({"samples": x0_output["x0"]})
+
+
+# ---------------------------------------------------------------------------
+# S6: Zero-step / 8-step Turbo torture (source §23, all public samplers) —
+# the coincident-boundary ladder still runs every configured transition and
+# alignment, and progress stays monotonic
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_turbo_coincident_ladder_runs_every_transition_and_alignment(sampler):
+    """Short-schedule torture case (the plan's Turbo torture block): with
+    the baked calibration every transition quantizes onto one boundary, each
+    middle stage gets a single-sigma slice (zero denoising steps), and the
+    spectral expand + kappa alignment still patched the schedule (re-entry
+    sigma is the aligned coordinate, not the raw schedule value)."""
+    cfg = _automatic_calibrated_cfg(3)
+    guider = RecordingEchoGuider()
+    seen = []
+    out, _ = _run(
+        sampler, cfg, guider,
+        preview_callback=lambda step, x0, x, total: seen.append(step),
+    )
+
+    assert len(guider.sigma_calls) == 3
+    for call in guider.sigma_calls[1:-1]:
+        assert len(call) == 1  # single-sigma slice: no crash, zero steps
+    # Every configured spectral transition executed: all three stages ran
+    # through the selected native sampler object.
+    assert guider.samplers == [("sampler", sampler)] * 3
+    # Every configured sigma alignment executed: both transitions quantized
+    # onto the same boundary coordinate, and each re-aligned it with its own
+    # stage ratio (0.333→0.667 is ratio 2.0, 0.667→1.0 is ratio 1.5) — the
+    # documented coincident-boundary model.
+    first_kappa, first_aligned = aligned_sigma(float(SIGMAS[1]), 2.0)
+    second_kappa, second_aligned = aligned_sigma(first_aligned, 1.5)
+    assert guider.sigma_calls[1][0] == pytest.approx(first_aligned)
+    assert guider.sigma_calls[2][0] == pytest.approx(second_aligned)
+    # Progress stayed monotonic across the whole coincident ladder.
+    assert seen == list(range(10))
+    _assert_full_res_nested(out)
+
+
+# ---------------------------------------------------------------------------
+# S6: I2V matrix (source §24, PR A scope) — keyframe/ref latents follow the
+# LatentWalker lifecycle per sampler, pristine conditioning is restored on
+# success and failure, and no sampler code mutates guider.original_conds
+# structurally
+# ---------------------------------------------------------------------------
+
+def _i2v_guider():
+    """RecordingEchoGuider with real I2V-shaped conditioning attached.
+
+    Returns (guider, keyframes, refs, original_conds) where keyframes/refs
+    are the live holder dicts the walker resizes and original_conds is the
+    container object the guider owns.
+    """
+    guider = RecordingEchoGuider(video_offset=.5)
+    keyframes = [{"latent": torch.zeros(1, 1, 2, 8, 8)} for _ in range(2)]
+    refs = [{"latent": torch.zeros(1, 1, 2, 8, 8)} for _ in range(2)]
+    guider.original_conds = {
+        "positive": [{
+            "minimax_keyframes": keyframes,
+            "minimax_refs": refs,
+        }],
+        "negative": [],
+    }
+    return guider, keyframes, refs, guider.original_conds
+
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_i2v_smoke_and_pristine_restore_on_success(sampler):
+    guider, keyframes, refs, original_conds = _i2v_guider()
+    out, denoised = _run(sampler, _explicit_ladder_cfg(3), guider)
+
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+    # Keyframe latents followed the LatentWalker: staged to the first coarse
+    # grid, restored to pristine at the end.
+    for kf in keyframes:
+        assert tuple(kf["latent"].shape[-2:]) == (8, 8)
+    # Ref latents kept their existing behavior: never resized.
+    for ref in refs:
+        assert tuple(ref["latent"].shape[-2:]) == (8, 8)
+    # Pristine conditioning restored: same container object, same per-holder
+    # dicts, full-res tensors. No sampler code replaced or rebuilt
+    # guider.original_conds.
+    assert guider.original_conds is original_conds
+    cond = original_conds["positive"][0]
+    assert cond["minimax_keyframes"] is keyframes
+    assert cond["minimax_refs"] is refs
+    assert not hasattr(guider, _LW_ATTR)
+
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_i2v_failure_restores_pristine_conditioning(sampler):
+    guider, keyframes, refs, original_conds = _i2v_guider()
+
+    import speed_scripts.h3_runtime as rt
+
+    original_expand = rt.spectral_expand
+
+    def exploding_expand(value, target_hw, sigma, seed):
+        raise RuntimeError("i2v forced failure")
+
+    rt.spectral_expand = exploding_expand
+    try:
+        with pytest.raises(RuntimeError, match="i2v forced failure"):
+            _run(sampler, _explicit_ladder_cfg(3), guider)
+    finally:
+        rt.spectral_expand = original_expand
+
+    # The failure happened after stage 0 had already downscaled the
+    # keyframe latents; pristine conditioning is restored anyway.
+    for kf in keyframes:
+        assert tuple(kf["latent"].shape[-2:]) == (8, 8)
+    for ref in refs:
+        assert tuple(ref["latent"].shape[-2:]) == (8, 8)
+    assert guider.original_conds is original_conds
+    assert not hasattr(guider, _LW_ATTR)
+
+
+# ---------------------------------------------------------------------------
+# S6: Failure cleanup (source §9 remainder) — forced sampler-stage failure
+# through the real selector path, then a clean second generation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_stage_failure_closes_handle_restores_and_drops_walker(sampler):
+    """Force a mid-run failure inside the second stage's guider.sample call:
+    the run-scoped handle is closed and the walker attribute is removed from
+    the guider (with no I2V conds attached, the walker's own restore is a
+    no-op — the pristine-restore path is pinned by the I2V tests above)."""
+    closed = []
+    events = []
+
+    class FailingCloseHandle(SpeedSamplerHandle):
+        def __init__(self):
+            self.sampler = object()
+            self.capability = SamplerCapability.STATELESS_STEP_LOCAL
+
+        def close(self):
+            closed.append(True)
+
+    # Instrument the guider AFTER the factory patch: the failure must come
+    # from the stage call, not the handle.
+    class ExplodingStageGuider(RecordingEchoGuider):
+        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+            events.append("sample")
+            if len(events) == 2:  # second stage
+                raise RuntimeError("stage exploded")
+            return super().sample(
+                noise, latent_image, sampler, sigmas, callback=callback, **kwargs
+            )
+
+    guider = ExplodingStageGuider()
+    _original_factory = h3_runtime.create_speed_sampler_handle
+    h3_runtime.create_speed_sampler_handle = lambda name: FailingCloseHandle()
+    try:
+        with pytest.raises(RuntimeError, match="stage exploded"):
+            _run(sampler, _explicit_ladder_cfg(3), guider)
+    finally:
+        h3_runtime.create_speed_sampler_handle = _original_factory
+
+    assert closed == [True]
+    assert events == ["sample", "sample"]  # stage 2 never ran
+    assert not hasattr(guider, _LW_ATTR)
+
+
+
+@pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
+def test_second_generation_after_failure_starts_clean(sampler):
+    """After a failed run, the same guider can run a full generation: the
+    walker is recreated, the handle is rebuilt, and the output is identical
+    to a run that never saw the failure."""
+    class ExplodingStageGuider(RecordingEchoGuider):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.remaining_stage_failures = 0
+
+        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+            if self.remaining_stage_failures > 0:
+                self.remaining_stage_failures -= 1
+                raise RuntimeError("first generation exploded")
+            return super().sample(
+                noise, latent_image, sampler, sigmas, callback=callback, **kwargs
+            )
+
+    cfg = _explicit_ladder_cfg(3)
+
+    # Generation 1: fail in the first stage call.
+    guider_a = ExplodingStageGuider()
+    guider_a.remaining_stage_failures = 1
+    with pytest.raises(RuntimeError, match="first generation exploded"):
+        _run(sampler, cfg, guider_a)
+    assert not hasattr(guider_a, _LW_ATTR)
+
+    # Generation 2: same guider object, no special handling — must complete
+    # and match a control run that never failed.
+    out_second, _ = _run(sampler, cfg, guider_a)
+
+    guider_control = ExplodingStageGuider()
+    out_control, _ = _run(sampler, cfg, guider_control)
+
+    video_second, audio_second = out_second["samples"].unbind()
+    video_control, audio_control = out_control["samples"].unbind()
+    assert torch.equal(video_second, video_control)
+    assert torch.equal(audio_second, audio_control)
+    _assert_full_res_nested(out_second)
+    assert not hasattr(guider_a, _LW_ATTR)
+
