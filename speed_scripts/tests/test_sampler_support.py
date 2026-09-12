@@ -689,7 +689,6 @@ def _i2v_guider():
     return guider, keyframes, refs, guider.original_conds
 
 
-
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_i2v_smoke_and_pristine_restore_on_success(sampler):
     guider, keyframes, refs, original_conds = _i2v_guider()
@@ -712,7 +711,6 @@ def test_i2v_smoke_and_pristine_restore_on_success(sampler):
     assert cond["minimax_keyframes"] is keyframes
     assert cond["minimax_refs"] is refs
     assert not hasattr(guider, _LW_ATTR)
-
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
