@@ -606,7 +606,10 @@ def run_speed_pipeline(
             # the next stage re-enters guider.sample(). Stateless samplers
             # no-op here; stateful samplers (PR B) preserve their step
             # history across the boundary. Never called per denoising step
-            # and never after the final stage.
+            # and never after the final stage. The per-stream shapes let a
+            # stateful handle slice its flat packed history (the real host
+            # packs nested latents before the sampler sees them) back into
+            # video and audio.
             sampler_handle.on_transition(
                 SpeedTransition(
                     stage_idx=stage_idx,
@@ -615,6 +618,10 @@ def run_speed_pipeline(
                     new_sigma=new_q,
                     source_thw=tuple(internal_video.shape[-3:]),
                     target_thw=(next_t, next_h, next_w),
+                    source_stream_shapes=(
+                        tuple(public_video.shape),
+                        tuple(public_audio.shape),
+                    ),
                 )
             )
 

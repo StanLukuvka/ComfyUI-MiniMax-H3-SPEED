@@ -49,6 +49,12 @@ class SpeedTransition:
     Produced by the stage loop after the boundary sigma has been aligned and
     patched into the working schedule, and handed to the sampler handle's
     transition hook exactly once.
+
+    ``source_stream_shapes`` lists the per-stream latent shapes the stage's
+    sampler saw, in the host's flat-pack order (video first, then audio).
+    Stateless samplers ignore it; the stateful RES handle needs it to slice
+    a flat packed history tensor back into its video and audio streams,
+    because the host packs nested latents flat before any sampler code runs.
     """
 
     stage_idx: int
@@ -57,6 +63,7 @@ class SpeedTransition:
     new_sigma: float
     source_thw: tuple[int, int, int]
     target_thw: tuple[int, int, int]
+    source_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
 
 
 class SpeedSamplerHandle:
@@ -122,11 +129,16 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
             return
         # Clean-history projection: replace the stored video geometry with the
         # clean spectral projection; the clean audio estimate passes through
-        # unchanged. Sigma metadata moves to the aligned next-stage coordinate
+        # unchanged. On the real host path the history is the flat packed
+        # tensor the guider produced at the sampler boundary, so the
+        # per-stream shapes from that pack ride along for the video/audio
+        # split. Sigma metadata moves to the aligned next-stage coordinate
         # system. Coincident boundaries simply run this again on the already
         # projected history; new history is never synthesized here.
         self.state.old_denoised = project_clean_history(
-            self.state.old_denoised, transition.target_thw
+            self.state.old_denoised,
+            transition.target_thw,
+            source_stream_shapes=transition.source_stream_shapes,
         )
         rebase_res_history_sigmas(
             self.state, transition.new_sigma, transition.ratio

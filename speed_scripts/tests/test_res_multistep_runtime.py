@@ -495,7 +495,7 @@ def test_failure_during_res_history_projection_clears_res_state(monkeypatch):
     handle, captured = _inject_res_handle(monkeypatch)
     calls = []
 
-    def exploding_project(history, target_thw):
+    def exploding_project(history, target_thw, source_stream_shapes=None):
         calls.append(1)
         raise RuntimeError("history projection exploded")
 
