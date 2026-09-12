@@ -34,7 +34,7 @@ def _run(config, sigmas=SIGMAS, latent=None, preview_callback=None):
         sigmas,
         latent or make_latent(),
         config,
-        sampler=object(),
+        sampler_override=object(),
         disable_pbar=True,
         preview_callback=preview_callback,
     )

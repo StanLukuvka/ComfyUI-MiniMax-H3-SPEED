@@ -17,6 +17,7 @@ import comfy.utils
 from speed_scripts.config import RATIO_MODES, SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.nodes_common import full_res_dims, validate_transition_steps
+from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
 def CALCULATE_SCALES(transitions, ratio_mode):
@@ -85,6 +86,7 @@ class MiniMaxH3SPEEDSamplerManual:
                     "FLOAT",
                     {"default": 1.0, "min": 0, "max": 1},
                 ),
+                "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
             },
         }
 
@@ -105,6 +107,7 @@ class MiniMaxH3SPEEDSamplerManual:
         transition_resolution_3=0.75,
         transition_goal_4=15,
         transition_resolution_4=1.0,
+        sampler_name="euler",
         **kwargs,
     ):
         transitions = [
@@ -161,14 +164,15 @@ class MiniMaxH3SPEEDSamplerManual:
 
         # The runtime owns the walker lifecycle: it creates (or reuses) the
         # per-run walker, applies every stage, restores full res, and drops
-        # it — including on failure (exception-safe).
+        # it — including on failure (exception-safe). The sampler is built
+        # and closed by the runtime's run-scoped handle.
         return run_speed_pipeline(
             noise,
             guider,
             sigmas,
             latent_image,
             config,
-            sampler=comfy.samplers.sampler_object("euler"),
+            sampler_name=sampler_name,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
             output_device=None,
         )
