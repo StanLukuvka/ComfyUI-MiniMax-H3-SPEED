@@ -89,14 +89,14 @@ def rebase_res_history_sigmas(
         state.old_sigma_down = float(new_sigma)
     if state.prev_sigma_in is not None:
         prev = float(state.prev_sigma_in)
-        if prev >= 1.0:
+        if prev == 1.0:
             # Deviation from the plan's literal "call aligned_sigma": the
-            # shared transform rejects q >= 1, but an input sigma of 1.0 is
-            # legal history (the first interval of a stage that starts at
-            # pure noise). At q = 1 the transform's own formula gives
+            # shared transform rejects q >= 1, but an input sigma of exactly
+            # 1.0 is legal history (the first interval of a stage that starts
+            # at pure noise). At q = 1 the transform's own formula gives
             # kappa = ratio / ratio = 1, i.e. the identity, so the rebased
-            # value stays 1.0. Sigmas above 1 never occur in this repo's
-            # schedules and still fail closed through aligned_sigma.
+            # value stays 1.0. Every other out-of-domain sigma (> 1 or <= 0)
+            # still fails closed through aligned_sigma.
             state.prev_sigma_in = prev
         else:
             _, state.prev_sigma_in = aligned_sigma(prev, ratio)

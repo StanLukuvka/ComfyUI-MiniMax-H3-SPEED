@@ -352,10 +352,11 @@ def test_clean_projection_is_deterministic_and_shape_exact():
     assert torch.allclose(exact, source, atol=1e-5, rtol=0.0)
 
 
-def test_clean_projection_preserves_dtype_and_rejects_shrinking():
+def test_clean_projection_preserves_dtype_device_and_rejects_shrinking():
     source16 = _known_video().to(dtype=torch.float16)
     out16 = spectral_expand_clean_3d(source16, (3, 6, 6))
     assert out16.dtype == torch.float16
+    assert out16.device.type == source16.device.type
     with pytest.raises(ValueError):
         spectral_expand_clean_3d(_known_video(t=4, h=6, w=6), (2, 4, 4))
 
@@ -413,13 +414,17 @@ def test_rebase_sigmas_keeps_input_sigma_of_one():
 
 
 def test_rebase_sigmas_never_mutates_scheduler_data():
-    """The rebase is metadata-only: the caller's schedule tensor must come
-    out byte-identical."""
-    schedule = torch.tensor([1.0, 0.9, 0.5, 0.25, 0.0])
-    snapshot = schedule.clone()
-    state = ResMultistepState(old_sigma_down=0.5, prev_sigma_in=0.9)
-    rebase_res_history_sigmas(state, float(schedule[3]), 1.5)
-    assert torch.equal(schedule, snapshot)
+    """The rebase is metadata-only. The state's history tensor is aliased into
+    a schedule-like container standing in for scheduler-owned data: if the
+    rebase ever wrote through the tensor it holds, the alias would surface
+    the write and fail the byte-identical check."""
+    schedule_like = {"boundary": torch.tensor([1.0, 0.9, 0.5, 0.25, 0.0])}
+    snapshot = schedule_like["boundary"].clone()
+    state = ResMultistepState(
+        old_sigma_down=0.5, prev_sigma_in=0.9, old_denoised=schedule_like["boundary"],
+    )
+    rebase_res_history_sigmas(state, float(schedule_like["boundary"][3]), 1.5)
+    assert torch.equal(schedule_like["boundary"], snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -465,14 +470,15 @@ def test_on_transition_leaves_empty_state_alone():
 
 
 def test_on_transition_never_touches_reentry_or_conditioning_tensors():
-    """The hook owns history only: noisy re-entry tensors and conditioning
-    tensors must be byte-identical after the call."""
+    """The hook owns history only. The noisy re-entry and conditioning tensors
+    are aliased into the history itself: any write-through on the stored
+    history would surface in the aliases and fail the byte-identical check."""
     reentry = torch.randn(1, 1, 2, 4, 4)
     conditioning = torch.randn(1, 1, 2, 4, 4)
     reentry_snapshot = reentry.clone()
     conditioning_snapshot = conditioning.clone()
     handle = create_res_multistep_sampler_handle()
-    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
+    handle.state.old_denoised = _Nested([reentry, conditioning])
     handle.state.old_sigma_down = 0.5
     handle.state.prev_sigma_in = 0.6
 
