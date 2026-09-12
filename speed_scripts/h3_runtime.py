@@ -29,12 +29,26 @@ from .spectral import (
 log = logging.getLogger(__name__)
 
 from .latent_class import LatentWalker
+from .sampler_support import (
+    SamplerCapability,
+    SpeedTransition,
+    SpeedSamplerHandle,
+    create_speed_sampler_handle,
+)
 
 
 # Per-pipeline-run walker, stashed on the guider so the same wrapper dict
 # survives every coarse stage and the final restore. Dropped at the end of
 # every run; recreated on the next run that touches the same guider.
 _LW_ATTR = "_speed_latent_walker"
+
+
+class _OverrideSamplerHandle(SpeedSamplerHandle):
+    """Test-seam handle: wraps an injected sampler object as stateless."""
+
+    def __init__(self, sampler):
+        self.sampler = sampler
+        self.capability = SamplerCapability.STATELESS_STEP_LOCAL
 
 
 def _get_or_create_walker(guider) -> LatentWalker:
@@ -291,7 +305,11 @@ def run_speed_pipeline(
     latent: dict,
     config: SpeedConfig,
     *,
-    sampler,
+    sampler_name: str = "euler",
+    # Test/programmatic seam only: injects a fake sampler object without
+    # building a real Comfy sampler. Production node code must never use it;
+    # it may not be combined with a non-default sampler_name.
+    sampler_override=None,
     # PR3 (progress-bar): KEEP THE PROGRESS BAR ON BY DEFAULT. disable_pbar
     # defaults to False (bar VISIBLE). The SPEED sampler node explicitly passes
     # `disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED` to honor the user's
@@ -302,7 +320,7 @@ def run_speed_pipeline(
     preview_callback=None,
     x0_output=None,
 ):
-    """[Level 1] Run an N-stage progressive-resolution Euler chain (multi-stage SPEED).
+    """[Level 1] Run an N-stage progressive-resolution sampling chain (multi-stage SPEED).
 
     This is intentionally the slow correctness oracle: each public guider call
     performs its own prepare/pre-run/cleanup lifecycle and naturally rebuilds
@@ -311,6 +329,12 @@ def run_speed_pipeline(
     Mirrors canonical SPEED ``generate``: it computes transition steps from
     delta-optimal thresholds, runs each scale stage, and DCT-expands + kappa-aligns
     at each boundary.
+
+    The sampler arrives through a run-scoped ``SpeedSamplerHandle``: built
+    once from ``sampler_name`` (or wrapped from a test-only
+    ``sampler_override``) before the stage loop, notified through
+    ``on_transition()`` once per configured transition, and closed in the
+    run-level cleanup.
 
     Live previews are forwarded from ComfyUI's `latent_preview.prepare_callback`
     pipeline (the same one `SamplerCustomAdvanced` uses). Pass a callback built
@@ -422,6 +446,18 @@ def run_speed_pipeline(
     global_done = 0
     global_start = 0  # GLOBAL index the next stage begins at (into working_sigmas).
 
+    # One run-scoped sampler handle, built before the stage loop. The override
+    # seam wraps a caller-supplied sampler object as a stateless no-op handle;
+    # production paths go through the public sampler_name selector.
+    if sampler_override is not None:
+        if sampler_name != "euler":
+            raise ValueError(
+                "Pass either sampler_name or sampler_override, not both "
+                f"(got sampler_name={sampler_name!r} and sampler_override)."
+            )
+        sampler_handle = _OverrideSamplerHandle(sampler_override)
+    else:
+        sampler_handle = create_speed_sampler_handle(sampler_name)
     # Run-scoped I2V lifecycle: the walker is created up front and EVERY exit
     # path (success, failure in a stage, transition, audio handling, spectral
     # expansion, or final sampling) passes through the finally block, which
@@ -470,7 +506,7 @@ def run_speed_pipeline(
             public = guider.sample(
                 stage_start_pub,
                 stage_start_latent,
-                sampler,
+                sampler_handle.sampler,
                 stage_sigmas,
                 callback=callback,
                 disable_pbar=disable_pbar,
@@ -564,6 +600,24 @@ def run_speed_pipeline(
             else:
                 transitioned_audio = internal_audio
 
+            # Sampler transition hook: once per configured SPEED transition,
+            # after the boundary sigma is aligned and patched into the working
+            # schedule and the spectral + audio transitions are done, before
+            # the next stage re-enters guider.sample(). Stateless samplers
+            # no-op here; stateful samplers (PR B) preserve their step
+            # history across the boundary. Never called per denoising step
+            # and never after the final stage.
+            sampler_handle.on_transition(
+                SpeedTransition(
+                    stage_idx=stage_idx,
+                    ratio=ratio,
+                    old_sigma=rsp_q,
+                    new_sigma=new_q,
+                    source_thw=tuple(internal_video.shape[-3:]),
+                    target_thw=(next_t, next_h, next_w),
+                )
+            )
+
             # Set up re-entry with the aligned boundary + zero latent for the next stage.
             next_noise = pack_latent(
                 reentry_noise(transitioned_video, new_q),
@@ -605,7 +659,7 @@ def run_speed_pipeline(
         final_public = guider.sample(
             stage_start_pub,
             stage_start_latent,
-            sampler,
+            sampler_handle.sampler,
             final_sigmas,
             callback=final_callback,
             disable_pbar=disable_pbar,
@@ -638,7 +692,13 @@ def run_speed_pipeline(
         # or the final sample), restore pristine conditioning latents and
         # remove the walker from the guider. On success apply_final() has
         # already restored + released every wrapper, so this is a no-op.
+        # The sampler handle closes first; its failure must not prevent
+        # walker cleanup, and a failed walker restore must not prevent
+        # dropping the walker from the guider.
         try:
-            walker.apply_final()
+            sampler_handle.close()
         finally:
-            _drop_walker(guider)
+            try:
+                walker.apply_final()
+            finally:
+                _drop_walker(guider)

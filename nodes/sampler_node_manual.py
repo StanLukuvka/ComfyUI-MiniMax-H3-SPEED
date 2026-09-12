@@ -161,14 +161,15 @@ class MiniMaxH3SPEEDSamplerManual:
 
         # The runtime owns the walker lifecycle: it creates (or reuses) the
         # per-run walker, applies every stage, restores full res, and drops
-        # it — including on failure (exception-safe).
+        # it — including on failure (exception-safe). The sampler is built
+        # and closed by the runtime's run-scoped handle.
         return run_speed_pipeline(
             noise,
             guider,
             sigmas,
             latent_image,
             config,
-            sampler=comfy.samplers.sampler_object("euler"),
+            sampler_name="euler",
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
             output_device=None,
         )
