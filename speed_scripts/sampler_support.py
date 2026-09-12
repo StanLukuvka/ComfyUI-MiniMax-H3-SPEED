@@ -110,6 +110,30 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
         self.sampler = ResMultistepSampler(self.state)
         self.capability = SamplerCapability.SINGLE_HISTORY
 
+    def on_transition(self, transition: SpeedTransition) -> None:
+        from .res_multistep_adapter import (
+            project_clean_history,
+            rebase_res_history_sigmas,
+        )
+
+        # No completed RES interval yet: nothing to project or rebase. The
+        # empty state is preserved as-is; no history is created here.
+        if self.state.old_denoised is None:
+            return
+        # Clean-history projection: replace the stored video geometry with the
+        # clean spectral projection; the clean audio estimate passes through
+        # unchanged. Sigma metadata moves to the aligned next-stage coordinate
+        # system. Coincident boundaries simply run this again on the already
+        # projected history; new history is never synthesized here.
+        self.state.old_denoised = project_clean_history(
+            self.state.old_denoised, transition.target_thw
+        )
+        rebase_res_history_sigmas(
+            self.state, transition.new_sigma, transition.ratio
+        )
+        # Deliberately untouched: the scheduler and working sigma schedule,
+        # the noisy re-entry tensors, and all H3 conditioning tensors.
+
     def close(self) -> None:
         self.state.clear()
 
@@ -129,7 +153,7 @@ def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
     return _StatelessSamplerHandle(sampler_name)
 
 
-def create_res_multistep_sampler_handle() -> SpeedSamplerHandle:
+def create_res_multistep_sampler_handle() -> "_ResMultistepSamplerHandle":
     """Build the run-scoped stateful RES handle (runtime-only seam).
 
     Not part of the public selector yet: ``res_multistep`` joins

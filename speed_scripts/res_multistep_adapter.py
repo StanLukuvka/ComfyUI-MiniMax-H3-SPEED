@@ -22,6 +22,9 @@ from dataclasses import dataclass
 
 import torch
 
+from .flow import aligned_sigma
+from .spectral import spectral_expand_clean_3d
+
 
 @dataclass
 class ResMultistepState:
@@ -43,6 +46,60 @@ class ResMultistepState:
         self.old_denoised = None
         self.old_sigma_down = None
         self.prev_sigma_in = None
+
+
+def project_clean_history(history, target_thw: tuple[int, int, int]):
+    """Project one clean RES history to the target video geometry.
+
+    ``history`` is the nested H3 denoised estimate (video ``[B,C,T,H,W]`` +
+    audio ``[B,C,2,T_audio]``) stored as solver history in
+    ``ResMultistepState.old_denoised``. Only the video geometry is projected,
+    with :func:`spectral_expand_clean_3d` — the estimate is clean solver
+    history, so it never receives fresh high-frequency noise and is never
+    scaled by sigma. The clean audio estimate is preserved unchanged and is
+    not sigma-reindexed: the boundary sigma belongs to the noisy re-entry
+    state, not to this history.
+    """
+    if not getattr(history, "is_nested", False):
+        raise ValueError("RES clean history must be a nested H3 video/audio pair")
+    streams = list(history.unbind())
+    if len(streams) != 2:
+        raise ValueError("RES clean history must contain exactly video and audio streams")
+    video, audio = streams
+    projected_video = spectral_expand_clean_3d(video, target_thw)
+    return type(history)([projected_video, audio])
+
+
+def rebase_res_history_sigmas(
+    state: ResMultistepState,
+    new_sigma: float,
+    ratio: float,
+) -> None:
+    """Rebase the sigma-history fields onto the aligned next-stage coordinates.
+
+    The RES history belongs to the old stage's coordinate system, but the next
+    sampler invocation starts at the aligned next-stage boundary. For
+    deterministic RES the previous step destination equals the boundary just
+    left, so ``old_sigma_down`` becomes ``new_sigma``. ``prev_sigma_in`` maps
+    through the same ``aligned_sigma`` scale-coordinate transform the SPEED
+    boundary itself uses. Empty fields stay empty. Mutates ``state`` in place;
+    never touches the scheduler or the working sigma schedule.
+    """
+    if state.old_sigma_down is not None:
+        state.old_sigma_down = float(new_sigma)
+    if state.prev_sigma_in is not None:
+        prev = float(state.prev_sigma_in)
+        if prev >= 1.0:
+            # Deviation from the plan's literal "call aligned_sigma": the
+            # shared transform rejects q >= 1, but an input sigma of 1.0 is
+            # legal history (the first interval of a stage that starts at
+            # pure noise). At q = 1 the transform's own formula gives
+            # kappa = ratio / ratio = 1, i.e. the identity, so the rebased
+            # value stays 1.0. Sigmas above 1 never occur in this repo's
+            # schedules and still fail closed through aligned_sigma.
+            state.prev_sigma_in = prev
+        else:
+            _, state.prev_sigma_in = aligned_sigma(prev, ratio)
 
 
 def res_multistep_sampler(

@@ -1,5 +1,6 @@
-"""RES Multistep adapter: state model, deterministic pipeline, and the
-same-resolution split oracle (plan S7 §11-§15).
+"""RES Multistep adapter: state model, deterministic pipeline, the
+same-resolution split oracle (plan S7 §11-§15), and the transition slice
+(clean history projection, sigma rebase, ``on_transition`` — plan S7 §16-§19).
 
 The oracle is the gate for this slice: one uninterrupted deterministic RES
 trajectory over a fixed sigma schedule must land exactly where the same
@@ -12,6 +13,13 @@ to the state the SPEED stage loop has to preserve. The negative control
 pins the other side: clearing the state at the split must produce a
 different trajectory.
 
+The transition oracles pin plan §16-§18: clean history projection adds zero
+high-frequency content and never touches clean audio; sigma metadata is
+rebased onto the aligned next-stage coordinates; coincident boundaries
+re-project and re-rebase without ever creating new history. Each oracle
+computes its expected values independently so it can fail if the property
+breaks.
+
 Everything here runs against a deterministic fake model on plain float
 schedules — no ComfyUI import is needed below the handle seam.
 """
@@ -19,19 +27,24 @@ schedules — no ComfyUI import is needed below the handle seam.
 import torch
 import pytest
 
+from speed_scripts.flow import aligned_sigma
 from speed_scripts.res_multistep_adapter import (
     ResMultistepSampler,
     ResMultistepState,
+    project_clean_history,
+    rebase_res_history_sigmas,
     res_multistep_sampler,
 )
 from speed_scripts.sampler_support import (
     STATELESS_SPEED_SAMPLERS,
     SUPPORTED_SPEED_SAMPLERS,
     SamplerCapability,
+    SpeedTransition,
     _ResMultistepSamplerHandle,
     create_res_multistep_sampler_handle,
     create_speed_sampler_handle,
 )
+from speed_scripts.spectral import dct2, dct_temporal, spectral_expand_clean_3d
 
 #: Fixed strictly decreasing schedule; the trailing zero is the clean point.
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
@@ -281,3 +294,214 @@ def test_public_factory_still_rejects_res_multistep_fail_closed():
     with pytest.raises(ValueError) as excinfo:
         create_speed_sampler_handle("res_multistep")
     assert "res_multistep" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Clean projection primitive (plan S7 §16, §31 step 35)
+# ---------------------------------------------------------------------------
+
+class _Nested:
+    """Minimal nested H3 stand-in: video [B,C,T,H,W] + audio [B,C,2,T_audio].
+
+    Mirrors the real ``NestedTensor`` constructor contract — one list of
+    streams — so ``type(history)([video, audio])`` in the adapter rebuilds
+    the same shape.
+    """
+
+    def __init__(self, streams):
+        self.streams = list(streams)
+        self.is_nested = True
+
+    def unbind(self):
+        return list(self.streams)
+
+
+def _known_video(t=2, h=4, w=4, channels=1, batch=1, seed=99):
+    g = torch.Generator().manual_seed(seed)
+    return torch.randn(batch, channels, t, h, w, generator=g)
+
+
+def _known_audio(t_audio=6, channels=1, batch=1, seed=123):
+    g = torch.Generator().manual_seed(seed)
+    return torch.randn(batch, channels, 2, t_audio, generator=g)
+
+
+def test_clean_projection_copies_low_band_and_zeroes_high_band():
+    """Round-trip property: the target's combined DCT equals the source's
+    block embedded in an all-zero target tensor. Any random high-frequency
+    content or sigma scaling would break this by orders of magnitude."""
+    source = _known_video()
+    source_dct = dct2(dct_temporal(source))
+    target = spectral_expand_clean_3d(source, (3, 6, 6))
+    expected_dct = torch.zeros(1, 1, 3, 6, 6)
+    expected_dct[..., :2, :4, :4] = source_dct
+    assert torch.allclose(
+        dct2(dct_temporal(target)), expected_dct, atol=1e-5, rtol=0.0,
+    )
+
+
+def test_clean_projection_is_deterministic_and_shape_exact():
+    """No randomness anywhere: two calls agree bit-for-bit, and an exact-shape
+    call reconstructs the input (zero-filled new space is empty)."""
+    source = _known_video()
+    first = spectral_expand_clean_3d(source, (3, 6, 6))
+    second = spectral_expand_clean_3d(source, (3, 6, 6))
+    assert torch.equal(first, second)
+    assert first.shape == (1, 1, 3, 6, 6)
+    exact = spectral_expand_clean_3d(source, (2, 4, 4))
+    assert torch.allclose(exact, source, atol=1e-5, rtol=0.0)
+
+
+def test_clean_projection_preserves_dtype_and_rejects_shrinking():
+    source16 = _known_video().to(dtype=torch.float16)
+    out16 = spectral_expand_clean_3d(source16, (3, 6, 6))
+    assert out16.dtype == torch.float16
+    with pytest.raises(ValueError):
+        spectral_expand_clean_3d(_known_video(t=4, h=6, w=6), (2, 4, 4))
+
+
+def test_clean_history_projection_video_moves_audio_untouched():
+    """Nested H3 history: video geometry grows, the clean audio estimate is
+    numerically unchanged and stays a nested video/audio pair."""
+    video, audio = _known_video(), _known_audio()
+    history = _Nested([video, audio])
+    projected = project_clean_history(history, (4, 8, 8))
+    assert getattr(projected, "is_nested", False)
+    p_video, p_audio = projected.unbind()
+    assert p_video.shape == (1, 1, 4, 8, 8)
+    assert p_audio is audio
+    assert not torch.equal(p_video, video)
+    assert torch.allclose(
+        dct2(dct_temporal(p_video))[..., :2, :4, :4],
+        dct2(dct_temporal(video)),
+        atol=1e-5, rtol=0.0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sigma rebase (plan S7 §17, §31 step 38)
+# ---------------------------------------------------------------------------
+
+def test_rebase_sigmas_sets_destination_and_aligns_prev_input():
+    """Independent expected values: old_sigma_down becomes the aligned
+    boundary sigma; prev_sigma_in maps through aligned_sigma with the same
+    ratio. Empty fields stay empty."""
+    state = ResMultistepState(
+        old_sigma_down=0.42, prev_sigma_in=0.68,
+    )
+    new_q = 0.25
+    ratio = 2.0
+    expected_prev = aligned_sigma(0.68, ratio)[1]
+    rebase_res_history_sigmas(state, new_q, ratio)
+    assert state.old_sigma_down == pytest.approx(new_q)
+    assert state.prev_sigma_in == pytest.approx(expected_prev)
+
+    partial = ResMultistepState(old_sigma_down=0.3)
+    rebase_res_history_sigmas(partial, new_q, ratio)
+    assert partial.old_sigma_down == pytest.approx(new_q)
+    assert partial.prev_sigma_in is None
+
+
+def test_rebase_sigmas_keeps_input_sigma_of_one():
+    """History may legitimately hold prev_sigma_in = 1.0 (a stage starting at
+    pure noise). aligned_sigma rejects q >= 1, but its own formula is the
+    identity there, so the rebased value must stay 1.0 instead of raising."""
+    state = ResMultistepState(old_sigma_down=0.5, prev_sigma_in=1.0)
+    rebase_res_history_sigmas(state, 0.25, 2.0)
+    assert state.old_sigma_down == pytest.approx(0.25)
+    assert state.prev_sigma_in == pytest.approx(1.0)
+
+
+def test_rebase_sigmas_never_mutates_scheduler_data():
+    """The rebase is metadata-only: the caller's schedule tensor must come
+    out byte-identical."""
+    schedule = torch.tensor([1.0, 0.9, 0.5, 0.25, 0.0])
+    snapshot = schedule.clone()
+    state = ResMultistepState(old_sigma_down=0.5, prev_sigma_in=0.9)
+    rebase_res_history_sigmas(state, float(schedule[3]), 1.5)
+    assert torch.equal(schedule, snapshot)
+
+
+# ---------------------------------------------------------------------------
+# on_transition handle hook (plan S7 §18, §31 steps 39-41)
+# ---------------------------------------------------------------------------
+
+def _transition(source_thw, target_thw, ratio=2.0, old_sigma=0.5, stage_idx=0):
+    return SpeedTransition(
+        stage_idx=stage_idx,
+        ratio=ratio,
+        old_sigma=old_sigma,
+        new_sigma=aligned_sigma(old_sigma, ratio)[1],
+        source_thw=source_thw,
+        target_thw=target_thw,
+    )
+
+
+def test_on_transition_projects_history_and_rebases_sigmas():
+    handle = create_res_multistep_sampler_handle()
+    video, audio = _known_video(), _known_audio()
+    handle.state.old_denoised = _Nested([video, audio])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+    transition = _transition((2, 4, 4), (4, 8, 8), ratio=2.0, old_sigma=0.5)
+
+    handle.on_transition(transition)
+
+    projected_video, projected_audio = handle.state.old_denoised.unbind()
+    assert projected_video.shape == (1, 1, 4, 8, 8)
+    assert projected_audio is audio
+    assert handle.state.old_sigma_down == pytest.approx(transition.new_sigma)
+    assert handle.state.prev_sigma_in == pytest.approx(aligned_sigma(0.6, 2.0)[1])
+
+
+def test_on_transition_leaves_empty_state_alone():
+    """No completed RES interval yet: the hook must preserve empty state and
+    create no history."""
+    handle = create_res_multistep_sampler_handle()
+    handle.on_transition(_transition((2, 4, 4), (4, 8, 8)))
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None
+
+
+def test_on_transition_never_touches_reentry_or_conditioning_tensors():
+    """The hook owns history only: noisy re-entry tensors and conditioning
+    tensors must be byte-identical after the call."""
+    reentry = torch.randn(1, 1, 2, 4, 4)
+    conditioning = torch.randn(1, 1, 2, 4, 4)
+    reentry_snapshot = reentry.clone()
+    conditioning_snapshot = conditioning.clone()
+    handle = create_res_multistep_sampler_handle()
+    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+
+    handle.on_transition(_transition((2, 4, 4), (4, 8, 8)))
+
+    assert torch.equal(reentry, reentry_snapshot)
+    assert torch.equal(conditioning, conditioning_snapshot)
+
+
+def test_on_transition_twice_at_coincident_boundary_no_new_history():
+    """Two boundaries at the same scheduler index: the hook runs for both,
+    history is re-projected to the final geometry, sigma metadata reflects
+    both rebases, and no synthetic new old_denoised is created. Resetting to
+    first order (clearing state) would change the next stage's trajectory,
+    so history must survive both hooks."""
+    handle = create_res_multistep_sampler_handle()
+    video, audio = _known_video(), _known_audio()
+    handle.state.old_denoised = _Nested([video, audio])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+
+    first = _transition((2, 4, 4), (4, 8, 8), ratio=2.0, old_sigma=0.5)
+    second = _transition((4, 8, 8), (4, 8, 8), ratio=1.5, old_sigma=first.new_sigma)
+    handle.on_transition(first)
+    handle.on_transition(second)
+
+    projected_video, projected_audio = handle.state.old_denoised.unbind()
+    assert projected_video.shape == (1, 1, 4, 8, 8)
+    assert projected_audio is audio
+    assert handle.state.old_sigma_down == pytest.approx(second.new_sigma)
+    expected_prev = aligned_sigma(aligned_sigma(0.6, 2.0)[1], 1.5)[1]
+    assert handle.state.prev_sigma_in == pytest.approx(expected_prev)
