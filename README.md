@@ -61,9 +61,15 @@ restricted: **Euler**, **Heun**, **DPM2** (`dpm_2`), and **Exp Heun 2 X0**
   pipeline. They can use extra model evaluations per step (for example
   Heun's second evaluation), which can reduce the wall-clock gains SPEED
   buys you.
-- **RES** (`res_multistep`) is not public yet. It keeps step history across
-  stage boundaries and ships only after its state-preservation tests and
-  real validation pass.
+- **RES** (`res_multistep`) is implemented on this branch but **not publicly
+  selectable** — the dropdown still lists exactly the four samplers above.
+  The adapter keeps its step history across SPEED stage boundaries: the
+  previous denoised estimate and its sigma metadata travel with the run, the
+  clean history is projected to each next stage's resolution, and the sigma
+  metadata is rebased at the boundary. It is deterministic and non-ancestral
+  only (no SDE, no CFG++). It stays experimental pending real H3 GPU
+  validation; until that passes, the state-preservation work lives in
+  `speed_scripts/tests/` and the sampler stays out of the public list.
 
 Workflow wires are the same for all three nodes: `noise` → `guider` → `sigmas` → `latent_image` → `output_latent` → `VAE Decode`.
 
