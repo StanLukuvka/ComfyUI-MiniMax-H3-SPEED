@@ -93,6 +93,27 @@ class _StatelessSamplerHandle(SpeedSamplerHandle):
         self.capability = SamplerCapability.STATELESS_STEP_LOCAL
 
 
+class _ResMultistepSamplerHandle(SpeedSamplerHandle):
+    """Run-scoped handle for the stateful RES Multistep adapter.
+
+    Owns one ``ResMultistepState`` per SPEED run. The wrapped sampler
+    object keeps that state across every stage's ``guider.sample()`` call,
+    so RES history survives stage boundaries; ``close()`` (run-level
+    cleanup) releases it. Never routes through the stage-resetting native
+    ``sampler_object("res_multistep")``.
+    """
+
+    def __init__(self):
+        from .res_multistep_adapter import ResMultistepSampler, ResMultistepState
+
+        self.state = ResMultistepState()
+        self.sampler = ResMultistepSampler(self.state)
+        self.capability = SamplerCapability.SINGLE_HISTORY
+
+    def close(self) -> None:
+        self.state.clear()
+
+
 def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
     """Build the run-scoped handle for ``sampler_name``.
 
@@ -106,3 +127,14 @@ def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
             f"Supported samplers: {supported}."
         )
     return _StatelessSamplerHandle(sampler_name)
+
+
+def create_res_multistep_sampler_handle() -> SpeedSamplerHandle:
+    """Build the run-scoped stateful RES handle (runtime-only seam).
+
+    Not part of the public selector yet: ``res_multistep`` joins
+    ``SUPPORTED_SPEED_SAMPLERS`` only after the RES state-preservation
+    tests and real H3 validation pass (plan PR B acceptance). The runtime
+    reaches RES through this factory alone.
+    """
+    return _ResMultistepSamplerHandle()
