@@ -35,7 +35,53 @@ def install_comfy_stubs():
             return list(self._tensors)
 
     nested_tensor.NestedTensor = NestedTensor
+    class KSAMPLER:
+        """Host ``comfy.samplers.KSAMPLER`` contract, minimally modeled.
+
+        Mirrors the real ``KSAMPLER.sample(model_wrap, sigmas, extra_args,
+        callback, noise, latent_image, denoise_mask, disable_pbar)`` shape:
+        injects ``denoise_mask`` into ``extra_args``, wraps the guider in the
+        inpaint-style model callable (whose inner call receives only
+        ``(x, sigma, model_options, seed)`` — the mask blending lives in the
+        wrapper), runs the sampler function, and adapts the per-step dict
+        callback to the native 4-arg callback. Only what SPEED exercises is
+        modeled — no noise_scaling step, because test guiders receive
+        already-processed stage tensors.
+        """
+
+        def __init__(self, sampler_function, extra_options=None):
+            self.sampler_function = sampler_function
+            self.extra_options = extra_options or {}
+
+        def sample(self, model_wrap, sigmas, extra_args, callback, noise,
+                   latent_image=None, denoise_mask=None, disable_pbar=False):
+            extra_args = dict(extra_args)
+            extra_args["denoise_mask"] = denoise_mask
+            model = _InpaintModel(model_wrap)
+            total_steps = len(sigmas) - 1
+
+            def k_callback(entry):
+                if callback is not None:
+                    callback(entry["i"], entry["denoised"], entry["x"], total_steps)
+
+            return self.sampler_function(
+                model, noise, sigmas, extra_args=extra_args,
+                callback=k_callback, disable=disable_pbar,
+                **self.extra_options,
+            )
+
+    class _InpaintModel:
+        """Host ``KSamplerX0Inpaint`` shape: mask in the wrapper, inner call
+        receives ``(x, sigma, model_options, seed)`` only."""
+
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __call__(self, x, sigma, denoise_mask=None, model_options={}, seed=None):
+            return self.inner(x, sigma, model_options=model_options, seed=seed)
+
     samplers.sampler_object = lambda name: ("sampler", name)
+    samplers.KSAMPLER = KSAMPLER
     utils.PROGRESS_BAR_ENABLED = True
 
     class ProgressBar:

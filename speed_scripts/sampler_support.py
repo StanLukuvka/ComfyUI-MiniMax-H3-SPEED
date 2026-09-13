@@ -49,6 +49,12 @@ class SpeedTransition:
     Produced by the stage loop after the boundary sigma has been aligned and
     patched into the working schedule, and handed to the sampler handle's
     transition hook exactly once.
+
+    ``source_stream_shapes`` lists the per-stream latent shapes the stage's
+    sampler saw, in the host's flat-pack order (video first, then audio).
+    Stateless samplers ignore it; the stateful RES handle needs it to slice
+    a flat packed history tensor back into its video and audio streams,
+    because the host packs nested latents flat before any sampler code runs.
     """
 
     stage_idx: int
@@ -57,6 +63,7 @@ class SpeedTransition:
     new_sigma: float
     source_thw: tuple[int, int, int]
     target_thw: tuple[int, int, int]
+    source_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
 
 
 class SpeedSamplerHandle:
@@ -93,6 +100,56 @@ class _StatelessSamplerHandle(SpeedSamplerHandle):
         self.capability = SamplerCapability.STATELESS_STEP_LOCAL
 
 
+class _ResMultistepSamplerHandle(SpeedSamplerHandle):
+    """Run-scoped handle for the stateful RES Multistep adapter.
+
+    Owns one ``ResMultistepState`` per SPEED run. The wrapped sampler
+    object keeps that state across every stage's ``guider.sample()`` call,
+    so RES history survives stage boundaries; ``close()`` (run-level
+    cleanup) releases it. Never routes through the stage-resetting native
+    ``sampler_object("res_multistep")``.
+    """
+
+    def __init__(self):
+        from .res_multistep_adapter import ResMultistepSampler, ResMultistepState
+
+        self.state = ResMultistepState()
+        self.sampler = ResMultistepSampler(self.state)
+        self.capability = SamplerCapability.SINGLE_HISTORY
+
+    def on_transition(self, transition: SpeedTransition) -> None:
+        from .res_multistep_adapter import (
+            project_clean_history,
+            rebase_res_history_sigmas,
+        )
+
+        # No completed RES interval yet: nothing to project or rebase. The
+        # empty state is preserved as-is; no history is created here.
+        if self.state.old_denoised is None:
+            return
+        # Clean-history projection: replace the stored video geometry with the
+        # clean spectral projection; the clean audio estimate passes through
+        # unchanged. On the real host path the history is the flat packed
+        # tensor the guider produced at the sampler boundary, so the
+        # per-stream shapes from that pack ride along for the video/audio
+        # split. Sigma metadata moves to the aligned next-stage coordinate
+        # system. Coincident boundaries simply run this again on the already
+        # projected history; new history is never synthesized here.
+        self.state.old_denoised = project_clean_history(
+            self.state.old_denoised,
+            transition.target_thw,
+            source_stream_shapes=transition.source_stream_shapes,
+        )
+        rebase_res_history_sigmas(
+            self.state, transition.new_sigma, transition.ratio
+        )
+        # Deliberately untouched: the scheduler and working sigma schedule,
+        # the noisy re-entry tensors, and all H3 conditioning tensors.
+
+    def close(self) -> None:
+        self.state.clear()
+
+
 def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
     """Build the run-scoped handle for ``sampler_name``.
 
@@ -106,3 +163,14 @@ def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
             f"Supported samplers: {supported}."
         )
     return _StatelessSamplerHandle(sampler_name)
+
+
+def create_res_multistep_sampler_handle() -> "_ResMultistepSamplerHandle":
+    """Build the run-scoped stateful RES handle (runtime-only seam).
+
+    Not part of the public selector yet: ``res_multistep`` joins
+    ``SUPPORTED_SPEED_SAMPLERS`` only after the RES state-preservation
+    tests and real H3 validation pass (plan PR B acceptance). The runtime
+    reaches RES through this factory alone.
+    """
+    return _ResMultistepSamplerHandle()
