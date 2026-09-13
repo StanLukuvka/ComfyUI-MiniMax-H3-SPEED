@@ -10,7 +10,7 @@
 Make MiniMax-H3 video faster without re-training. 
 Starts the denoise at low resolution, then upsamples to full resolution when finetuned detail starts appearing within noise. Allowing us to save on generations.
 
-> **Only Euler, only MiniMax-H3.** Audio is always full-resolution.
+> **MiniMax-H3 only.** Audio is always full-resolution.
 
 ## Installation
 
@@ -49,7 +49,29 @@ You can instead use the following values for base H3:
 
 See the [evidence section](evidence/README.md) for what changes in generation.
 
-Workflow wires are the same for all three: `noise` → `guider` → `sigmas` → `latent_image` → `output_latent` → `VAE Decode`.
+## Supported samplers
+
+SPEED supports exactly four samplers, and the list is intentionally
+restricted: **Euler**, **Heun**, **DPM2** (`dpm_2`), and **Exp Heun 2 X0**
+(`exp_heun_2_x0`). Both the Automatic and Manual nodes expose the same list.
+
+- **Euler** is the reference sampler and the default. SPEED's sigma-harvest
+  calibration and the kappa boundary alignment were derived on Euler.
+- **Heun**, **DPM2**, and **Exp Heun 2 X0** run the same multi-stage SPEED
+  pipeline. They can use extra model evaluations per step (for example
+  Heun's second evaluation), which can reduce the wall-clock gains SPEED
+  buys you.
+- **RES** (`res_multistep`) is implemented on this branch but **not publicly
+  selectable** — the dropdown still lists exactly the four samplers above.
+  The adapter keeps its step history across SPEED stage boundaries: the
+  previous denoised estimate and its sigma metadata travel with the run, the
+  clean history is projected to each next stage's resolution, and the sigma
+  metadata is rebased at the boundary. It is deterministic and non-ancestral
+  only (no SDE, no CFG++). It stays experimental pending real H3 GPU
+  validation; until that passes, the state-preservation work lives in
+  `speed_scripts/tests/` and the sampler stays out of the public list.
+
+Workflow wires are the same for all three nodes: `noise` → `guider` → `sigmas` → `latent_image` → `output_latent` → `VAE Decode`.
 
 ## Diagnostics
 

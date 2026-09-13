@@ -30,7 +30,7 @@ def _run(config, *, guider=None, latent=None, sigmas=SIGMAS):
         sigmas,
         latent if latent is not None else make_latent(),
         config,
-        sampler=object(),
+        sampler_override=object(),
         disable_pbar=True,
     )
 
@@ -117,7 +117,7 @@ def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain():
             SIGMAS,
             make_latent(),
             cfg,
-            sampler=object(),
+            sampler_override=object(),
             disable_pbar=True,
         )
 
@@ -218,7 +218,7 @@ def test_denoised_output_preserves_video_and_audio_streams():
         SIGMAS,
         make_latent(),
         _cfg(),
-        sampler=object(),
+        sampler_override=object(),
         disable_pbar=True,
         x0_output=x0_output,
     )
@@ -365,7 +365,7 @@ def test_audio_transition_oracle_clock_reindex_bridge():
         sigmas,
         make_latent(),
         cfg,
-        sampler=object(),
+        sampler_override=object(),
         disable_pbar=True,
         x0_output=x0_output,
     )
