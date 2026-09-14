@@ -38,8 +38,8 @@ Just `stages` (2, 3, or 4) that correspond to how many resolution stages there a
 You set up to four `(goal, resolution)` pairs yourself. `goal` = step where that stage ends, `resolution` = scale like `0.25` = quarter. Set `goal` or `resolution` to `0` to skip a stage. Use only to copy a paper schedule or test a custom ladder.
 
 
-**Sigma Harvest (Native Euler)**
-Run **once** with your current workflow to measure your checkpoint. It gives you `A / β` to paste into Automatic.
+**Sigma Harvest (Native Sampler)**
+Run **once** with your current workflow to measure your checkpoint with the selected native full-resolution sampler. It gives you sampler-specific `A / β` to paste into the matching Automatic run.
 If you are using LoRAs, or other models, addons, or optimisations that change how the model behaves, I recommend running it to ensure it is tuned to your specific workload.
 
 You can instead use the following values for base H3:
@@ -51,35 +51,34 @@ See the [evidence section](evidence/README.md) for what changes in generation.
 
 ## Supported samplers
 
-SPEED supports exactly four samplers, and the list is intentionally
-restricted: **Euler**, **Heun**, **DPM2** (`dpm_2`), and **Exp Heun 2 X0**
-(`exp_heun_2_x0`). Both the Automatic and Manual nodes expose the same list.
+SPEED supports exactly five samplers: **Euler**, **Heun**, **DPM2** (`dpm_2`),
+**Exp Heun 2 X0** (`exp_heun_2_x0`), and **RES Multistep** (`res_multistep`).
+The Automatic, Manual, and Sigma Harvest nodes expose the same list.
 
-- **Euler** is the reference sampler and the default. SPEED's sigma-harvest
-  calibration and the kappa boundary alignment were derived on Euler.
-- **Heun**, **DPM2**, and **Exp Heun 2 X0** run the same multi-stage SPEED
-  pipeline. They can use extra model evaluations per step (for example
-  Heun's second evaluation), which can reduce the wall-clock gains SPEED
-  buys you.
-- **RES** (`res_multistep`) is implemented on this branch but **not publicly
-  selectable** — the dropdown still lists exactly the four samplers above.
-  The adapter keeps its step history across SPEED stage boundaries: the
-  previous denoised estimate and its sigma metadata travel with the run, the
-  clean history is projected to each next stage's resolution, and the sigma
-  metadata is rebased at the boundary. It is deterministic and non-ancestral
-  only (no SDE, no CFG++). It stays experimental pending real H3 GPU
-  validation; until that passes, the state-preservation work lives in
-  `speed_scripts/tests/` and the sampler stays out of the public list.
+- **Euler** is the reference sampler and the default. SPEED's baked evidence
+  and kappa boundary alignment were derived from Euler measurements.
+- **Heun**, **DPM2**, and **Exp Heun 2 X0** are native stateless samplers.
+  They can use extra model evaluations per step, which can reduce SPEED's
+  wall-clock gain.
+- **RES Multistep** is the only stateful sampler. Its SPEED adapter keeps one
+  denoised estimate and sigma history across stage boundaries, projects that
+  history to the next resolution, and rebases its sigma metadata. It is
+  deterministic and non-ancestral only: no SDE and no CFG++.
+- All five names are public, but RES remains experimental until a user passes
+  the H3 GPU validation gate. The repository provides automated seam and
+  state tests, not a claim of measured hardware parity.
 
-Workflow wires are the same for all three nodes: `noise` → `guider` → `sigmas` → `latent_image` → `output_latent` → `VAE Decode`.
+Automatic and Manual share the normal sampling inputs and return output and denoised LATENTs. Harvest shares the same `noise`, `guider`, `sigmas`, and `latent_image` inputs, plus sampler selection, and returns calibration JSON plus a diagnostic LATENT.
 
 ## Diagnostics
 
-- **Sigma Harvest (Native Euler)** runs one native full-res Euler pass and outputs one aggregate residual calibration (`A / β`) to paste into Automatic.
+- **Sigma Harvest (Native Sampler)** runs one native full-res pass with the
+  selected sampler and outputs a sampler-specific residual calibration (`A /
+  β`) to paste into the matching Automatic configuration.
 
 ## Speed Improvements
 
-Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, corrected scheduler (post-PR-#37). Native Euler baseline: 571s. Per-resolution harvest calibrations were used for each fit.
+Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, corrected scheduler (post-PR-#37). Native Euler baseline: 571s. These baked measurements use Euler evidence and per-resolution harvest calibrations. They do not establish parity for the other samplers. The benchmark evidence below is Euler unless explicitly stated otherwise.
 
 | Fit | Mode | Time | Speedup | Quality |
 |------|------|------|---------|---------|
@@ -112,7 +111,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 It measures how noise power falls with frequency on a full-res run: `P(ω) = A·|ω|^-β` (β ~0.77 for MiniMax-H3's validated fits; see Defaults below). For each scale `s`, `ω = s·min(H,W)/2`, `P = A·ω^-β`, then `thr = 1/(1+√(δ/(P·(1+P-δ))))` (δ = Tolerance, 0.005 = 0.5% allowed error). The first `sigmas[i] ≤ thr` is where that stage ends. Continuous sigma, just quantized to your sigma schedule.
 
-Re-calibrate with the Harvest node if you change checkpoint: wire `noise/guider/sigmas/latent + Tolerance`, run a native Euler generation at 28-32 steps with `sampler = simple`, copy `calibration` JSON into Automatic's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
+Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise/guider/sigmas/latent + Tolerance`, run the selected native sampler at full resolution with 28-32 steps and `sampler = simple`, then copy its `calibration` JSON into the matching Automatic run's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
 
 Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`.
 

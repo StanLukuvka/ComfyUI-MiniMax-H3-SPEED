@@ -2,10 +2,12 @@
 lifecycle across the SPEED stage boundaries.
 
 Picks 2-4 resolution stages (0.5→1.0, 0.33→0.66→1.0, 0.25→0.5→0.75→1.0).
-Steps are placed automatically from Tolerance + A/beta via the power-spectrum
-threshold. The cond-patching is done via LatentWalker — the latent lifecycle
-is owned by the walker, not embedded in h3_runtime.
+steps are placed automatically from sampler-specific calibration values via the
+power-spectrum threshold. The cond-patching is done via LatentWalker — the
+latent lifecycle is owned by the walker, not embedded in h3_runtime.
 """
+
+# FLOW-PRODUCED: public five-sampler Automatic node.
 
 from __future__ import annotations
 
@@ -34,8 +36,9 @@ class MiniMaxH3SPEEDSampler:
         "Automatic SPEED sampler — pick stages (2, 3, or 4) and go. "
         "Starts cheap at low resolution, then upsamples when the detail "
         "matters. Set Tolerance (0.5% = 0.005) to trade blur for speed. "
-        "Uses baked A/beta; re-calibrate with the Harvest node if you "
-        "change checkpoint."
+        "Uses baked Euler-derived A/beta; re-calibrate with the Harvest node "
+        "if you change checkpoint, LoRA/addons, sampler, or another factor "
+        "that materially changes the denoising trajectory."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")

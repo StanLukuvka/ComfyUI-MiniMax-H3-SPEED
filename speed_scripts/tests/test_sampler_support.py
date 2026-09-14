@@ -1,7 +1,7 @@
 """Sampler-support contracts: public selector, run-scoped handle lifecycle,
 Euler regression through the new handle layer, and the S6 suite-level gates
 that are not tied to one sampler: both noise policies on every public
-sampler, the global progress/preview timeline, the coincident-boundary
+stateless sampler, the global progress/preview timeline, the coincident-boundary
 Turbo torture ladder, the I2V conditioning matrix, and failure cleanup with
 a clean second generation.
 
@@ -17,6 +17,8 @@ Instrumented handles for the hook and cleanup tests enter through a patched
 exercise the same run-scoped handle path production uses; the override seam
 is covered separately.
 """
+
+# FLOW-PRODUCED: public sampler selector assertions.
 
 import pytest
 import torch
@@ -40,6 +42,7 @@ from speed_scripts.sampler_support import (
     SamplerCapability,
     SpeedTransition,
     SpeedSamplerHandle,
+    _ResMultistepSamplerHandle,
     create_speed_sampler_handle,
 )
 
@@ -160,9 +163,9 @@ class HookGuider(EchoGuider):
 # Public selector (source §9 "Public selector")
 # ---------------------------------------------------------------------------
 
-def test_public_selector_is_exactly_the_four_stateless_names():
+def test_public_selector_is_exactly_the_five_supported_names():
     assert STATELESS_SPEED_SAMPLERS == ("euler", "heun", "dpm_2", "exp_heun_2_x0")
-    assert SUPPORTED_SPEED_SAMPLERS == STATELESS_SPEED_SAMPLERS
+    assert SUPPORTED_SPEED_SAMPLERS == STATELESS_SPEED_SAMPLERS + ("res_multistep",)
 
 
 @pytest.mark.parametrize("name", STATELESS_SPEED_SAMPLERS)
@@ -174,7 +177,20 @@ def test_factory_accepts_each_supported_name(name):
     assert handle.sampler == ("sampler", name)
 
 
-@pytest.mark.parametrize("name", ["res_multistep", "dpmpp_2m", "Euler", "euler_ancestral", ""])
+def test_factory_routes_res_to_stateful_handle_without_native_sampler(monkeypatch):
+    import comfy.samplers
+
+    def native_sampler_must_not_run(name):
+        raise AssertionError(f"native sampler lookup was called for {name!r}")
+
+    monkeypatch.setattr(comfy.samplers, "sampler_object", native_sampler_must_not_run)
+    handle = create_speed_sampler_handle("res_multistep")
+    assert isinstance(handle, _ResMultistepSamplerHandle)
+    assert handle.capability is SamplerCapability.SINGLE_HISTORY
+    handle.close()
+
+
+@pytest.mark.parametrize("name", ["dpmpp_2m", "Euler", "euler_ancestral", ""])
 def test_factory_rejects_unknown_names_fail_closed(name):
     with pytest.raises(ValueError) as excinfo:
         create_speed_sampler_handle(name)
@@ -563,7 +579,7 @@ def test_run_rejects_unsupported_sampler_name_fail_closed():
 
 # ---------------------------------------------------------------------------
 # S6: Noise policies (source §9 remainder) — both policies smoke on every
-# public sampler through the real selector path
+# public stateless sampler through the real selector path
 # ---------------------------------------------------------------------------
 
 
@@ -622,7 +638,7 @@ def test_shared_x0_output_and_final_denoised_are_valid_nested_h3(sampler):
 
 
 # ---------------------------------------------------------------------------
-# S6: Zero-step / 8-step Turbo torture (source §23, all public samplers) —
+# S6: Zero-step / 8-step Turbo torture (source §23, public stateless samplers) —
 # the coincident-boundary ladder still runs every configured transition and
 # alignment, and progress stays monotonic
 # ---------------------------------------------------------------------------

@@ -11,7 +11,13 @@ import importlib
 import torch
 
 from conftest import make_fake_noise, make_latent
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
+import speed_scripts.h3_runtime as h3_runtime
+from speed_scripts.res_multistep_adapter import ResMultistepSampler
+from speed_scripts.sampler_support import (
+    SUPPORTED_SPEED_SAMPLERS,
+    SamplerCapability,
+    create_speed_sampler_handle,
+)
 
 
 def _same_latents(a, b):
@@ -204,3 +210,36 @@ def test_manual_passes_non_default_name_to_the_runtime():
     _out, samplers = _run_manual(_sigmas(), sampler_name="heun")
     assert samplers, "run never reached the guider"
     assert all(sampler == ("sampler", "heun") for sampler in samplers)
+
+
+def _run_res_node(node_runner, monkeypatch):
+    captured = []
+
+    def factory(name):
+        handle = create_speed_sampler_handle(name)
+        captured.append((name, handle))
+        return handle
+
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", factory)
+    _out, samplers = node_runner(_sigmas(), sampler_name="res_multistep")
+    return captured, samplers
+
+
+def test_automatic_routes_res_to_the_stateful_public_factory(monkeypatch):
+    captured, samplers = _run_res_node(_run_automatic, monkeypatch)
+    assert len(captured) == 1
+    name, handle = captured[0]
+    assert name == "res_multistep"
+    assert handle.capability is SamplerCapability.SINGLE_HISTORY
+    assert samplers == [samplers[0]] * 3
+    assert isinstance(samplers[0], ResMultistepSampler)
+
+
+def test_manual_routes_res_to_the_stateful_public_factory(monkeypatch):
+    captured, samplers = _run_res_node(_run_manual, monkeypatch)
+    assert len(captured) == 1
+    name, handle = captured[0]
+    assert name == "res_multistep"
+    assert handle.capability is SamplerCapability.SINGLE_HISTORY
+    assert samplers == [samplers[0]] * 4
+    assert isinstance(samplers[0], ResMultistepSampler)

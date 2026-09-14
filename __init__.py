@@ -41,10 +41,11 @@ def _register(_mod, _name):
     print("Registered %-28s %s" % (_name, ", ".join(sorted(_mappings)) or "(nothing exported)"))
 
 
+# FLOW-PRODUCED: three-node registration and public sampler wiring.
 # All nodes — flat files under nodes/.
 # sampler_node = automatic (delta_custom, baked conservative fit)
 # sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
-# sampler_sigma_harvest_node = native-Euler power-law calibration
+# sampler_sigma_harvest_node = native selected-sampler power-law calibration
 _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",

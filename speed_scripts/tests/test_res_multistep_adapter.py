@@ -24,6 +24,8 @@ Everything here runs against a deterministic fake model on plain float
 schedules — no ComfyUI import is needed below the handle seam.
 """
 
+# FLOW-PRODUCED: stateful RES factory assertions.
+
 import torch
 import pytest
 
@@ -265,7 +267,7 @@ def test_clearing_state_at_the_split_produces_a_different_result():
 
 
 # ---------------------------------------------------------------------------
-# Handle seam (plan S7 §5/§13; public selector stays PR A)
+# Handle seam (plan S7 §5/§13; public selector uses the stateful adapter)
 # ---------------------------------------------------------------------------
 
 def test_res_handle_keeps_single_history_and_clears_on_close():
@@ -285,15 +287,16 @@ def test_res_handle_keeps_single_history_and_clears_on_close():
     assert handle.state.prev_sigma_in is None
 
 
-def test_public_selector_still_excludes_res_multistep():
-    assert SUPPORTED_SPEED_SAMPLERS == STATELESS_SPEED_SAMPLERS
-    assert "res_multistep" not in SUPPORTED_SPEED_SAMPLERS
+def test_public_selector_includes_res_after_the_four_stateless_names():
+    assert STATELESS_SPEED_SAMPLERS == ("euler", "heun", "dpm_2", "exp_heun_2_x0")
+    assert SUPPORTED_SPEED_SAMPLERS == STATELESS_SPEED_SAMPLERS + ("res_multistep",)
 
 
-def test_public_factory_still_rejects_res_multistep_fail_closed():
-    with pytest.raises(ValueError) as excinfo:
-        create_speed_sampler_handle("res_multistep")
-    assert "res_multistep" in str(excinfo.value)
+def test_public_factory_routes_res_to_stateful_handle():
+    handle = create_speed_sampler_handle("res_multistep")
+    assert isinstance(handle, _ResMultistepSamplerHandle)
+    assert handle.capability is SamplerCapability.SINGLE_HISTORY
+    handle.close()
 
 
 # ---------------------------------------------------------------------------
