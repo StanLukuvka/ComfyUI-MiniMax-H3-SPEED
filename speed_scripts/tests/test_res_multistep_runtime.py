@@ -2,10 +2,8 @@
 
 B1/B2 pinned the adapter and the transition hook in isolation; this module
 runs ``res_multistep`` through ``run_speed_pipeline`` — the real stage loop,
-the real transition call site, and the real cleanup chain — with the §13
-run-scoped handle injected at the runtime's handle factory (the same seam
-the S6 lifecycle tests use; ``res_multistep`` joins the public selector only
-at plan step 50).
+the real transition call site, and the real cleanup chain — through the
+public ``res_multistep`` selector and the runtime's handle factory.
 
 The conftest ``NestedTensor`` stub that ``h3_runtime.pack_latent`` builds has
 no tensor operations, so the guider below unwraps stage tensors into an
@@ -36,7 +34,7 @@ from speed_scripts.res_multistep_adapter import (
     ResMultistepSampler,
     project_clean_history,
 )
-from speed_scripts.sampler_support import create_res_multistep_sampler_handle
+from speed_scripts.sampler_support import create_speed_sampler_handle
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
 
@@ -160,27 +158,17 @@ class ResExecGuider(RecordingEchoGuider):
         return make_nested(out_video, out_audio)
 
 
-def _inject_res_handle(monkeypatch):
-    """Route the runtime's handle factory to one fresh run-scoped RES handle.
-
-    The §13 seam: the stage loop only ever talks to a ``SpeedSamplerHandle``.
-    Until plan step 50 promotes ``res_multistep`` into the public selector,
-    the tests inject the handle the §13 factory builds — the exact object
-    production will build. The factory records the sampler name each run
-    requests, so every test can prove the runtime actually asked for
-    ``res_multistep`` instead of silently receiving a patched-in handle.
-    Returns ``(handle, captured)``; ``captured`` accumulates one
-    ``(name, handle)`` entry per run built on this patch.
-    """
-    handle = create_res_multistep_sampler_handle()
+def _capture_public_factory(monkeypatch):
+    """Wrap the public factory without replacing its production behavior."""
     captured = []
 
     def factory(name):
+        handle = create_speed_sampler_handle(name)
         captured.append((name, handle))
         return handle
 
     monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", factory)
-    return handle, captured
+    return captured
 
 
 def _assert_res_seam(captured, handle):
@@ -189,11 +177,12 @@ def _assert_res_seam(captured, handle):
 
 
 def _run_res(cfg, guider, monkeypatch, **kwargs):
-    handle, captured = _inject_res_handle(monkeypatch)
+    captured = _capture_public_factory(monkeypatch)
     out, denoised = run_speed_pipeline(
         SeededRandomNoise(), guider, SIGMAS, make_latent(), cfg,
         sampler_name="res_multistep", disable_pbar=True, **kwargs,
     )
+    handle = captured[0][1]
     _assert_res_seam(captured, handle)  # one run-scoped handle per run
     return handle, out, denoised
 
@@ -448,13 +437,14 @@ class ExplodingAtStage2(ResExecGuider):
 
 def test_failure_during_sampler_call_clears_res_state(monkeypatch):
     guider, keyframes, refs, pristine = _i2v_guider(ExplodingAtStage2)
-    handle, captured = _inject_res_handle(monkeypatch)
+    captured = _capture_public_factory(monkeypatch)
     with pytest.raises(RuntimeError, match="sampler call exploded"):
         run_speed_pipeline(
             SeededRandomNoise(), guider, SIGMAS, make_latent(),
             _explicit_ladder_cfg(3),
             sampler_name="res_multistep", disable_pbar=True,
         )
+    handle = captured[0][1]
     _assert_res_seam(captured, handle)
     # Two stages had run: RES history existed mid-run, so the cleared state
     # below proves the close, not an empty run.
@@ -467,13 +457,13 @@ def test_failure_during_sampler_call_clears_res_state(monkeypatch):
 
 def test_failure_during_spectral_transition_clears_res_state(monkeypatch):
     guider, keyframes, refs, pristine = _i2v_guider()
-    handle, captured = _inject_res_handle(monkeypatch)
+    captured = _capture_public_factory(monkeypatch)
     observed = {}
 
     def exploding_expand(value, target_hw, sigma, seed):
         # Observed at the moment of explosion: stage 0 had completed real
         # intervals, so solver history existed when the transition failed.
-        observed["history_existed"] = handle.state.old_denoised is not None
+        observed["history_existed"] = captured[0][1].state.old_denoised is not None
         raise RuntimeError("spectral transition exploded")
 
     monkeypatch.setattr(h3_runtime, "spectral_expand", exploding_expand)
@@ -483,6 +473,7 @@ def test_failure_during_spectral_transition_clears_res_state(monkeypatch):
             _explicit_ladder_cfg(2),
             sampler_name="res_multistep", disable_pbar=True,
         )
+    handle = captured[0][1]
     _assert_res_seam(captured, handle)
     assert observed["history_existed"] is True
     _assert_res_state_cleared(handle)
@@ -492,7 +483,7 @@ def test_failure_during_spectral_transition_clears_res_state(monkeypatch):
 
 def test_failure_during_res_history_projection_clears_res_state(monkeypatch):
     guider, keyframes, refs, pristine = _i2v_guider()
-    handle, captured = _inject_res_handle(monkeypatch)
+    captured = _capture_public_factory(monkeypatch)
     calls = []
 
     def exploding_project(history, target_thw, source_stream_shapes=None):
@@ -508,6 +499,7 @@ def test_failure_during_res_history_projection_clears_res_state(monkeypatch):
             _explicit_ladder_cfg(2),
             sampler_name="res_multistep", disable_pbar=True,
         )
+    handle = captured[0][1]
     _assert_res_seam(captured, handle)
     # The hook only calls the projection when history exists, so the call
     # itself proves stage-0 history existed when the projection failed.
@@ -519,13 +511,13 @@ def test_failure_during_res_history_projection_clears_res_state(monkeypatch):
 
 def test_failure_during_audio_transition_clears_res_state(monkeypatch):
     guider, keyframes, refs, pristine = _i2v_guider()
-    handle, captured = _inject_res_handle(monkeypatch)
+    captured = _capture_public_factory(monkeypatch)
     observed = {}
 
     def exploding_reindex(*args, **kwargs):
         # Observed at the moment of explosion: history existed when the
         # audio handling failed (same first boundary as the spectral case).
-        observed["history_existed"] = handle.state.old_denoised is not None
+        observed["history_existed"] = captured[0][1].state.old_denoised is not None
         raise RuntimeError("audio transition exploded")
 
     monkeypatch.setattr(h3_runtime, "clock_reindex_audio_state", exploding_reindex)
@@ -535,6 +527,7 @@ def test_failure_during_audio_transition_clears_res_state(monkeypatch):
             _explicit_ladder_cfg(2),
             sampler_name="res_multistep", disable_pbar=True,
         )
+    handle = captured[0][1]
     _assert_res_seam(captured, handle)
     assert observed["history_existed"] is True
     _assert_res_state_cleared(handle)

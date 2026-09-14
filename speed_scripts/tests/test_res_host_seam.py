@@ -43,8 +43,9 @@ from speed_scripts.res_multistep_adapter import (
     ResMultistepState,
 )
 from speed_scripts.sampler_support import (
+    SamplerCapability,
     SpeedTransition,
-    create_res_multistep_sampler_handle,
+    create_speed_sampler_handle,
 )
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
@@ -174,10 +175,10 @@ def _flat_ladder_cfg(stages, **overrides):
 
 
 def _run_flat_host(cfg, guider, monkeypatch):
-    handle = create_res_multistep_sampler_handle()
     captured = []
 
     def factory(name):
+        handle = create_speed_sampler_handle(name)
         captured.append((name, handle))
         return handle
 
@@ -186,7 +187,9 @@ def _run_flat_host(cfg, guider, monkeypatch):
         SeededRandomNoise(), guider, SIGMAS, make_latent(), cfg,
         sampler_name="res_multistep", disable_pbar=True,
     )
+    handle = captured[0][1]
     assert captured == [("res_multistep", handle)]
+    assert handle.capability is SamplerCapability.SINGLE_HISTORY
     return handle, out, denoised
 
 
@@ -271,7 +274,7 @@ def test_flat_history_on_transition_projects_video_and_preserves_audio():
     video = torch.arange(16, dtype=torch.float32).reshape(1, 1, 2, 2, 4) / 16
     audio = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 4) / 8
     flat, shapes = _pack_latents([video, audio])
-    handle = create_res_multistep_sampler_handle()
+    handle = create_speed_sampler_handle("res_multistep")
     handle.state.old_denoised = flat
     handle.state.old_sigma_down = 0.5
     handle.state.prev_sigma_in = 0.7
@@ -297,7 +300,7 @@ def test_flat_history_on_transition_projects_video_and_preserves_audio():
 def test_flat_history_on_transition_requires_stream_shapes():
     """A flat history without the pack's shapes fails closed instead of
     guessing a slice boundary."""
-    handle = create_res_multistep_sampler_handle()
+    handle = create_speed_sampler_handle("res_multistep")
     handle.state.old_denoised = torch.zeros(1, 1, 40)
     with pytest.raises(ValueError, match="per-stream shapes"):
         handle.on_transition(SpeedTransition(

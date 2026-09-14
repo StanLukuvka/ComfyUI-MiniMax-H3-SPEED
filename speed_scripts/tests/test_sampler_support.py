@@ -638,7 +638,7 @@ def test_shared_x0_output_and_final_denoised_are_valid_nested_h3(sampler):
 
 
 # ---------------------------------------------------------------------------
-# S6: Zero-step / 8-step Turbo torture (source §23, all public samplers) —
+# S6: Zero-step / 8-step Turbo torture (source §23, public stateless samplers) —
 # the coincident-boundary ladder still runs every configured transition and
 # alignment, and progress stays monotonic
 # ---------------------------------------------------------------------------
