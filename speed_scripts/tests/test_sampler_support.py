@@ -1,7 +1,7 @@
 """Sampler-support contracts: public selector, run-scoped handle lifecycle,
 Euler regression through the new handle layer, and the S6 suite-level gates
 that are not tied to one sampler: both noise policies on every public
-sampler, the global progress/preview timeline, the coincident-boundary
+stateless sampler, the global progress/preview timeline, the coincident-boundary
 Turbo torture ladder, the I2V conditioning matrix, and failure cleanup with
 a clean second generation.
 
@@ -579,7 +579,7 @@ def test_run_rejects_unsupported_sampler_name_fail_closed():
 
 # ---------------------------------------------------------------------------
 # S6: Noise policies (source §9 remainder) — both policies smoke on every
-# public sampler through the real selector path
+# public stateless sampler through the real selector path
 # ---------------------------------------------------------------------------
 
 
