@@ -21,7 +21,6 @@ The conftest ``KSAMPLER`` stub models the host shape; these tests use it the
 way ``CFGGuider`` uses the real one.
 """
 
-# FLOW-PRODUCED: V1 boundary-reset diagnostic coverage.
 
 import math
 

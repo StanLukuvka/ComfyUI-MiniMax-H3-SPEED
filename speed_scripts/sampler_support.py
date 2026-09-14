@@ -17,7 +17,6 @@ its run-scoped state and boundary policy belong to the sampler handle. The
 SPEED scheduler itself remains sampler-agnostic.
 """
 
-# FLOW-PRODUCED: sampler factory and handle contracts.
 
 from dataclasses import dataclass
 from enum import Enum

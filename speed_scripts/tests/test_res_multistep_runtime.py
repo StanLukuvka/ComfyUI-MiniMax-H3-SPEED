@@ -14,7 +14,6 @@ every interval runs the real stateful RES adapter and the carried
 ``ResMultistepState`` can be inspected at each stage entry.
 """
 
-# FLOW-PRODUCED: V1 boundary-reset diagnostic coverage.
 
 import pytest
 import torch

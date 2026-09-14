@@ -22,7 +22,6 @@ Everything here runs against a deterministic fake model on plain float
 schedules — no ComfyUI import is needed below the handle seam.
 """
 
-# FLOW-PRODUCED: stateful RES factory assertions.
 
 import torch
 import pytest
