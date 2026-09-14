@@ -34,8 +34,17 @@ Just `stages` (2, 3, or 4) that correspond to how many resolution stages there a
 
 `Tolerance (Delta)`, `noise_amplitude`, `noise_decay_exponent` determine at what steps each stage is triggered at, generally leave unless experimenting.
 
+`res_history_mode` controls what happens to RES Multistep history at each
+resolution transition. Choose `reset` (default) to clear the history at every
+transition, or `projected` to preserve and rebase compatible history for the
+next resolution.
+
 **Manual — Sampler (Step-Through)**
 You set up to four `(goal, resolution)` pairs yourself. `goal` = step where that stage ends, `resolution` = scale like `0.25` = quarter. Set `goal` or `resolution` to `0` to skip a stage. Use only to copy a paper schedule or test a custom ladder.
+
+Manual SPEED also provides `res_history_mode` with the exact choices `reset`
+(default) and `projected`. `reset` clears RES history at each transition.
+`projected` preserves and rebases compatible history for the next resolution.
 
 
 **Sigma Harvest (Native Sampler)**
@@ -60,15 +69,17 @@ The Automatic, Manual, and Sigma Harvest nodes expose the same list.
 - **Heun**, **DPM2**, and **Exp Heun 2 X0** are native stateless samplers.
   They can use extra model evaluations per step, which can reduce SPEED's
   wall-clock gain.
-- **RES Multistep** is the only stateful sampler. Its SPEED adapter keeps one
-  denoised estimate and sigma history across stage boundaries, projects that
-  history to the next resolution, and rebases its sigma metadata. It is
-  deterministic and non-ancestral only: no SDE and no CFG++.
+- **RES Multistep** is the only stateful sampler. Its SPEED adapter applies the
+  selected boundary history policy: `reset` clears history at each transition,
+  while `projected` preserves and rebases compatible history for the next
+  resolution. It is deterministic and non-ancestral only: no SDE and no CFG++.
 - All five names are public, but RES remains experimental until a user passes
   the H3 GPU validation gate. The repository provides automated seam and
   state tests, not a claim of measured hardware parity.
 
-Automatic and Manual share the normal sampling inputs and return output and denoised LATENTs. Harvest shares the same `noise`, `guider`, `sigmas`, and `latent_image` inputs, plus sampler selection, and returns calibration JSON plus a diagnostic LATENT.
+Automatic and Manual share the normal sampling inputs and return output and denoised LATENTs. Harvest shares the same `noise`, `guider`, `sigmas`, and `latent_image` inputs, plus sampler selection, and returns calibration JSON plus a diagnostic LATENT. Sigma Harvest stays native and has no `res_history_mode` widget.
+
+<!-- FLOW-PRODUCED: V2 non-protected documentation slice -->
 
 ## Diagnostics
 

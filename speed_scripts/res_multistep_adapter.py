@@ -11,9 +11,12 @@ in function locals, so every SPEED stage call would restart with empty
 history. Worse, the native code derives the previous input sigma from
 ``sigmas[i - 1]``, which is the wrong element on the first step of a
 stage-local schedule. This adapter owns that history explicitly in a
-``ResMultistepState`` that the SPEED runtime carries across stages, and
-reads ``t_prev`` from the state instead of the schedule.
+``ResMultistepState`` that the SPEED runtime can carry across stages according
+to the selected boundary policy, and reads ``t_prev`` from the state instead
+of the schedule.
 """
+
+# FLOW-PRODUCED: V2 non-protected documentation slice
 
 from __future__ import annotations
 
