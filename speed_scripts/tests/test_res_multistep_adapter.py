@@ -13,18 +13,15 @@ to the state the SPEED stage loop has to preserve. The negative control
 pins the other side: clearing the state at the split must produce a
 different trajectory.
 
-The transition oracles pin plan §16-§18: clean history projection adds zero
-high-frequency content and never touches clean audio; sigma metadata is
-rebased onto the aligned next-stage coordinates; coincident boundaries
-re-project and re-rebase without ever creating new history. Each oracle
-computes its expected values independently so it can fail if the property
-breaks.
+The transition oracles pin the V1 diagnostic: every SPEED boundary clears all
+RES history and sigma metadata, while coincident boundaries remain empty until
+a later real RES interval rebuilds the state. Projection and sigma-rebase
+primitives remain covered independently above.
 
 Everything here runs against a deterministic fake model on plain float
 schedules — no ComfyUI import is needed below the handle seam.
 """
 
-# FLOW-PRODUCED: stateful RES factory assertions.
 
 import torch
 import pytest
@@ -445,7 +442,7 @@ def _transition(source_thw, target_thw, ratio=2.0, old_sigma=0.5, stage_idx=0):
     )
 
 
-def test_on_transition_projects_history_and_rebases_sigmas():
+def test_on_transition_clears_history_and_sigma_metadata():
     handle = create_res_multistep_sampler_handle()
     video, audio = _known_video(), _known_audio()
     handle.state.old_denoised = _Nested([video, audio])
@@ -455,11 +452,9 @@ def test_on_transition_projects_history_and_rebases_sigmas():
 
     handle.on_transition(transition)
 
-    projected_video, projected_audio = handle.state.old_denoised.unbind()
-    assert projected_video.shape == (1, 1, 4, 8, 8)
-    assert projected_audio is audio
-    assert handle.state.old_sigma_down == pytest.approx(transition.new_sigma)
-    assert handle.state.prev_sigma_in == pytest.approx(aligned_sigma(0.6, 2.0)[1])
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None
 
 
 def test_on_transition_leaves_empty_state_alone():
@@ -470,6 +465,33 @@ def test_on_transition_leaves_empty_state_alone():
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None
+
+
+def test_on_transition_clears_all_existing_history():
+    handle = create_res_multistep_sampler_handle()
+    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+
+    handle.on_transition(_transition((2, 4, 4), (4, 8, 8)))
+
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None
+
+
+def test_first_real_interval_after_transition_rebuilds_history():
+    handle = create_res_multistep_sampler_handle()
+    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+    handle.on_transition(_transition((2, 4, 4), (4, 8, 8)))
+
+    handle.sampler(DeterministicModel(), torch.randn(1, 3, 4, 4), SIGMAS[:3], disable=True)
+
+    assert handle.state.old_denoised is not None
+    assert handle.state.old_sigma_down is not None
+    assert handle.state.prev_sigma_in is not None
 
 
 def test_on_transition_never_touches_reentry_or_conditioning_tensors():
@@ -492,11 +514,7 @@ def test_on_transition_never_touches_reentry_or_conditioning_tensors():
 
 
 def test_on_transition_twice_at_coincident_boundary_no_new_history():
-    """Two boundaries at the same scheduler index: the hook runs for both,
-    history is re-projected to the final geometry, sigma metadata reflects
-    both rebases, and no synthetic new old_denoised is created. Resetting to
-    first order (clearing state) would change the next stage's trajectory,
-    so history must survive both hooks."""
+    """Two boundaries at the same scheduler index leave no synthetic history."""
     handle = create_res_multistep_sampler_handle()
     video, audio = _known_video(), _known_audio()
     handle.state.old_denoised = _Nested([video, audio])
@@ -504,13 +522,10 @@ def test_on_transition_twice_at_coincident_boundary_no_new_history():
     handle.state.prev_sigma_in = 0.6
 
     first = _transition((2, 4, 4), (4, 8, 8), ratio=2.0, old_sigma=0.5)
-    second = _transition((4, 8, 8), (4, 8, 8), ratio=1.5, old_sigma=first.new_sigma)
+    second = _transition((4, 8, 8), (8, 16, 16), ratio=1.5, old_sigma=first.new_sigma)
     handle.on_transition(first)
     handle.on_transition(second)
 
-    projected_video, projected_audio = handle.state.old_denoised.unbind()
-    assert projected_video.shape == (1, 1, 4, 8, 8)
-    assert projected_audio is audio
-    assert handle.state.old_sigma_down == pytest.approx(second.new_sigma)
-    expected_prev = aligned_sigma(aligned_sigma(0.6, 2.0)[1], 1.5)[1]
-    assert handle.state.prev_sigma_in == pytest.approx(expected_prev)
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None

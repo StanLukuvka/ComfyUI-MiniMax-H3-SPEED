@@ -14,15 +14,13 @@ earlier runtime tests bypassed:
    H3 run, ``CFGGuider.sample`` packs video+audio FLAT with
    ``comfy.utils.pack_latents`` (each stream reshaped ``[B, 1, -1]``,
    concatenated on the last axis) before any sampler code runs, and unpacks
-   the sampler output back into a nested tensor afterwards. So the model's
-   denoised output at the boundary — and therefore the RES history stored in
-   ``ResMultistepState.old_denoised`` — is a plain flat tensor, and the
-   ``on_transition`` history projection must split video from audio without
-   crashing.
+   the sampler output back into a nested tensor afterwards. V1 clears the flat
+   RES history at the boundary, so it does not need to split video from audio.
 
 The conftest ``KSAMPLER`` stub models the host shape; these tests use it the
 way ``CFGGuider`` uses the real one.
 """
+
 
 import math
 
@@ -267,10 +265,8 @@ def test_res_multistep_state_clear_releases_history():
 # Critical 2: flat packed history at the sampler boundary
 # ---------------------------------------------------------------------------
 
-def test_flat_history_on_transition_projects_video_and_preserves_audio():
-    """A flat packed history (the only shape the real host produces at the
-    sampler boundary) is projected without crashing: video geometry advances,
-    audio elements pass through bit-exact, and the result re-packs flat."""
+def test_flat_history_on_transition_is_cleared():
+    """A flat packed history is discarded at the V1 boundary."""
     video = torch.arange(16, dtype=torch.float32).reshape(1, 1, 2, 2, 4) / 16
     audio = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 4) / 8
     flat, shapes = _pack_latents([video, audio])
@@ -283,30 +279,20 @@ def test_flat_history_on_transition_projects_video_and_preserves_audio():
         source_thw=(2, 2, 4), target_thw=(2, 4, 8),
         source_stream_shapes=shapes,
     ))
-    projected = handle.state.old_denoised
-    assert torch.is_tensor(projected)
-    # Target geometry (1, 1, 2, 4, 8) = 64 video elems + 8 audio elems.
-    assert projected.shape == (1, 1, 72)
-    p_video, p_audio = _unpack_latents(
-        projected, [(1, 1, 2, 4, 8), (1, 1, 2, 4)]
-    )
-    assert tuple(p_video.shape[-3:]) == (2, 4, 8)
-    # Audio is preserved bit-exact through the projection.
-    assert torch.equal(p_audio, audio)
-    # Sigma metadata was rebased onto the aligned coordinates.
-    assert handle.state.old_sigma_down == pytest.approx(0.4)
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None
 
 
-def test_flat_history_on_transition_requires_stream_shapes():
-    """A flat history without the pack's shapes fails closed instead of
-    guessing a slice boundary."""
+def test_flat_history_on_transition_does_not_require_stream_shapes():
+    """Resetting flat history does not need to infer stream boundaries."""
     handle = create_speed_sampler_handle("res_multistep")
     handle.state.old_denoised = torch.zeros(1, 1, 40)
-    with pytest.raises(ValueError, match="per-stream shapes"):
-        handle.on_transition(SpeedTransition(
-            stage_idx=0, ratio=2.0, old_sigma=0.5, new_sigma=0.4,
-            source_thw=(2, 2, 4), target_thw=(2, 4, 4),
-        ))
+    handle.on_transition(SpeedTransition(
+        stage_idx=0, ratio=2.0, old_sigma=0.5, new_sigma=0.4,
+        source_thw=(2, 2, 4), target_thw=(2, 4, 8),
+    ))
+    assert handle.state.old_denoised is None
 
 
 # ---------------------------------------------------------------------------
@@ -330,12 +316,10 @@ def test_runtime_with_cfgguider_shaped_guider_completes(monkeypatch, stages):
     video, audio = out["samples"].unbind()
     assert tuple(video.shape[-2:]) == (8, 8)
     assert audio.ndim == 4
-    # Stage entries: stage 0 empty; later stages carry flat packed history.
+    # Stage entries: every stage boundary starts empty under V1.
     assert guider.stage_entries[0] is None
     for snap in guider.stage_entries[1:]:
-        assert snap is not None
-        assert torch.is_tensor(snap.old_denoised)
-        assert snap.old_denoised.ndim == 3  # the host's flat pack
+        assert snap is None
     # Run-level cleanup ran.
     assert not hasattr(guider, _LW_ATTR)
     assert handle.state.old_denoised is None
