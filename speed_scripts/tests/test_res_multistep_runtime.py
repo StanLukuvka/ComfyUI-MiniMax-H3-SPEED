@@ -14,6 +14,8 @@ every interval runs the real stateful RES adapter and the carried
 ``ResMultistepState`` can be inspected at each stage entry.
 """
 
+# FLOW-PRODUCED: V1 boundary-reset diagnostic coverage.
+
 import pytest
 import torch
 
@@ -28,11 +30,9 @@ from conftest import (
 )
 from speed_scripts.automatic_config import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
-from speed_scripts.flow import aligned_sigma
 from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
 from speed_scripts.res_multistep_adapter import (
     ResMultistepSampler,
-    project_clean_history,
 )
 from speed_scripts.sampler_support import create_speed_sampler_handle
 
@@ -212,22 +212,10 @@ def _automatic_calibrated_cfg(stages):
     )
 
 
-def _interval_counts(stages):
-    bounds = LADDER_BOUNDARIES[stages]
-    edges = (0,) + bounds + (len(SIGMAS) - 1,)
-    return [b - a for a, b in zip(edges[:-1], edges[1:])]
-
-
 def _assert_full_res_nested(latent):
     video, audio = latent["samples"].unbind()
     assert video.ndim == 5 and audio.ndim == 4
     assert tuple(video.shape[-2:]) == (8, 8)
-
-
-def _stage_geometry(stages, stage_idx):
-    """(t, h, w) the ladder runs stage ``stage_idx`` at (no temporal scaling)."""
-    scale = STAGES_TO_SCALES[stages][stage_idx]
-    return (2, max(1, round(8 * scale)), max(1, round(8 * scale)))
 
 
 def _assert_res_state_cleared(handle):
@@ -283,39 +271,13 @@ def test_res_callback_count_equals_global_denoising_intervals(monkeypatch, stage
 
 @pytest.mark.parametrize("stages", (2, 3, 4))
 def test_res_state_is_carried_and_rebased_across_stage_boundaries(monkeypatch, stages):
-    """At every stage boundary k the carried state must hold
-    ``old_sigma_down == new_q`` and ``prev_sigma_in`` equal to the last
-    interval's input sigma mapped through ``aligned_sigma`` with that
-    boundary's ratio, with the video history already projected to the next
-    stage's geometry. All expected values are computed independently from
-    the schedule and the scale ladder."""
+    """Each real SPEED boundary starts the next RES stage without history."""
     guider = ResExecGuider()
     _run_res(_explicit_ladder_cfg(stages), guider, monkeypatch)
 
-    bounds = LADDER_BOUNDARIES[stages]
-    scales = STAGES_TO_SCALES[stages]
     entries = guider.stage_entries
     assert entries[0] is None  # a fresh run starts with empty history
-    for k in range(1, stages):
-        boundary = bounds[k - 1]
-        ratio = scales[k] / scales[k - 1]
-        new_q = aligned_sigma(float(SIGMAS[boundary]), ratio)[1]
-        last_input = float(SIGMAS[boundary - 1])
-        snap = entries[k]
-        assert snap is not None
-        assert snap.old_sigma_down == pytest.approx(new_q, rel=1e-6)
-        assert snap.prev_sigma_in == pytest.approx(
-            aligned_sigma(last_input, ratio)[1], rel=1e-6
-        )
-        # History video was projected to the next stage's geometry; the
-        # clean audio estimate kept its shape and is nonzero.
-        assert tuple(snap.video.shape[-3:]) == _stage_geometry(stages, k)
-        assert tuple(snap.audio.shape) == (1, 1, 2, 44)
-        assert snap.audio.abs().sum() > 0
-        # §21: the clean history audio object is the model's own estimate —
-        # passed through the boundary untouched, never clock-reindexed.
-        intervals_before = sum(_interval_counts(stages)[:k])
-        assert snap.audio is guider.model_outputs[intervals_before - 1].unbind()[1]
+    assert entries[1:] == [None] * (stages - 1)
 
 
 # ---------------------------------------------------------------------------
@@ -333,18 +295,7 @@ def test_res_runtime_completes_under_noise_policy(monkeypatch, noise_policy):
     assert guider.model_evals == len(SIGMAS) - 1
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
-    # The boundary rebase ran under this noise policy too.
-    snap = guider.stage_entries[1]
-    assert snap is not None
-    boundary = LADDER_BOUNDARIES[2][0]  # the (0.5 -> 1.0) ladder's boundary
-    ratio = STAGES_TO_SCALES[2][1] / STAGES_TO_SCALES[2][0]
-    assert snap.old_sigma_down == pytest.approx(
-        aligned_sigma(float(SIGMAS[boundary]), ratio)[1], rel=1e-6
-    )
-    assert snap.prev_sigma_in == pytest.approx(
-        aligned_sigma(float(SIGMAS[boundary - 1]), ratio)[1], rel=1e-6
-    )
-    assert tuple(snap.video.shape[-3:]) == (2, 8, 8)
+    assert guider.stage_entries[1] is None
     _assert_res_state_cleared(handle)  # run-level cleanup ran
 
 
@@ -408,15 +359,9 @@ def test_res_i2v_smoke_restores_pristine_and_keeps_history_separate(monkeypatch)
     # refs were never resized, and no sampler code rebuilt the cond containers.
     _assert_pristine_conds(keyframes, refs, pristine)
     assert not hasattr(guider, _LW_ATTR)
-    # §24: RES history projection is separate from I2V conditioning
-    # projection — the final stage entered with projected solver history
-    # that is no conditioning latent.
+    # V1 deliberately enters the final stage without projected solver history.
     snap = guider.stage_entries[-1]
-    assert snap is not None
-    assert snap.video.abs().sum() > 0
-    for holder in keyframes + refs:
-        assert snap.video is not holder["latent"]
-        assert not torch.equal(snap.video, holder["latent"])
+    assert snap is None
 
 
 # ---------------------------------------------------------------------------
@@ -446,10 +391,9 @@ def test_failure_during_sampler_call_clears_res_state(monkeypatch):
         )
     handle = captured[0][1]
     _assert_res_seam(captured, handle)
-    # Two stages had run: RES history existed mid-run, so the cleared state
-    # below proves the close, not an empty run.
+    # The failure happened after a stage had run, and close still clears state.
     assert len(guider.stage_entries) == 2
-    assert guider.stage_entries[1] is not None
+    assert guider.stage_entries[1] is None
     _assert_res_state_cleared(handle)
     assert not hasattr(guider, _LW_ATTR)
     _assert_pristine_conds(keyframes, refs, pristine)
@@ -481,29 +425,13 @@ def test_failure_during_spectral_transition_clears_res_state(monkeypatch):
     _assert_pristine_conds(keyframes, refs, pristine)
 
 
-def test_failure_during_res_history_projection_clears_res_state(monkeypatch):
+def test_res_transition_does_not_project_history(monkeypatch):
     guider, keyframes, refs, pristine = _i2v_guider()
-    captured = _capture_public_factory(monkeypatch)
-    calls = []
-
-    def exploding_project(history, target_thw, source_stream_shapes=None):
-        calls.append(1)
+    def exploding_project(*args, **kwargs):
         raise RuntimeError("history projection exploded")
 
-    monkeypatch.setattr(
-        res_multistep_adapter, "project_clean_history", exploding_project
-    )
-    with pytest.raises(RuntimeError, match="history projection exploded"):
-        run_speed_pipeline(
-            SeededRandomNoise(), guider, SIGMAS, make_latent(),
-            _explicit_ladder_cfg(2),
-            sampler_name="res_multistep", disable_pbar=True,
-        )
-    handle = captured[0][1]
-    _assert_res_seam(captured, handle)
-    # The hook only calls the projection when history exists, so the call
-    # itself proves stage-0 history existed when the projection failed.
-    assert calls == [1]
+    monkeypatch.setattr(res_multistep_adapter, "project_clean_history", exploding_project)
+    handle, _, _ = _run_res(_explicit_ladder_cfg(2), guider, monkeypatch)
     _assert_res_state_cleared(handle)
     assert not hasattr(guider, _LW_ATTR)
     _assert_pristine_conds(keyframes, refs, pristine)
@@ -574,11 +502,7 @@ def test_res_second_generation_after_completed_run_starts_clean(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_res_coincident_boundary_zero_step_stages_preserve_history(monkeypatch):
-    """Both transitions quantize onto schedule index 1: stage 1 runs zero
-    denoising steps. The zero-step stage must not update solver history, the
-    transition hooks must still project/rebase it (twice, without corruption),
-    and the final stage must enter with valid history so it can resume
-    second-order behavior."""
+    """Coincident boundaries stay empty until the final stage runs an interval."""
     guider = ResExecGuider()
     _, out, _ = _run_res(_automatic_calibrated_cfg(3), guider, monkeypatch)
 
@@ -587,49 +511,15 @@ def test_res_coincident_boundary_zero_step_stages_preserve_history(monkeypatch):
     # Model ran 1 + 0 + 9 intervals: the zero-step stage added no history.
     assert guider.model_evals == len(SIGMAS) - 1
 
-    first = guider.model_outputs[0]
     entries = guider.stage_entries
-    # Hook 1 projected stage-0 history to stage 1's geometry and rebased
-    # both sigma fields (prev_sigma_in == 1.0 stays 1.0 — legal history).
-    snap1 = entries[1]
-    assert snap1 is not None
-    assert tuple(snap1.video.shape[-3:]) == _stage_geometry(3, 1)
-    assert snap1.old_sigma_down == pytest.approx(
-        aligned_sigma(float(SIGMAS[1]), 2.0)[1], rel=1e-6
-    )
-    assert snap1.prev_sigma_in == pytest.approx(1.0)
-
-    # Hook 2 ran on the unchanged history (zero intervals in between):
-    # the result equals the independent double projection, and the clean
-    # audio estimate is still the very same tensor the model produced.
-    snap2 = entries[2]
-    expected = project_clean_history(
-        project_clean_history(first, _stage_geometry(3, 1)),
-        _stage_geometry(3, 2),
-    )
-    expected_video = expected.unbind()[0]
-    assert torch.equal(snap2.video, expected_video)
-    assert snap2.audio is first.unbind()[1]
-    assert snap2.audio.abs().sum() > 0
-    # Sigma metadata reflects both rebases.
-    chained = aligned_sigma(float(SIGMAS[1]), 2.0)[1]
-    assert snap2.old_sigma_down == pytest.approx(
-        aligned_sigma(chained, 1.5)[1], rel=1e-6
-    )
-    assert snap2.prev_sigma_in == pytest.approx(1.0)
-    # Valid history at the final stage: second-order RES can resume.
-    assert snap2.old_sigma_down != pytest.approx(snap2.prev_sigma_in)
+    assert entries[1] is None
+    assert entries[2] is None
     _assert_full_res_nested(out)
     assert not hasattr(guider, _LW_ATTR)
 
 
 def test_res_final_stage_second_order_behavior_depends_on_carried_history(monkeypatch):
-    """The §23 precondition alone (history differs from the input sigma) is
-    not proof: with carried history the final stage's intervals must follow
-    a different trajectory than the documented §15/§28 test-only reset
-    control — history cleared at the boundary, through the real runtime.
-    A run that silently reset history at the boundary would match the
-    control and fail this test."""
+    """The V1 boundary reset matches an explicit test-only reset control."""
     cfg = _explicit_ladder_cfg(2)
 
     class ResetAtBoundary(ResExecGuider):
@@ -643,4 +533,4 @@ def test_res_final_stage_second_order_behavior_depends_on_carried_history(monkey
     _, out_carried, _ = _run_res(cfg, ResExecGuider(), monkeypatch)
     handle_reset, out_reset, _ = _run_res(cfg, ResetAtBoundary(), monkeypatch)
     assert handle_reset.state.old_denoised is None
-    assert not torch.equal(out_carried["samples"].unbind()[0], out_reset["samples"].unbind()[0])
+    assert torch.equal(out_carried["samples"].unbind()[0], out_reset["samples"].unbind()[0])
