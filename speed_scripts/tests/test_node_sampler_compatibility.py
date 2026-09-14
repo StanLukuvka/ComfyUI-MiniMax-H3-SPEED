@@ -1,9 +1,11 @@
-"""Public-input compatibility for the sampler_name dropdown (plan §3, §9).
+"""Public-input compatibility for the sampler selectors (plan §3, §9).
 
 Old workflows have no sampler field: both nodes must execute as Euler, keep
 every pre-existing input in its original position, and append the new
-selector last with a signature default of ``"euler"``.
+selectors last with signature defaults of ``"euler"`` and ``"reset"``.
 """
+
+# FLOW-PRODUCED: V2 sampler widget compatibility coverage.
 
 import inspect
 import importlib
@@ -28,7 +30,7 @@ def _same_latents(a, b):
     return True
 
 
-# The widget order before the dropdown existed. The selector must be appended
+# The widget order before the dropdowns existed. The selectors must be appended
 # after it, never inserted between existing widgets.
 AUTOMATIC_INPUT_ORDER_BEFORE = (
     "noise",
@@ -174,23 +176,32 @@ def test_automatic_appends_selector_after_existing_inputs():
     cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
     required = cls.INPUT_TYPES()["required"]
     keys = tuple(required)
-    assert keys == AUTOMATIC_INPUT_ORDER_BEFORE + ("sampler_name",)
+    assert keys == AUTOMATIC_INPUT_ORDER_BEFORE + ("sampler_name", "res_history_mode")
 
 
 def test_manual_appends_selector_after_existing_inputs():
     cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
     required = cls.INPUT_TYPES()["required"]
     keys = tuple(required)
-    assert keys == MANUAL_INPUT_ORDER_BEFORE + ("sampler_name",)
+    assert keys == MANUAL_INPUT_ORDER_BEFORE + ("sampler_name", "res_history_mode")
 
 
-def test_dropdowns_are_exactly_the_supported_names_defaulting_to_euler():
+def test_sampler_dropdown_is_exactly_the_supported_names_defaulting_to_euler():
     automatic_cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
     manual_cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
     for cls in (automatic_cls, manual_cls):
         values, options = cls.INPUT_TYPES()["required"]["sampler_name"]
         assert tuple(values) == tuple(SUPPORTED_SPEED_SAMPLERS)
         assert options["default"] == "euler"
+
+
+def test_history_dropdown_is_exactly_reset_and_projected_defaulting_to_reset():
+    automatic_cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
+    manual_cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
+    for cls in (automatic_cls, manual_cls):
+        values, options = cls.INPUT_TYPES()["required"]["res_history_mode"]
+        assert tuple(values) == ("reset", "projected")
+        assert options["default"] == "reset"
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +223,7 @@ def test_manual_passes_non_default_name_to_the_runtime():
     assert all(sampler == ("sampler", "heun") for sampler in samplers)
 
 
-def _run_res_node(node_runner, monkeypatch):
+def _run_res_node(node_runner, monkeypatch, **kwargs):
     captured = []
 
     def factory(name, **kwargs):
@@ -221,7 +232,9 @@ def _run_res_node(node_runner, monkeypatch):
         return handle
 
     monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", factory)
-    _out, samplers = node_runner(_sigmas(), sampler_name="res_multistep")
+    _out, samplers = node_runner(
+        _sigmas(), sampler_name="res_multistep", **kwargs
+    )
     return captured, samplers
 
 
@@ -243,3 +256,19 @@ def test_manual_routes_res_to_the_stateful_public_factory(monkeypatch):
     assert handle.capability is SamplerCapability.SINGLE_HISTORY
     assert samplers == [samplers[0]] * 4
     assert isinstance(samplers[0], ResMultistepSampler)
+
+
+def test_automatic_forwards_history_mode_to_the_runtime(monkeypatch):
+    captured, _samplers = _run_res_node(
+        _run_automatic, monkeypatch, res_history_mode="projected"
+    )
+    assert len(captured) == 1
+    assert captured[0][1].history_mode == "projected"
+
+
+def test_manual_forwards_history_mode_to_the_runtime(monkeypatch):
+    captured, _samplers = _run_res_node(
+        _run_manual, monkeypatch, res_history_mode="projected"
+    )
+    assert len(captured) == 1
+    assert captured[0][1].history_mode == "projected"

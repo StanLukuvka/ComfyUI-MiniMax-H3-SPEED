@@ -1305,7 +1305,8 @@
               1,
               0,
               0,
-              "euler"
+              "euler",
+              "reset"
             ],
             "widgets_values_named": {
               "noise_policy": "direct_coarse",
@@ -1319,7 +1320,8 @@
               "transition_resolution_3": 1,
               "transition_goal_4": 0,
               "transition_resolution_4": 0,
-              "sampler_name": "euler"
+              "sampler_name": "euler",
+              "res_history_mode": "reset"
             }
           }
         ],
