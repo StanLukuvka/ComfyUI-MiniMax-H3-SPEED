@@ -10,17 +10,27 @@ The pack ships exactly three ComfyUI nodes:
 
 2. **`MiniMaxH3SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `resolution` is the stage scale in both modes. `ratio_mode steps` = goal is a step index (whole numbers only), `ratio` = goal is a 0-1 fraction of the schedule; the boundary is placed at `round(goal * total_steps)`. Used to copy paper schedules or test custom ladders.
 
-3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-res Euler pass (NOT the SPEED chain) with a fixed sigma schedule, captures `residual = x - denoised` per step, fits the radial DCT power spectrum `P = A·|ω|^-β`, and emits a flat `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the Automatic node. Run it once when you change checkpoint, or when using Loras/addons that influence the model.
+3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-resolution pass with the selected sampler (NOT the SPEED chain), captures `residual = x - denoised` per step, fits the radial DCT power spectrum `P = A·|ω|^-β`, and emits a flat sampler-specific `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the matching Automatic configuration. Run it when you change checkpoint, sampler, LoRA/addons, or the sigma schedule.
 
-## Sigma Harvest: Native Euler only
+## Sigma Harvest: Selected native sampler
 
-`MiniMaxH3HarvestToConfig` wraps the **native** Euler sampler (`guider.sample()`), NOT `run_speed_pipeline`. It must run on a single full-res native Euler pass with a fixed sigma schedule.
+`MiniMaxH3HarvestToConfig` wraps the selected **native** Comfy sampler (`guider.sample()`), NOT `run_speed_pipeline`. It runs one full-resolution native pass with a fixed sigma schedule.
 
-**How to use it:** run the Harvest node at full-res with a fixed sigma schedule (28-32 steps `simple`), read the `calibration` JSON, paste `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the Automatic node.
+**How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED (28–32 steps, `simple`), read the sampler-specific `calibration` JSON, and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. For `res_multistep`, Harvest uses native Comfy `res_multistep`; SPEED generation uses the repository's stateful RES adapter.
+
+## Calibration
+
+Baked defaults and current evidence are Euler-derived. Changing the checkpoint, LoRA/addons, sampler, or materially changing the sigma schedule is a reason to re-harvest.
+
+## Sampler architecture
+
+Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that carries history across SPEED stage boundaries and projects clean history between resolutions. The global SPEED scheduler remains sampler-agnostic. The supported RES path is deterministic and non-ancestral only: no SDE and no CFG++.
 
 ## Development Conventions
 
-- SPEED calibrates on **Euler** only. Other samplers require re-deriving the kappa-alignment math.
+- SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
+- Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter for SPEED; it carries history across stage boundaries and projects clean history between resolutions.
+- All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
 - Calibration happens offline; the baked defaults live in the node's widget defaults in `nodes/sampler_node.py` (`speed_scripts/config.py` holds the SpeedConfig dataclass defaults, which the node path always overrides explicitly). The stage ladder + config assembly is centralized in `speed_scripts/automatic_config.py` (`build_automatic_speed_config`).
 - Latent lifecycle: `speed_scripts/latent_class.py` (`LatentClass` / `LatentWalker`, plus `LatentStage`) — the walker snapshots pristine full-res cond/ref latents once per run, `apply_stage(h, w)` resizes keyframes from pristine for each coarse stage (even-round dims, never from degraded tensors), `apply_final()` restores full res. `minimax_refs` are never scaled (their row allocation is locked to full res by the model). The walker is stashed on the guider per run (`_LW_ATTR` in `h3_runtime.py`) and dropped at run end.

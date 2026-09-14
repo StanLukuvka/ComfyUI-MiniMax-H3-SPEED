@@ -1,9 +1,10 @@
-"""MiniMax-H3 SPEED stage runner — self-contained correctness oracle.
+"""MiniMax-H3 SPEED stage runner.
 
 Wraps each SPEED stage in a separate `guider.sample()` call so the H3 model
-always sees a buffer matching its latent_shapes. Ported from the Lab's
-`h3_runtime.py`.
+always sees a buffer matching its latent_shapes. The stage loop delegates sampler behavior to the selected run-scoped handle.
 """
+
+# FLOW-PRODUCED: sampler-aware stage runtime.
 
 from __future__ import annotations
 
@@ -604,7 +605,7 @@ def run_speed_pipeline(
             # after the boundary sigma is aligned and patched into the working
             # schedule and the spectral + audio transitions are done, before
             # the next stage re-enters guider.sample(). Stateless samplers
-            # no-op here; stateful samplers (PR B) preserve their step
+            # no-op here; stateful RES preserves its step history
             # history across the boundary. Never called per denoising step
             # and never after the final stage. The per-stream shapes let a
             # stateful handle slice its flat packed history (the real host

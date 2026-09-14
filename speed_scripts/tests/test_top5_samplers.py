@@ -1,4 +1,4 @@
-"""Cross-sampler execution tests for the PR A stateless samplers
+"""Cross-sampler execution tests for the stateless samplers
 (plan §9 Heun / DPM2 / Exp Heun 2 X0 blocks).
 
 All stateless samplers share one runtime path — the run-scoped handle feeds
@@ -8,7 +8,9 @@ already pinned in ``test_sampler_support.py``) appearing only as the
 differential baseline for stage scheduling and inside the
 coincident-boundary completion sweep.
 
-What these tests pin is what SPEED owes every sampler: each stage hands the
+These tests cover only the four native stateless samplers. RES Multistep has
+separate stateful adapter and runtime tests. What these tests pin is what
+SPEED owes each stateless sampler: each stage hands the
 solver its complete interval set in one ``guider.sample`` call (so a
 multi-evaluation solver's extra model evaluations stay inside one interval
 and a SPEED transition lands only between completed intervals), public
@@ -37,7 +39,9 @@ from speed_scripts.sampler_support import (
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
 
-#: The three samplers this slice adds on top of the Euler regression anchor.
+# FLOW-PRODUCED: native stateless sampler coverage.
+
+#: The three non-Euler stateless samplers added on top of the Euler anchor.
 NEW_SAMPLERS = ("heun", "dpm_2", "exp_heun_2_x0")
 
 

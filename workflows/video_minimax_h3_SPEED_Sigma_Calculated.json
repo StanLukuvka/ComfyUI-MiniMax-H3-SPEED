@@ -1299,7 +1299,8 @@
               0.005,
               12.105,
               0.773,
-              10000
+              10000,
+              "euler"
             ],
             "widgets_values_named": {
               "stages": 3,
@@ -1307,7 +1308,8 @@
               "Tolerance (Delta)": 0.005,
               "noise_amplitude": 12.105,
               "noise_decay_exponent": 0.773,
-              "seed_offset": 10000
+              "seed_offset": 10000,
+              "sampler_name": "euler"
             }
           }
         ],

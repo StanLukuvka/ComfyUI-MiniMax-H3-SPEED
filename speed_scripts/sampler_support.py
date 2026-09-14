@@ -33,6 +33,7 @@ STATELESS_SPEED_SAMPLERS = (
 )
 
 #: Public selector list. RES is stateful and uses the adapter below.
+#: All five names are exposed by the three public nodes.
 SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + (
     "res_multistep",
 )
