@@ -161,7 +161,7 @@ def _capture_public_factory(monkeypatch):
     """Wrap the public factory without replacing its production behavior."""
     captured = []
 
-    def factory(name):
+    def factory(name, **kwargs):
         handle = create_speed_sampler_handle(name)
         captured.append((name, handle))
         return handle

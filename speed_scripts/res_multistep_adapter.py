@@ -44,7 +44,8 @@ def _host_ksampler_class():
 
 @dataclass
 class ResMultistepState:
-    """Step history one RES run carries across SPEED stage boundaries.
+    """History maintained by one RES sampler run; the run-scoped handle owns
+    the policy for what survives a SPEED boundary.
 
     ``old_denoised`` is the previous model denoised estimate, ``old_sigma_down``
     the previous interval's destination sigma, and ``prev_sigma_in`` the

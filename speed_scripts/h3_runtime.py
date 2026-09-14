@@ -307,6 +307,7 @@ def run_speed_pipeline(
     config: SpeedConfig,
     *,
     sampler_name: str = "euler",
+    res_history_mode: str = "reset",
     # Test/programmatic seam only: injects a fake sampler object without
     # building a real Comfy sampler. Production node code must never use it;
     # it may not be combined with a non-default sampler_name.
@@ -458,7 +459,10 @@ def run_speed_pipeline(
             )
         sampler_handle = _OverrideSamplerHandle(sampler_override)
     else:
-        sampler_handle = create_speed_sampler_handle(sampler_name)
+        sampler_handle = create_speed_sampler_handle(
+            sampler_name,
+            res_history_mode=res_history_mode,
+        )
     # Run-scoped I2V lifecycle: the walker is created up front and EVERY exit
     # path (success, failure in a stage, transition, audio handling, spectral
     # expansion, or final sampling) passes through the finally block, which

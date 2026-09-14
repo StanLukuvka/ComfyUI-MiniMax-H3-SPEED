@@ -215,8 +215,8 @@ def test_manual_passes_non_default_name_to_the_runtime():
 def _run_res_node(node_runner, monkeypatch):
     captured = []
 
-    def factory(name):
-        handle = create_speed_sampler_handle(name)
+    def factory(name, **kwargs):
+        handle = create_speed_sampler_handle(name, **kwargs)
         captured.append((name, handle))
         return handle
 
