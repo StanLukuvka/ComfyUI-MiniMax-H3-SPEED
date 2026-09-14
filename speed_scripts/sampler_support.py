@@ -11,9 +11,13 @@ for that loop:
   transition and a ``close()`` for end-of-run cleanup.
 
 The stage loop and scheduler logic never branch on the sampler name; they
-only talk to the handle. All solver math stays inside ComfyUI's native
-sampler objects — this repository never reimplements a solver.
+only talk to the handle. Stateless samplers use ComfyUI's native sampler
+objects. RES uses this repository's deterministic stateful adapter because
+RES history must survive SPEED stage boundaries. The SPEED scheduler itself
+remains sampler-agnostic.
 """
+
+# FLOW-PRODUCED: sampler factory and handle contracts.
 
 from dataclasses import dataclass
 from enum import Enum
@@ -28,9 +32,10 @@ STATELESS_SPEED_SAMPLERS = (
     "exp_heun_2_x0",
 )
 
-#: Public selector list. PR B adds ``res_multistep`` here only after its
-#: state-preservation tests and real H3 validation pass.
-SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS
+#: Public selector list. RES is stateful and uses the adapter below.
+SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + (
+    "res_multistep",
+)
 
 
 class SamplerCapability(Enum):
@@ -71,8 +76,8 @@ class SpeedSamplerHandle:
 
     The stage loop receives this handle from ``run_speed_pipeline`` and never
     touches the raw sampler name or any sampler state. Stateless samplers
-    need nothing at boundaries, so both methods are no-ops; stateful handles
-    (PR B ``res_multistep``) override them. The handle never mutates the
+    need nothing at boundaries, so both methods are no-ops; stateful
+    ``res_multistep`` handles override them. The handle never mutates the
     scheduler or the working sigma schedule.
     """
 
@@ -162,15 +167,16 @@ def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
             f"Unsupported SPEED sampler {sampler_name!r}. "
             f"Supported samplers: {supported}."
         )
+    if sampler_name == "res_multistep":
+        return create_res_multistep_sampler_handle()
+
     return _StatelessSamplerHandle(sampler_name)
 
 
 def create_res_multistep_sampler_handle() -> "_ResMultistepSamplerHandle":
     """Build the run-scoped stateful RES handle (runtime-only seam).
 
-    Not part of the public selector yet: ``res_multistep`` joins
-    ``SUPPORTED_SPEED_SAMPLERS`` only after the RES state-preservation
-    tests and real H3 validation pass (plan PR B acceptance). The runtime
-    reaches RES through this factory alone.
+    The public selector routes ``res_multistep`` through this factory so the
+    runtime keeps one stateful handle for the whole SPEED run.
     """
     return _ResMultistepSamplerHandle()
