@@ -609,12 +609,12 @@ def run_speed_pipeline(
             # after the boundary sigma is aligned and patched into the working
             # schedule and the spectral + audio transitions are done, before
             # the next stage re-enters guider.sample(). Stateless samplers
-            # no-op here; stateful RES preserves its step history
-            # history across the boundary. Never called per denoising step
-            # and never after the final stage. The per-stream shapes let a
-            # stateful handle slice its flat packed history (the real host
-            # packs nested latents before the sampler sees them) back into
-            # video and audio.
+            # no-op here; RES `reset` clears boundary history, while `projected`
+            # preserves and rebases compatible history. Never called per
+            # denoising step and never after the final stage. The per-stream
+            # shapes let a stateful handle slice its flat packed history (the
+            # real host packs nested latents before the sampler sees them) back
+            # into video and audio.
             sampler_handle.on_transition(
                 SpeedTransition(
                     stage_idx=stage_idx,
