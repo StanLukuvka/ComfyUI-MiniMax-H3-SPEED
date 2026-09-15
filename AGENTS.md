@@ -24,12 +24,12 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 
 ## Sampler architecture
 
-Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that carries history across SPEED stage boundaries and projects clean history between resolutions. The global SPEED scheduler remains sampler-agnostic. The supported RES path is deterministic and non-ancestral only: no SDE and no CFG++.
+Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter whose boundary history policy is selected by `res_history_mode`: `reset` (the default) clears history at each SPEED stage boundary, while `projected` preserves and rebases compatible history between resolutions. The global SPEED scheduler remains sampler-agnostic. The supported RES path is deterministic and non-ancestral only: no SDE and no CFG++.
 
 ## Development Conventions
 
 - SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
-- Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter for SPEED; it carries history across stage boundaries and projects clean history between resolutions.
+- Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter for SPEED; `res_history_mode=reset` (the default) clears history at each stage boundary, while `res_history_mode=projected` preserves and rebases compatible history between resolutions.
 - All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
 - Calibration happens offline; the baked defaults live in the node's widget defaults in `nodes/sampler_node.py` (`speed_scripts/config.py` holds the SpeedConfig dataclass defaults, which the node path always overrides explicitly). The stage ladder + config assembly is centralized in `speed_scripts/automatic_config.py` (`build_automatic_speed_config`).
