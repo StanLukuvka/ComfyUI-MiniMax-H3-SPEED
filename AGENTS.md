@@ -16,7 +16,7 @@ The pack ships exactly three ComfyUI nodes:
 
 `MiniMaxH3HarvestToConfig` wraps the selected **native** Comfy sampler (`guider.sample()`), NOT `run_speed_pipeline`. It runs one full-resolution native pass with a fixed sigma schedule.
 
-**How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED (28–32 steps, `simple`), read the sampler-specific `calibration` JSON, and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. For `res_multistep`, Harvest uses native Comfy `res_multistep`; SPEED generation uses the repository's stateful RES adapter.
+**How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED, using the same sigma scheduler and step count you intend to run. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler. Read the sampler-specific `calibration` JSON and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. For `res_multistep`, Harvest uses native Comfy `res_multistep`; SPEED generation uses the repository's stateful RES adapter.
 
 ## Calibration
 
@@ -24,16 +24,16 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 
 ## Sampler architecture
 
-Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter whose boundary history policy is selected by `res_history_mode`: `reset` (the default) clears history at each SPEED stage boundary, while `projected` preserves and rebases compatible history between resolutions. The global SPEED scheduler remains sampler-agnostic. The supported RES path is deterministic and non-ancestral only: no SDE and no CFG++.
+Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter whose boundary policy is selected by `res_history_mode`. `reset` is the default and clears all previous-step RES history at every SPEED stage boundary. `projected` is the historical pre-reset comparison path: it DCT-projects the previous denoised history into the target video geometry and rebases its sigma metadata. Do not describe `projected` as equivalent to an uninterrupted target-resolution RES trajectory; native RES does not define a geometry-changing boundary. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
 
 ## Development Conventions
 
 - SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
-- Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter for SPEED; `res_history_mode=reset` (the default) clears history at each stage boundary, while `res_history_mode=projected` preserves and rebases compatible history between resolutions.
+- Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter for SPEED. `res_history_mode=reset` (default) clears history at each stage boundary. `res_history_mode=projected` restores the historical project-and-rebase behavior for controlled comparison; treat it as experimental boundary behavior, not as a theorem about RES continuity across a resolution change.
+- Any future RES boundary mode must have an explicit branch in `_ResMultistepSamplerHandle.on_transition()`. Never let a new mode silently fall through to `projected` semantics.
 - All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
 - Calibration happens offline; the baked defaults live in the node's widget defaults in `nodes/sampler_node.py` (`speed_scripts/config.py` holds the SpeedConfig dataclass defaults, which the node path always overrides explicitly). The stage ladder + config assembly is centralized in `speed_scripts/automatic_config.py` (`build_automatic_speed_config`).
 - Latent lifecycle: `speed_scripts/latent_class.py` (`LatentClass` / `LatentWalker`, plus `LatentStage`) — the walker snapshots pristine full-res cond/ref latents once per run, `apply_stage(h, w)` resizes keyframes from pristine for each coarse stage (even-round dims, never from degraded tensors), `apply_final()` restores full res. `minimax_refs` are never scaled (their row allocation is locked to full res by the model). The walker is stashed on the guider per run (`_LW_ATTR` in `h3_runtime.py`) and dropped at run end.
 - No random configuration, no silent randomization in config paths.
 - Tests: `speed_scripts/tests/` — run with the repo venv (`.venv/bin/python -m pytest speed_scripts/tests/ -q`); the repo has no CI workflows for dev PRs, so the local suite is the gate.
-
