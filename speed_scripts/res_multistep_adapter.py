@@ -16,8 +16,6 @@ to the selected boundary policy, and reads ``t_prev`` from the state instead
 of the schedule.
 """
 
-# FLOW-PRODUCED: V2 non-protected documentation slice
-
 from __future__ import annotations
 
 import math
@@ -62,22 +60,26 @@ class ResMultistepState:
     prev_sigma_in: float | None = None
 
     def clear(self) -> None:
-        """Release every history reference (end-of-run cleanup)."""
+        """Release every previous-step history reference."""
         self.old_denoised = None
         self.old_sigma_down = None
         self.prev_sigma_in = None
 
 
 def project_clean_history(history, target_thw: tuple[int, int, int], source_stream_shapes=None):
-    """Project one clean RES history to the target video geometry.
+    """DCT-project stored denoised history to the target video geometry.
 
-    ``history`` is the clean denoised estimate stored as solver history in
+    ``history`` is the previous denoised estimate stored in
     ``ResMultistepState.old_denoised``. Only the video geometry is projected,
-    with :func:`spectral_expand_clean_3d` — the estimate is clean solver
-    history, so it never receives fresh high-frequency noise and is never
-    scaled by sigma. The clean audio estimate is preserved unchanged and is
-    not sigma-reindexed: the boundary sigma belongs to the noisy re-entry
-    state, not to this history.
+    with :func:`spectral_expand_clean_3d`: the stored estimate receives no
+    fresh high-frequency noise and is not scaled by sigma. The audio slice is
+    copied unchanged by this historical projected-mode operation.
+
+    This helper defines the mechanics of the experimental ``projected``
+    boundary mode. It does not establish that the result is equivalent to the
+    history an uninterrupted target-resolution RES trajectory would have
+    produced; native RES has no geometry-changing boundary to provide such an
+    oracle.
 
     Two shapes arrive here, depending on where the history was captured:
 
@@ -120,8 +122,7 @@ def project_clean_history(history, target_thw: tuple[int, int, int], source_stre
     if getattr(history, "is_nested", False):
         return type(history)([projected_video, audio])
     # Re-pack in the host pack_latents layout: [B, 1, N] slices concatenated
-    # on the last axis, so the rebased history is exactly the tensor shape
-    # the next host stage produces and consumes.
+    # on the last axis, matching the tensor shape the next host stage consumes.
     batch = projected_video.shape[0]
     return torch.cat(
         (
@@ -137,28 +138,25 @@ def rebase_res_history_sigmas(
     new_sigma: float,
     ratio: float,
 ) -> None:
-    """Rebase the sigma-history fields onto the aligned next-stage coordinates.
+    """Apply the historical projected-mode sigma-coordinate transform.
 
-    The RES history belongs to the old stage's coordinate system, but the next
-    sampler invocation starts at the aligned next-stage boundary. For
-    deterministic RES the previous step destination equals the boundary just
-    left, so ``old_sigma_down`` becomes ``new_sigma``. ``prev_sigma_in`` maps
-    through the same ``aligned_sigma`` scale-coordinate transform the SPEED
-    boundary itself uses. Empty fields stay empty. Mutates ``state`` in place;
-    never touches the scheduler or the working sigma schedule.
+    ``projected`` mode sets the previous interval destination to the aligned
+    next-stage boundary and maps ``prev_sigma_in`` through the same
+    ``aligned_sigma`` transform used by SPEED's boundary. This function
+    defines that experimental boundary behavior; native RES itself does not
+    define how previous-step sigma metadata should be transformed when latent
+    geometry changes. Empty fields stay empty. Mutates ``state`` in place and
+    never touches the scheduler or working sigma schedule.
     """
     if state.old_sigma_down is not None:
         state.old_sigma_down = float(new_sigma)
     if state.prev_sigma_in is not None:
         prev = float(state.prev_sigma_in)
         if prev == 1.0:
-            # Deviation from the plan's literal "call aligned_sigma": the
-            # shared transform rejects q >= 1, but an input sigma of exactly
-            # 1.0 is legal history (the first interval of a stage that starts
-            # at pure noise). At q = 1 the transform's own formula gives
-            # kappa = ratio / ratio = 1, i.e. the identity, so the rebased
-            # value stays 1.0. Every other out-of-domain sigma (> 1 or <= 0)
-            # still fails closed through aligned_sigma.
+            # aligned_sigma rejects q >= 1, while an input sigma of exactly
+            # 1.0 is legal previous-step metadata. Applying the transform's
+            # formula at q=1 gives kappa=1, so the historical projected-mode
+            # mapping leaves that coordinate unchanged.
             state.prev_sigma_in = prev
         else:
             _, state.prev_sigma_in = aligned_sigma(prev, ratio)
