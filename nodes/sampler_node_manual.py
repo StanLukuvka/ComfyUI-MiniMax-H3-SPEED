@@ -14,12 +14,10 @@ from __future__ import annotations
 import comfy.samplers
 import comfy.utils
 
-# FLOW-PRODUCED: expose RES history mode after sampler_name.
-
 from speed_scripts.config import RATIO_MODES, SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.nodes_common import full_res_dims, validate_transition_steps
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
+from speed_scripts.sampler_support import RES_HISTORY_MODES, SUPPORTED_SPEED_SAMPLERS
 
 
 def CALCULATE_SCALES(transitions, ratio_mode):
@@ -89,7 +87,7 @@ class MiniMaxH3SPEEDSamplerManual:
                     {"default": 1.0, "min": 0, "max": 1},
                 ),
                 "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
-                "res_history_mode": (["reset", "projected"], {"default": "reset"}),
+                "res_history_mode": (list(RES_HISTORY_MODES), {"default": "reset"}),
             },
         }
 
