@@ -1300,7 +1300,8 @@
               12.105,
               0.773,
               10000,
-              "euler"
+              "euler",
+              "reset"
             ],
             "widgets_values_named": {
               "stages": 3,
@@ -1309,7 +1310,8 @@
               "noise_amplitude": 12.105,
               "noise_decay_exponent": 0.773,
               "seed_offset": 10000,
-              "sampler_name": "euler"
+              "sampler_name": "euler",
+              "res_history_mode": "reset"
             }
           }
         ],

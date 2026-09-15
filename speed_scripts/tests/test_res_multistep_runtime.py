@@ -139,15 +139,12 @@ class ResExecGuider(RecordingEchoGuider):
             self.stage_entries.append(_Snapshot(state))
         else:
             self.stage_entries.append(None)
-        x = ComputedNested(list(latent_image.unbind()))
         run_noise = ComputedNested([pub_video, pub_audio])
         count = len(sigmas) - 1
 
         adapted = None
         if callback is not None:
             def adapted(entry):
-                # One native per-interval dict -> one legacy 4-arg callback,
-                # the same adaptation every native sampler callback gets.
                 callback(entry["i"], entry["denoised"], entry["x"], count)
         out = sampler(
             self._model(), run_noise, sigmas,
@@ -161,8 +158,8 @@ def _capture_public_factory(monkeypatch):
     """Wrap the public factory without replacing its production behavior."""
     captured = []
 
-    def factory(name):
-        handle = create_speed_sampler_handle(name)
+    def factory(name, **kwargs):
+        handle = create_speed_sampler_handle(name, **kwargs)
         captured.append((name, handle))
         return handle
 
@@ -171,7 +168,6 @@ def _capture_public_factory(monkeypatch):
 
 
 def _assert_res_seam(captured, handle):
-    """The runtime requested ``res_multistep`` and got this run-scoped handle."""
     assert captured == [("res_multistep", handle)]
 
 
@@ -182,7 +178,7 @@ def _run_res(cfg, guider, monkeypatch, **kwargs):
         sampler_name="res_multistep", disable_pbar=True, **kwargs,
     )
     handle = captured[0][1]
-    _assert_res_seam(captured, handle)  # one run-scoped handle per run
+    _assert_res_seam(captured, handle)
     return handle, out, denoised
 
 
@@ -196,9 +192,6 @@ def _explicit_ladder_cfg(stages, **overrides):
 
 
 def _automatic_calibrated_cfg(stages):
-    """The Automatic node's delta_custom config: both transitions quantize
-    onto schedule index 1, so the middle stage gets a single-sigma schedule
-    (zero denoising steps) — the legal coincident-boundary case."""
     return SpeedConfig(
         scales=STAGES_TO_SCALES[stages],
         transition_steps=tuple(range(1, len(STAGES_TO_SCALES[stages]))),
@@ -223,32 +216,19 @@ def _assert_res_state_cleared(handle):
     assert handle.state.prev_sigma_in is None
 
 
-# ---------------------------------------------------------------------------
-# §20 runtime completion — 2/3/4-stage ladders through the real adapter
-# ---------------------------------------------------------------------------
-
 @pytest.mark.parametrize("stages", (2, 3, 4))
 def test_res_stage_ladder_completes_at_full_resolution(monkeypatch, stages):
     guider = ResExecGuider()
     handle, out, denoised = _run_res(_explicit_ladder_cfg(stages), guider, monkeypatch)
-
     assert len(guider.sigma_calls) == stages
-    # Every global denoising interval ran through the real stateful adapter
-    # (one model evaluation per interval).
     assert guider.model_evals == len(SIGMAS) - 1
-    # Every stage received the SAME run-scoped sampler object.
     assert guider.samplers == [guider.samplers[0]] * stages
     assert isinstance(guider.samplers[0], ResMultistepSampler)
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
-    # Walker and RES handle cleanup both succeeded on the success path.
     assert not hasattr(guider, _LW_ATTR)
     _assert_res_state_cleared(handle)
 
-
-# ---------------------------------------------------------------------------
-# §22 RES progress — one callback per outer interval
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("stages", (2, 3, 4))
 def test_res_callback_count_equals_global_denoising_intervals(monkeypatch, stages):
@@ -258,30 +238,39 @@ def test_res_callback_count_equals_global_denoising_intervals(monkeypatch, stage
         _explicit_ladder_cfg(stages), guider, monkeypatch,
         preview_callback=lambda step, x0, x, total: seen.append((step, total)),
     )
-    # The ladder tiles the 10-interval schedule; RES adds no callbacks of its
-    # own, so the runtime sees exactly one per global interval.
     assert seen == [(i, 10) for i in range(10)]
 
 
-# ---------------------------------------------------------------------------
-# §20 state transport — configured transitions carried through state,
-# alignment rebase exercised across stage boundaries
-# ---------------------------------------------------------------------------
-
 @pytest.mark.parametrize("stages", (2, 3, 4))
-def test_res_state_is_carried_and_rebased_across_stage_boundaries(monkeypatch, stages):
-    """Each real SPEED boundary starts the next RES stage without history."""
+def test_res_reset_mode_starts_each_stage_without_history(monkeypatch, stages):
     guider = ResExecGuider()
     _run_res(_explicit_ladder_cfg(stages), guider, monkeypatch)
-
     entries = guider.stage_entries
-    assert entries[0] is None  # a fresh run starts with empty history
+    assert entries[0] is None
     assert entries[1:] == [None] * (stages - 1)
 
 
-# ---------------------------------------------------------------------------
-# §20 noise policies — direct_coarse and coupled_full_grid
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("stages", (2, 3, 4))
+def test_res_projected_mode_enters_later_stages_with_projected_history(monkeypatch, stages):
+    guider = ResExecGuider()
+    handle, out, denoised = _run_res(
+        _explicit_ladder_cfg(stages), guider, monkeypatch,
+        res_history_mode="projected",
+    )
+
+    assert handle.history_mode == "projected"
+    assert guider.stage_entries[0] is None
+    for stage_idx, snap in enumerate(guider.stage_entries[1:], start=1):
+        assert snap is not None
+        assert tuple(snap.video.shape) == guider.noise_shapes[stage_idx]
+        assert snap.old_sigma_down is not None
+        assert snap.prev_sigma_in is not None
+
+    assert guider.model_evals == len(SIGMAS) - 1
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+    _assert_res_state_cleared(handle)
+
 
 @pytest.mark.parametrize("noise_policy", ("direct_coarse", "coupled_full_grid"))
 def test_res_runtime_completes_under_noise_policy(monkeypatch, noise_policy):
@@ -289,19 +278,15 @@ def test_res_runtime_completes_under_noise_policy(monkeypatch, noise_policy):
     handle, out, denoised = _run_res(
         _explicit_ladder_cfg(2, noise_policy=noise_policy), guider, monkeypatch,
     )
-
     assert len(guider.sigma_calls) == 2
     assert guider.model_evals == len(SIGMAS) - 1
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
     assert guider.stage_entries[1] is None
-    _assert_res_state_cleared(handle)  # run-level cleanup ran
+    _assert_res_state_cleared(handle)
 
 
 def test_res_noise_policies_produce_different_runs(monkeypatch):
-    """The two policies must actually diverge (the coupled policy feeds the
-    full-grid noise projection instead of fresh coarse noise), so passing
-    one for the other cannot hide behind identical outputs."""
     outs = []
     for policy in ("direct_coarse", "coupled_full_grid"):
         guider = ResExecGuider()
@@ -313,17 +298,7 @@ def test_res_noise_policies_produce_different_runs(monkeypatch):
     assert not torch.equal(outs[0], outs[1])
 
 
-# ---------------------------------------------------------------------------
-# §24 RES I2V smoke — walker restore, pristine conds, history separate from
-# conditioning
-# ---------------------------------------------------------------------------
-
 def _i2v_guider(guider_cls=ResExecGuider):
-    """Guider with real I2V-shaped (nonzero) conditioning attached.
-
-    Returns (guider, keyframes, refs, pristine) where pristine holds a clone
-    of every keyframe latent for the restore assertions.
-    """
     guider = guider_cls()
     g = torch.Generator().manual_seed(5)
     keyframes = [
@@ -351,26 +326,14 @@ def _assert_pristine_conds(keyframes, refs, pristine):
 def test_res_i2v_smoke_restores_pristine_and_keeps_history_separate(monkeypatch):
     guider, keyframes, refs, pristine = _i2v_guider()
     _, out, denoised = _run_res(_explicit_ladder_cfg(3), guider, monkeypatch)
-
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
-    # Walker restore: keyframe latents came back to pristine full-res values,
-    # refs were never resized, and no sampler code rebuilt the cond containers.
     _assert_pristine_conds(keyframes, refs, pristine)
     assert not hasattr(guider, _LW_ATTR)
-    # V1 deliberately enters the final stage without projected solver history.
-    snap = guider.stage_entries[-1]
-    assert snap is None
+    assert guider.stage_entries[-1] is None
 
-
-# ---------------------------------------------------------------------------
-# §20 failure/cleanup — every failure point clears RES state, closes the
-# handle, and still runs the walker cleanup through the nested finally chain
-# ---------------------------------------------------------------------------
 
 class ExplodingAtStage2(ResExecGuider):
-    """Fails inside the third guider.sample call (the final stage)."""
-
     def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
         if len(self.sigma_calls) == 2:
             raise RuntimeError("sampler call exploded")
@@ -390,7 +353,6 @@ def test_failure_during_sampler_call_clears_res_state(monkeypatch):
         )
     handle = captured[0][1]
     _assert_res_seam(captured, handle)
-    # The failure happened after a stage had run, and close still clears state.
     assert len(guider.stage_entries) == 2
     assert guider.stage_entries[1] is None
     _assert_res_state_cleared(handle)
@@ -404,8 +366,6 @@ def test_failure_during_spectral_transition_clears_res_state(monkeypatch):
     observed = {}
 
     def exploding_expand(value, target_hw, sigma, seed):
-        # Observed at the moment of explosion: stage 0 had completed real
-        # intervals, so solver history existed when the transition failed.
         observed["history_existed"] = captured[0][1].state.old_denoised is not None
         raise RuntimeError("spectral transition exploded")
 
@@ -426,6 +386,7 @@ def test_failure_during_spectral_transition_clears_res_state(monkeypatch):
 
 def test_res_transition_does_not_project_history(monkeypatch):
     guider, keyframes, refs, pristine = _i2v_guider()
+
     def exploding_project(*args, **kwargs):
         raise RuntimeError("history projection exploded")
 
@@ -442,8 +403,6 @@ def test_failure_during_audio_transition_clears_res_state(monkeypatch):
     observed = {}
 
     def exploding_reindex(*args, **kwargs):
-        # Observed at the moment of explosion: history existed when the
-        # audio handling failed (same first boundary as the spectral case).
         observed["history_existed"] = captured[0][1].state.old_denoised is not None
         raise RuntimeError("audio transition exploded")
 
@@ -462,32 +421,18 @@ def test_failure_during_audio_transition_clears_res_state(monkeypatch):
     _assert_pristine_conds(keyframes, refs, pristine)
 
 
-# ---------------------------------------------------------------------------
-# §20 state-leak — a fresh RES run after a completed RES run starts clean
-# ---------------------------------------------------------------------------
-
 def test_res_second_generation_after_completed_run_starts_clean(monkeypatch):
     cfg = _explicit_ladder_cfg(3)
     guider = ResExecGuider()
-
     handle_1, out_1, _ = _run_res(cfg, guider, monkeypatch)
     _assert_res_state_cleared(handle_1)
-
     handle_2, out_2, _ = _run_res(cfg, guider, monkeypatch)
-    # Same guider object, but a brand-new run-scoped handle: state is never
-    # reused between queue executions.
     assert handle_2 is not handle_1
-    # The second generation's first stage started from empty history —
-    # nothing leaked from the completed first run.
     assert guider.stage_entries[3] is None
-    # ... and the whole second trajectory is identical to the first
-    # (deterministic engine, no carried-over corruption).
     video_1, audio_1 = out_1["samples"].unbind()
     video_2, audio_2 = out_2["samples"].unbind()
     assert torch.equal(video_1, video_2)
     assert torch.equal(audio_1, audio_2)
-
-    # Control: a fresh guider produces the same output bit-for-bit.
     control = ResExecGuider()
     _, out_control, _ = _run_res(cfg, control, monkeypatch)
     video_c, audio_c = out_control["samples"].unbind()
@@ -496,20 +441,12 @@ def test_res_second_generation_after_completed_run_starts_clean(monkeypatch):
     assert not hasattr(guider, _LW_ATTR)
 
 
-# ---------------------------------------------------------------------------
-# §23 zero-step torture — coincident boundaries through the real runtime
-# ---------------------------------------------------------------------------
-
-def test_res_coincident_boundary_zero_step_stages_preserve_history(monkeypatch):
-    """Coincident boundaries stay empty until the final stage runs an interval."""
+def test_res_coincident_boundary_zero_step_stages_remain_empty(monkeypatch):
     guider = ResExecGuider()
     _, out, _ = _run_res(_automatic_calibrated_cfg(3), guider, monkeypatch)
-
     assert len(guider.sigma_calls) == 3
-    assert len(guider.sigma_calls[1]) == 1  # zero-step middle stage
-    # Model ran 1 + 0 + 9 intervals: the zero-step stage added no history.
+    assert len(guider.sigma_calls[1]) == 1
     assert guider.model_evals == len(SIGMAS) - 1
-
     entries = guider.stage_entries
     assert entries[1] is None
     assert entries[2] is None
@@ -517,19 +454,18 @@ def test_res_coincident_boundary_zero_step_stages_preserve_history(monkeypatch):
     assert not hasattr(guider, _LW_ATTR)
 
 
-def test_res_final_stage_second_order_behavior_depends_on_carried_history(monkeypatch):
-    """The V1 boundary reset matches an explicit test-only reset control."""
+def test_res_reset_mode_matches_explicit_boundary_reset_control(monkeypatch):
     cfg = _explicit_ladder_cfg(2)
 
     class ResetAtBoundary(ResExecGuider):
         def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-            if len(self.sigma_calls) == 1:  # the final stage call
-                sampler.state.clear()  # test-only reset-history control
+            if len(self.sigma_calls) == 1:
+                sampler.state.clear()
             return super().sample(
                 noise, latent_image, sampler, sigmas, callback=callback, **kwargs
             )
 
-    _, out_carried, _ = _run_res(cfg, ResExecGuider(), monkeypatch)
+    _, out_default, _ = _run_res(cfg, ResExecGuider(), monkeypatch)
     handle_reset, out_reset, _ = _run_res(cfg, ResetAtBoundary(), monkeypatch)
     assert handle_reset.state.old_denoised is None
-    assert torch.equal(out_carried["samples"].unbind()[0], out_reset["samples"].unbind()[0])
+    assert torch.equal(out_default["samples"].unbind()[0], out_reset["samples"].unbind()[0])

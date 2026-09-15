@@ -1,4 +1,4 @@
-"""Committed workflow examples keep Euler as the default sampler."""
+"""Committed workflow examples keep Euler + reset as SPEED defaults."""
 
 import json
 from pathlib import Path
@@ -16,8 +16,8 @@ NODE_TYPES = {
     "MiniMaxH3HarvestToConfig",
 }
 SAMPLER_INDEX = {
-    "MiniMaxH3SPEEDSampler": -1,
-    "MiniMaxH3SPEEDSamplerManual": -1,
+    "MiniMaxH3SPEEDSampler": -2,
+    "MiniMaxH3SPEEDSamplerManual": -2,
     "MiniMaxH3HarvestToConfig": 0,
 }
 
@@ -41,3 +41,6 @@ def test_committed_examples_select_euler_for_each_public_node():
         for node in nodes:
             assert node.get("widgets_values_named", {}).get("sampler_name") == "euler"
             assert node["widgets_values"][SAMPLER_INDEX[node["type"]]] == "euler"
+            if node["type"] in {"MiniMaxH3SPEEDSampler", "MiniMaxH3SPEEDSamplerManual"}:
+                assert node["widgets_values_named"]["res_history_mode"] == "reset"
+                assert node["widgets_values"][-1] == "reset"

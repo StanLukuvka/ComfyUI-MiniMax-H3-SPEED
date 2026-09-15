@@ -307,6 +307,7 @@ def run_speed_pipeline(
     config: SpeedConfig,
     *,
     sampler_name: str = "euler",
+    res_history_mode: str = "reset",
     # Test/programmatic seam only: injects a fake sampler object without
     # building a real Comfy sampler. Production node code must never use it;
     # it may not be combined with a non-default sampler_name.
@@ -458,7 +459,10 @@ def run_speed_pipeline(
             )
         sampler_handle = _OverrideSamplerHandle(sampler_override)
     else:
-        sampler_handle = create_speed_sampler_handle(sampler_name)
+        sampler_handle = create_speed_sampler_handle(
+            sampler_name,
+            res_history_mode=res_history_mode,
+        )
     # Run-scoped I2V lifecycle: the walker is created up front and EVERY exit
     # path (success, failure in a stage, transition, audio handling, spectral
     # expansion, or final sampling) passes through the finally block, which
@@ -605,12 +609,12 @@ def run_speed_pipeline(
             # after the boundary sigma is aligned and patched into the working
             # schedule and the spectral + audio transitions are done, before
             # the next stage re-enters guider.sample(). Stateless samplers
-            # no-op here; stateful RES preserves its step history
-            # history across the boundary. Never called per denoising step
-            # and never after the final stage. The per-stream shapes let a
-            # stateful handle slice its flat packed history (the real host
-            # packs nested latents before the sampler sees them) back into
-            # video and audio.
+            # no-op here; RES `reset` clears boundary history, while `projected`
+            # preserves and rebases compatible history. Never called per
+            # denoising step and never after the final stage. The per-stream
+            # shapes let a stateful handle slice its flat packed history (the
+            # real host packs nested latents before the sampler sees them) back
+            # into video and audio.
             sampler_handle.on_transition(
                 SpeedTransition(
                     stage_idx=stage_idx,

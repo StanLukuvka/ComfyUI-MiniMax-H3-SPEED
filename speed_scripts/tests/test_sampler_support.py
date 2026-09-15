@@ -39,6 +39,7 @@ from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
 from speed_scripts.sampler_support import (
     STATELESS_SPEED_SAMPLERS,
     SUPPORTED_SPEED_SAMPLERS,
+    RES_HISTORY_MODES,
     SamplerCapability,
     SpeedTransition,
     SpeedSamplerHandle,
@@ -99,11 +100,16 @@ def _assert_full_res_nested(latent):
 
 
 def _nested(video, audio):
-    return type(
-        "Nested",
-        (),
-        {"is_nested": True, "unbind": lambda self: [video, audio]},
-    )()
+    class Nested:
+        is_nested = True
+
+        def __init__(self, streams):
+            self.streams = list(streams)
+
+        def unbind(self):
+            return list(self.streams)
+
+    return Nested([video, audio])
 
 
 class EchoGuider:
@@ -190,6 +196,44 @@ def test_factory_routes_res_to_stateful_handle_without_native_sampler(monkeypatc
     handle.close()
 
 
+def test_res_history_modes_are_ordered_and_factory_defaults_to_reset():
+    assert RES_HISTORY_MODES == ("reset", "projected")
+    default = create_speed_sampler_handle("res_multistep")
+    explicit = create_speed_sampler_handle("res_multistep", res_history_mode="reset")
+    projected = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
+    assert default.history_mode == explicit.history_mode == "reset"
+    assert projected.history_mode == "projected"
+    for handle in (default, explicit, projected):
+        handle.close()
+
+
+def test_invalid_history_mode_fails_closed_for_all_sampler_factories():
+    with pytest.raises(ValueError, match="Unsupported RES history mode"):
+        create_speed_sampler_handle("res_multistep", res_history_mode="hybrid")
+    with pytest.raises(ValueError, match="Unsupported RES history mode"):
+        create_speed_sampler_handle("euler", res_history_mode="hybrid")
+
+
+@pytest.mark.parametrize("name", STATELESS_SPEED_SAMPLERS)
+@pytest.mark.parametrize("mode", RES_HISTORY_MODES)
+def test_stateless_samplers_ignore_valid_history_mode(name, mode):
+    handle = create_speed_sampler_handle(name, res_history_mode=mode)
+    assert handle.capability is SamplerCapability.STATELESS_STEP_LOCAL
+    handle.close()
+
+
+def test_reset_transition_clears_every_history_field():
+    handle = create_speed_sampler_handle("res_multistep", res_history_mode="reset")
+    handle.state.old_denoised = torch.ones(1)
+    handle.state.old_sigma_down = .4
+    handle.state.prev_sigma_in = .7
+    handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 2, 2), (3, 4, 4)))
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None
+    handle.close()
+
+
 @pytest.mark.parametrize("name", ["dpmpp_2m", "Euler", "euler_ancestral", ""])
 def test_factory_rejects_unknown_names_fail_closed(name):
     with pytest.raises(ValueError) as excinfo:
@@ -218,7 +262,7 @@ def test_base_handle_is_an_inert_noop():
 def test_default_and_explicit_paths_select_euler_exactly_once_per_run(monkeypatch):
     selected = []
 
-    def recording_factory(name):
+    def recording_factory(name, **kwargs):
         selected.append(name)
         return create_speed_sampler_handle(name)
 
@@ -268,7 +312,7 @@ def test_euler_routes_the_handle_sampler_into_every_guider_call(monkeypatch):
             self.sampler = marker
             self.capability = SamplerCapability.STATELESS_STEP_LOCAL
 
-    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name: MarkerHandle())
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: MarkerHandle())
     guider = EchoGuider()
     run_speed_pipeline(
         make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
@@ -351,7 +395,7 @@ def test_transition_hook_fires_once_per_transition_at_the_documented_position(mo
             events.append("hook")
             transitions_seen.append(transition)
 
-    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name: HookHandle())
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: HookHandle())
     guider = HookGuider(video_offset=.5)
     guider.test_events = events
     run_speed_pipeline(
@@ -398,7 +442,7 @@ def test_hook_failure_aborts_the_run_before_the_next_stage_samples(monkeypatch):
             if transition.stage_idx == 0:
                 raise RuntimeError("hook exploded")
 
-    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name: ExplodingHandle())
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: ExplodingHandle())
     guider = EchoGuider()
     with pytest.raises(RuntimeError, match="hook exploded"):
         run_speed_pipeline(
@@ -422,7 +466,7 @@ def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
             events.append("hook")
             transitions_seen.append(transition.stage_idx)
 
-    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name: HookHandle())
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: HookHandle())
     # delta_custom quantizes both transitions onto the same schedule index
     # (the existing suite pins boundaries == (1, 1) for these parameters) —
     # the legal coincident-boundary case.
@@ -463,7 +507,7 @@ def test_cleanup_runs_close_then_restore_then_drop_on_success(monkeypatch):
         def close(self):
             order.append("close")
 
-    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name: CleanupHandle())
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: CleanupHandle())
     monkeypatch.setattr(
         h3_runtime.LatentWalker, "apply_final", lambda self: order.append("apply_final")
     )
@@ -491,7 +535,7 @@ def test_cleanup_still_restores_and_drops_when_sampler_close_fails(monkeypatch):
             order.append("close")
             raise RuntimeError("close exploded")
 
-    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name: FailingHandle())
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: FailingHandle())
     monkeypatch.setattr(
         h3_runtime.LatentWalker, "apply_final", lambda self: order.append("apply_final")
     )
@@ -525,7 +569,7 @@ def test_cleanup_still_drops_the_walker_when_the_restore_fails(monkeypatch):
         order.append("apply_final")
         raise RuntimeError("restore exploded")
 
-    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name: CleanupHandle())
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: CleanupHandle())
     monkeypatch.setattr(h3_runtime.LatentWalker, "apply_final", exploding_final)
     guider = make_recording_guider()
     # The restore also runs once before the final stage; the FIRST failing
@@ -549,7 +593,7 @@ def test_override_seam_wraps_the_injected_sampler_as_a_noop_handle():
     guider = EchoGuider()
     run_speed_pipeline(
         make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
-        sampler_override=injected, disable_pbar=True,
+        sampler_override=injected, res_history_mode="not-a-mode", disable_pbar=True,
     )
     assert guider.samplers[0] is injected
     assert guider.samplers[1] is injected
@@ -793,7 +837,7 @@ def test_stage_failure_closes_handle_restores_and_drops_walker(sampler):
 
     guider = ExplodingStageGuider()
     _original_factory = h3_runtime.create_speed_sampler_handle
-    h3_runtime.create_speed_sampler_handle = lambda name: FailingCloseHandle()
+    h3_runtime.create_speed_sampler_handle = lambda name, **kwargs: FailingCloseHandle()
     try:
         with pytest.raises(RuntimeError, match="stage exploded"):
             _run(sampler, _explicit_ladder_cfg(3), guider)
@@ -846,4 +890,41 @@ def test_second_generation_after_failure_starts_clean(sampler):
     assert torch.equal(audio_second, audio_control)
     _assert_full_res_nested(out_second)
     assert not hasattr(guider_a, _LW_ATTR)
+
+
+def test_projected_nested_transition_projects_video_and_rebases_metadata():
+    handle = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
+    video = torch.randn(1, 1, 2, 4, 4)
+    audio = torch.randn(1, 1, 2, 6)
+    handle.state.old_denoised = _nested(video, audio)
+    handle.state.old_sigma_down = .6
+    handle.state.prev_sigma_in = .8
+    handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 4, 4), (3, 6, 6)))
+    projected_video, projected_audio = handle.state.old_denoised.unbind()
+    assert tuple(projected_video.shape[-3:]) == (3, 6, 6)
+    assert torch.equal(projected_audio, audio)
+    assert handle.state.old_sigma_down == .5
+    assert handle.state.prev_sigma_in == aligned_sigma(.8, 2.0)[1]
+    handle.close()
+
+
+def test_projected_flat_transition_uses_source_shapes_and_preserves_audio():
+    handle = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
+    video = torch.randn(1, 1, 2, 2, 2)
+    audio = torch.randn(1, 1, 2, 4)
+    flat = torch.cat((video.reshape(1, 1, -1), audio.reshape(1, 1, -1)), dim=-1)
+    handle.state.old_denoised = flat
+    source_shapes = (tuple(video.shape), tuple(audio.shape))
+    handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 2, 2), (3, 4, 4), source_shapes))
+    assert tuple(handle.state.old_denoised.shape) == (1, 1, 3 * 4 * 4 + audio.numel())
+    assert torch.equal(handle.state.old_denoised[..., 3 * 4 * 4:], audio.reshape(1, 1, -1))
+    handle.close()
+
+
+def test_projected_flat_transition_requires_source_shapes():
+    handle = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
+    handle.state.old_denoised = torch.zeros(1, 1, 16)
+    with pytest.raises(ValueError, match="per-stream shapes"):
+        handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 2, 2), (3, 4, 4)))
+    handle.close()
 

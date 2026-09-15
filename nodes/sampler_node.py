@@ -7,8 +7,6 @@ power-spectrum threshold. The cond-patching is done via LatentWalker — the
 latent lifecycle is owned by the walker, not embedded in h3_runtime.
 """
 
-# FLOW-PRODUCED: public five-sampler Automatic node.
-
 from __future__ import annotations
 
 import comfy.samplers
@@ -18,7 +16,7 @@ from speed_scripts.automatic_config import (
     build_automatic_speed_config,
 )
 from speed_scripts.h3_runtime import run_speed_pipeline
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
+from speed_scripts.sampler_support import RES_HISTORY_MODES, SUPPORTED_SPEED_SAMPLERS
 
 
 class MiniMaxH3SPEEDSampler:
@@ -60,13 +58,14 @@ class MiniMaxH3SPEEDSampler:
                 "noise_decay_exponent": ("FLOAT", {"default": 0.773, "min": 0.0, "max": 10.0, "step": 0.0001, "round": 0.0001}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
                 "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
+                "res_history_mode": (list(RES_HISTORY_MODES), {"default": "reset"}),
             },
         }
 
     def sample(self, noise, guider, sigmas, latent_image, stages=3,
                noise_policy="direct_coarse",
                noise_amplitude=12.105, noise_decay_exponent=0.773,
-               seed_offset=10000, sampler_name="euler", **kwargs):
+               seed_offset=10000, sampler_name="euler", res_history_mode="reset", **kwargs):
         # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
         delta = kwargs.get("Tolerance (Delta)",
                 kwargs.get("Tolerance",
@@ -101,6 +100,7 @@ class MiniMaxH3SPEEDSampler:
             latent_image,
             config,
             sampler_name=sampler_name,
+            res_history_mode=res_history_mode,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
             output_device=None,
         )
