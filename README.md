@@ -1,6 +1,5 @@
 # ComfyUI MiniMax-H3 SPEED Sampler
 
-<!-- FLOW-PRODUCED: RES V3 hybrid boundary documentation. -->
 
 ⚠️ **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0) 
 (I don't expect this to be used commercially. If it genuinely will be, message me.)

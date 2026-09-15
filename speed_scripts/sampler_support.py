@@ -29,7 +29,6 @@ paths have automated tests but no native ComfyUI or GPU validation claim.
 from dataclasses import dataclass
 from enum import Enum
 
-# FLOW-PRODUCED: RES V3 hybrid boundary metadata.
 
 #: Stateless, step-local samplers exposed by SPEED. Their behavior at a
 #: SPEED stage boundary needs no cross-stage state, so their handle hook is

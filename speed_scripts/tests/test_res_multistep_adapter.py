@@ -22,7 +22,6 @@ Everything here runs against a deterministic fake model on plain float
 schedules — no ComfyUI import is needed below the handle seam.
 """
 
-# FLOW-PRODUCED: RES candidate-helper regression coverage.
 
 
 import math

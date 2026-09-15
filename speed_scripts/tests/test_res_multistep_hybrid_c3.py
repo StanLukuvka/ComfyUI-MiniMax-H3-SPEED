@@ -1,6 +1,5 @@
 """Commit 3 tests for the mechanical RES hybrid candidate blend."""
 
-# FLOW-PRODUCED: RES hybrid candidate blend coverage.
 
 import pytest
 import torch

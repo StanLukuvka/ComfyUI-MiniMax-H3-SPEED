@@ -5,7 +5,6 @@ always sees a buffer matching its latent_shapes. The stage loop delegates sample
 """
 
 # FLOW-PRODUCED: sampler-aware stage runtime.
-# FLOW-PRODUCED: RES V3 hybrid boundary documentation.
 
 from __future__ import annotations
 

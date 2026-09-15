@@ -24,7 +24,6 @@ metadata is absent or inconsistent. These semantics are covered by automated
 tests only; this module does not claim GPU or native ComfyUI validation.
 """
 
-# FLOW-PRODUCED: RES candidate-helper refactor.
 
 from __future__ import annotations
 
