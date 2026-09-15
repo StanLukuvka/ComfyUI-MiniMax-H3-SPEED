@@ -1,11 +1,10 @@
-"""Public-input compatibility for the sampler selectors (plan §3, §9).
+"""Public-input compatibility for the sampler selectors.
 
-Old workflows have no sampler field: both nodes must execute as Euler, keep
-every pre-existing input in its original position, and append the new
-selectors last with signature defaults of ``"euler"`` and ``"reset"``.
+The sampler selector already existed before RES history modes. V2 appends one
+new required widget after ``sampler_name``; direct/programmatic calls that omit
+it must retain the current V1 behavior through the ``"reset"`` signature
+default. Every pre-existing input keeps its position.
 """
-
-# FLOW-PRODUCED: V2 sampler widget compatibility coverage.
 
 import inspect
 import importlib
@@ -16,6 +15,7 @@ from conftest import make_fake_noise, make_latent
 import speed_scripts.h3_runtime as h3_runtime
 from speed_scripts.res_multistep_adapter import ResMultistepSampler
 from speed_scripts.sampler_support import (
+    RES_HISTORY_MODES,
     SUPPORTED_SPEED_SAMPLERS,
     SamplerCapability,
     create_speed_sampler_handle,
@@ -135,8 +135,7 @@ def _sigmas():
 
 
 # ---------------------------------------------------------------------------
-# Old-workflow payloads: no sampler_name anywhere (plan §3 "Compatibility
-# test", §9 "Old no-name/default path selects Euler")
+# Direct/programmatic calls that omit the selectors keep their defaults.
 # ---------------------------------------------------------------------------
 
 def test_automatic_without_sampler_name_executes_euler():
@@ -159,17 +158,18 @@ def test_manual_without_sampler_name_executes_euler():
     assert _same_latents(no_field[0], explicit[0])
 
 
-def test_sample_signatures_default_to_euler():
+def test_sample_signatures_keep_selector_defaults():
     automatic_cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
     manual_cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
     for cls in (automatic_cls, manual_cls):
-        param = inspect.signature(cls.sample).parameters["sampler_name"]
-        assert param.default == "euler"
+        params = inspect.signature(cls.sample).parameters
+        assert params["sampler_name"].default == "euler"
+        assert params["res_history_mode"].default == "reset"
 
 
 # ---------------------------------------------------------------------------
-# Widget/input ordering (plan §3: "old widget/input ordering is not changed
-# before the new field")
+# Widget/input ordering: existing inputs are untouched, then sampler_name,
+# then the newly appended RES history mode.
 # ---------------------------------------------------------------------------
 
 def test_automatic_appends_selector_after_existing_inputs():
@@ -195,18 +195,18 @@ def test_sampler_dropdown_is_exactly_the_supported_names_defaulting_to_euler():
         assert options["default"] == "euler"
 
 
-def test_history_dropdown_is_exactly_reset_and_projected_defaulting_to_reset():
+def test_history_dropdown_uses_shared_modes_defaulting_to_reset():
     automatic_cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
     manual_cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
     for cls in (automatic_cls, manual_cls):
         values, options = cls.INPUT_TYPES()["required"]["res_history_mode"]
-        assert tuple(values) == ("reset", "projected")
+        assert tuple(values) == RES_HISTORY_MODES
         assert options["default"] == "reset"
 
 
 # ---------------------------------------------------------------------------
-# Selector pass-through (plan §3: the dropdown feeds run_speed_pipeline, so a
-# non-default selection must reach the runtime handle unchanged)
+# Selector pass-through: the dropdown feeds run_speed_pipeline, so a
+# non-default selection must reach the runtime handle unchanged.
 # ---------------------------------------------------------------------------
 
 def test_automatic_passes_non_default_name_to_the_runtime():
@@ -226,8 +226,8 @@ def test_manual_passes_non_default_name_to_the_runtime():
 def _run_res_node(node_runner, monkeypatch, **kwargs):
     captured = []
 
-    def factory(name, **kwargs):
-        handle = create_speed_sampler_handle(name, **kwargs)
+    def factory(name, **factory_kwargs):
+        handle = create_speed_sampler_handle(name, **factory_kwargs)
         captured.append((name, handle))
         return handle
 
