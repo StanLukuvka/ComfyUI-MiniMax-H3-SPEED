@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import torch
 
 from .flow import aligned_sigma
-from .spectral import spectral_expand_clean_3d
+from .spectral import dct2, dct_temporal, idct2, idct_temporal, spectral_expand_clean_3d
 
 
 def _host_ksampler_class():
@@ -198,6 +198,86 @@ def _res_second_order_update(
     return math.exp(-h) * x + h * (b1 * denoised + b2 * old_denoised)
 
 
+def _hybridize_video(first_video, second_video, source_thw):
+    """Replace the source geometry coefficient block in a VIDEO candidate."""
+    source_t, source_h, source_w = source_thw
+    target_t, target_h, target_w = first_video.shape[-3:]
+    if any(source > target for source, target in zip(
+        source_thw, (target_t, target_h, target_w),
+    )):
+        raise ValueError("RES hybrid source geometry cannot exceed target VIDEO geometry")
+    mixed_coeff = dct2(dct_temporal(first_video))
+    mixed_coeff[..., :source_t, :source_h, :source_w] = dct2(
+        dct_temporal(second_video)
+    )[..., :source_t, :source_h, :source_w]
+    return idct_temporal(idct2(mixed_coeff)).to(dtype=first_video.dtype)
+
+
+def hybridize_res_candidates(
+    first_order,
+    second_order,
+    second_order_thw: tuple[int, int, int],
+    target_stream_shapes=None,
+):
+    """Blend VIDEO candidates in DCT space and retain first-order AUDIO.
+
+    The accepted inputs are the nested H3 video/audio pair or the flat
+    ``[B, 1, N]`` pack produced by the real host. Flat packs require the
+    host-recorded stream shapes because their boundary does not describe the
+    split itself.
+    """
+    source_t, source_h, source_w = (int(v) for v in second_order_thw)
+    if min(source_t, source_h, source_w) < 1:
+        raise ValueError("RES hybrid source geometry must be positive")
+
+    nested = getattr(first_order, "is_nested", False)
+    if nested != getattr(second_order, "is_nested", False):
+        raise ValueError("RES hybrid candidates must use the same representation")
+    if nested:
+        first_streams = list(first_order.unbind())
+        second_streams = list(second_order.unbind())
+        if len(first_streams) != 2 or len(second_streams) != 2:
+            raise ValueError("RES hybrid candidates must contain exactly video and audio")
+        first_video, first_audio = first_streams
+        second_video, second_audio = second_streams
+        if first_video.shape != second_video.shape or first_audio.shape != second_audio.shape:
+            raise ValueError("RES hybrid candidate stream shapes must agree")
+        if first_video.ndim != 5 or first_audio.ndim != 4:
+            raise ValueError("RES hybrid nested candidates must be H3 video and audio")
+        mixed_video = _hybridize_video(
+            first_video, second_video, (source_t, source_h, source_w),
+        )
+        return type(first_order)([mixed_video, first_audio])
+
+    if not (torch.is_tensor(first_order) and torch.is_tensor(second_order)):
+        raise ValueError("RES hybrid candidates must be nested pairs or flat tensors")
+    if first_order.ndim != 3 or first_order.shape[1] != 1:
+        raise ValueError("flat RES hybrid candidates must have shape [B, 1, N]")
+    if second_order.shape != first_order.shape:
+        raise ValueError("RES hybrid candidate pack shapes must agree")
+    if not target_stream_shapes or len(target_stream_shapes) != 2:
+        raise ValueError("flat RES hybrid candidates need target stream shapes")
+    shapes = [tuple(int(d) for d in shape) for shape in target_stream_shapes]
+    if len(shapes[0]) != 5 or len(shapes[1]) != 4:
+        raise ValueError("target stream shapes must describe H3 video and audio")
+    if any(shape[0] != first_order.shape[0] for shape in shapes):
+        raise ValueError("target stream shapes must match the packed batch")
+    video_count = math.prod(shapes[0][1:])
+    audio_count = math.prod(shapes[1][1:])
+    if video_count + audio_count != first_order.shape[-1]:
+        raise ValueError("target stream shapes do not match the packed candidates")
+    first_video = first_order[..., :video_count].reshape(shapes[0])
+    second_video = second_order[..., :video_count].reshape(shapes[0])
+    first_audio = first_order[..., video_count:].reshape(shapes[1])
+    mixed_video = _hybridize_video(
+        first_video, second_video, (source_t, source_h, source_w),
+    )
+    return torch.cat(
+        (mixed_video.reshape(first_order.shape[0], 1, -1), first_audio.reshape(first_order.shape[0], 1, -1)),
+        dim=-1,
+    )
+
+
 def res_multistep_sampler(
     model,
     noise,
@@ -256,10 +336,20 @@ def res_multistep_sampler(
             # t = -ln(sigma) space. t_prev comes from the carried state,
             # never from sigmas[i - 1]: on the first step of a stage-local
             # schedule that index is the wrong element.
-            x = _res_second_order_update(
+            x_first = _res_first_order_update(x, denoised, sigma, sigma_down)
+            x_second = _res_second_order_update(
                 x, denoised, old_denoised,
                 sigma_f, sigma_down_f, old_sigma_down, prev_sigma_in,
             )
+            if state.hybrid_pending and state.hybrid_second_order_thw is not None:
+                x = hybridize_res_candidates(
+                    x_first,
+                    x_second,
+                    state.hybrid_second_order_thw,
+                    state.hybrid_target_stream_shapes,
+                )
+            else:
+                x = x_second
         else:
             # First order (Euler).
             x = _res_first_order_update(x, denoised, sigma, sigma_down)
@@ -267,6 +357,10 @@ def res_multistep_sampler(
         state.old_denoised = denoised
         state.old_sigma_down = sigma_down_f
         state.prev_sigma_in = sigma_f
+        if state.hybrid_pending:
+            state.hybrid_pending = False
+            state.hybrid_second_order_thw = None
+            state.hybrid_target_stream_shapes = None
     return x
 
 
