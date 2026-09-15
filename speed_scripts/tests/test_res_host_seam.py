@@ -14,8 +14,9 @@ earlier runtime tests bypassed:
    H3 run, ``CFGGuider.sample`` packs video+audio FLAT with
    ``comfy.utils.pack_latents`` (each stream reshaped ``[B, 1, -1]``,
    concatenated on the last axis) before any sampler code runs, and unpacks
-   the sampler output back into a nested tensor afterwards. V1 clears the flat
-   RES history at the boundary, so it does not need to split video from audio.
+   the sampler output back into a nested tensor afterwards. Reset mode clears
+   the flat RES history at the boundary without splitting it; projected mode
+   uses the runtime-recorded stream shapes when it needs to split the pack.
 
 The conftest ``KSAMPLER`` stub models the host shape; these tests use it the
 way ``CFGGuider`` uses the real one.
@@ -172,18 +173,18 @@ def _flat_ladder_cfg(stages, **overrides):
     )
 
 
-def _run_flat_host(cfg, guider, monkeypatch):
+def _run_flat_host(cfg, guider, monkeypatch, **kwargs):
     captured = []
 
-    def factory(name, **kwargs):
-        handle = create_speed_sampler_handle(name)
+    def factory(name, **factory_kwargs):
+        handle = create_speed_sampler_handle(name, **factory_kwargs)
         captured.append((name, handle))
         return handle
 
     monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", factory)
     out, denoised = run_speed_pipeline(
         SeededRandomNoise(), guider, SIGMAS, make_latent(), cfg,
-        sampler_name="res_multistep", disable_pbar=True,
+        sampler_name="res_multistep", disable_pbar=True, **kwargs,
     )
     handle = captured[0][1]
     assert captured == [("res_multistep", handle)]
@@ -266,7 +267,7 @@ def test_res_multistep_state_clear_releases_history():
 # ---------------------------------------------------------------------------
 
 def test_flat_history_on_transition_is_cleared():
-    """A flat packed history is discarded at the V1 boundary."""
+    """A flat packed history is discarded in reset mode."""
     video = torch.arange(16, dtype=torch.float32).reshape(1, 1, 2, 2, 4) / 16
     audio = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 4) / 8
     flat, shapes = _pack_latents([video, audio])
@@ -316,7 +317,7 @@ def test_runtime_with_cfgguider_shaped_guider_completes(monkeypatch, stages):
     video, audio = out["samples"].unbind()
     assert tuple(video.shape[-2:]) == (8, 8)
     assert audio.ndim == 4
-    # Stage entries: every stage boundary starts empty under V1.
+    # Stage entries: every stage boundary starts empty under reset mode.
     assert guider.stage_entries[0] is None
     for snap in guider.stage_entries[1:]:
         assert snap is None
