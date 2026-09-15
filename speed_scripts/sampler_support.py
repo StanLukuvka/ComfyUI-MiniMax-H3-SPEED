@@ -15,6 +15,14 @@ only talk to the handle. Stateless samplers use ComfyUI's native sampler
 objects. RES uses this repository's deterministic stateful adapter because
 its run-scoped state and boundary policy belong to the sampler handle. The
 SPEED scheduler itself remains sampler-agnostic.
+
+RES boundary modes are explicit policies. ``reset`` is the default and clears
+history. ``projected`` is the historical project-and-rebase comparison path.
+``hybrid`` is experimental V3.0: it prepares one spatial-only video DCT
+candidate mix, keeps audio first-order, and falls back to reset when temporal
+geometry changes. Flat host tensors require recorded stream shapes. Missing or
+inconsistent metadata must raise rather than guess a video/audio split. These
+paths have automated tests but no native ComfyUI or GPU validation claim.
 """
 
 
@@ -66,6 +74,8 @@ class SpeedTransition:
     split a flat packed history tensor back into its video and audio streams;
     ``reset`` mode does not need it. ``target_stream_shapes`` records the
     authoritative post-transition pack layout for hybrid boundary metadata.
+    Hybrid rejects flat input when either shape record is missing or does not
+    match the packed tensor, so it cannot silently mix the wrong streams.
     """
 
     stage_idx: int

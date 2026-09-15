@@ -12,8 +12,14 @@ history. Worse, the native code derives the previous input sigma from
 ``sigmas[i - 1]``, which is the wrong element on the first step of a
 stage-local schedule. This adapter owns that history explicitly in a
 ``ResMultistepState`` that the SPEED runtime can carry across stages according
-to the selected boundary policy, and reads ``t_prev`` from the state instead
-of the schedule.
+according to the selected boundary policy, and reads ``t_prev`` from the state instead
+of the schedule. ``reset`` is the default boundary policy. ``projected`` is
+the historical project-and-rebase comparison path. Experimental V3.0
+``hybrid`` applies one spatial-only VIDEO DCT candidate mix and uses the
+first-order AUDIO candidate. Temporal transitions clear history instead of
+using that operator. Flat host tensors fail closed when recorded stream shape
+metadata is absent or inconsistent. These semantics are covered by automated
+tests only; this module does not claim GPU or native ComfyUI validation.
 """
 
 # FLOW-PRODUCED: RES candidate-helper refactor.
@@ -83,11 +89,10 @@ def project_clean_history(history, target_thw: tuple[int, int, int], source_stre
     fresh high-frequency noise and is not scaled by sigma. The audio slice is
     copied unchanged by this historical projected-mode operation.
 
-    This helper defines the mechanics of the experimental ``projected``
-    boundary mode. It does not establish that the result is equivalent to the
-    history an uninterrupted target-resolution RES trajectory would have
-    produced; native RES has no geometry-changing boundary to provide such an
-    oracle.
+    This helper defines the mechanics of the historical experimental
+    ``projected`` boundary mode. It does not establish equivalence to an
+    uninterrupted target-resolution RES trajectory. Native RES has no
+    geometry-changing boundary to provide such an oracle.
 
     Two shapes arrive here, depending on where the history was captured:
 
@@ -102,6 +107,8 @@ def project_clean_history(history, target_thw: tuple[int, int, int], source_stre
       ``[B, 1, N]`` tensor. ``source_stream_shapes`` carries the per-stream
       shapes from that pack; the video slice is the first
       ``prod(video_shape[1:])`` elements and the audio slice is the rest.
+      Missing or inconsistent metadata raises ``ValueError``. The helper
+      never infers a stream split from the flat element count.
     """
     if getattr(history, "is_nested", False):
         streams = list(history.unbind())
@@ -224,7 +231,8 @@ def hybridize_res_candidates(
     The accepted inputs are the nested H3 video/audio pair or the flat
     ``[B, 1, N]`` pack produced by the real host. Flat packs require the
     host-recorded stream shapes because their boundary does not describe the
-    split itself.
+    split itself. This is the experimental V3.0 one-interval operator for
+    spatial-only transitions. Missing or inconsistent metadata fails closed.
     """
     source_t, source_h, source_w = (int(v) for v in second_order_thw)
     if min(source_t, source_h, source_w) < 1:
