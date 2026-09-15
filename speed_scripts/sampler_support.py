@@ -21,6 +21,8 @@ SPEED scheduler itself remains sampler-agnostic.
 from dataclasses import dataclass
 from enum import Enum
 
+# FLOW-PRODUCED: RES V3 hybrid boundary metadata.
+
 #: Stateless, step-local samplers exposed by SPEED. Their behavior at a
 #: SPEED stage boundary needs no cross-stage state, so their handle hook is
 #: a no-op.
@@ -37,7 +39,7 @@ SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + (
     "res_multistep",
 )
 
-RES_HISTORY_MODES = ("reset", "projected")
+RES_HISTORY_MODES = ("reset", "projected", "hybrid")
 
 
 class SamplerCapability(Enum):
@@ -62,7 +64,8 @@ class SpeedTransition:
     stage's sampler saw, in the host's flat-pack order (video first, then
     audio). Stateless samplers ignore it. RES ``projected`` mode uses it to
     split a flat packed history tensor back into its video and audio streams;
-    ``reset`` mode does not need it.
+    ``reset`` mode does not need it. ``target_stream_shapes`` records the
+    authoritative post-transition pack layout for hybrid boundary metadata.
     """
 
     stage_idx: int
@@ -72,6 +75,7 @@ class SpeedTransition:
     source_thw: tuple[int, int, int]
     target_thw: tuple[int, int, int]
     source_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
+    target_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
 
 
 class SpeedSamplerHandle:
@@ -153,6 +157,39 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
             rebase_res_history_sigmas(
                 self.state, transition.new_sigma, transition.ratio
             )
+            return
+
+        if self.history_mode == "hybrid":
+            if self.state.old_denoised is None:
+                self.state.clear()
+                return
+            if transition.source_thw[0] != transition.target_thw[0]:
+                # V3 only mixes spatial boundaries. Temporal changes fall back
+                # to reset until a temporal hybrid operator is defined.
+                self.state.clear()
+                return
+
+            from .res_multistep_adapter import (
+                project_clean_history,
+                rebase_res_history_sigmas,
+            )
+
+            if not self.state.hybrid_pending:
+                self.state.hybrid_second_order_thw = transition.source_thw
+            source_stream_shapes = (
+                transition.source_stream_shapes
+                or self.state.hybrid_target_stream_shapes
+            )
+            self.state.old_denoised = project_clean_history(
+                self.state.old_denoised,
+                transition.target_thw,
+                source_stream_shapes=source_stream_shapes,
+            )
+            rebase_res_history_sigmas(
+                self.state, transition.new_sigma, transition.ratio
+            )
+            self.state.hybrid_target_stream_shapes = transition.target_stream_shapes
+            self.state.hybrid_pending = True
             return
 
         # Construction validates the mode, so reaching this branch means the

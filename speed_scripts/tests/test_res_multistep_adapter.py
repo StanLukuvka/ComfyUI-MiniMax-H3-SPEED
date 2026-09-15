@@ -180,10 +180,16 @@ def test_state_starts_empty_and_clear_releases_everything():
     state.old_denoised = tensor
     state.old_sigma_down = 0.5
     state.prev_sigma_in = 0.9
+    state.hybrid_pending = True
+    state.hybrid_second_order_thw = (2, 4, 4)
+    state.hybrid_target_stream_shapes = ((1, 1, 2, 8, 8), (1, 1, 2, 4))
     state.clear()
     assert state.old_denoised is None
     assert state.old_sigma_down is None
     assert state.prev_sigma_in is None
+    assert state.hybrid_pending is False
+    assert state.hybrid_second_order_thw is None
+    assert state.hybrid_target_stream_shapes is None
 
 
 def test_single_sigma_stage_executes_zero_intervals_and_touches_nothing():
@@ -584,3 +590,59 @@ def test_on_transition_twice_at_coincident_boundary_no_new_history():
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None
+
+
+def test_hybrid_transition_projects_history_and_records_boundary_metadata():
+    handle = create_res_multistep_sampler_handle(history_mode="hybrid")
+    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+    transition = SpeedTransition(
+        stage_idx=0, ratio=2.0, old_sigma=0.5, new_sigma=0.4,
+        source_thw=(2, 4, 4), target_thw=(2, 8, 8),
+        target_stream_shapes=((1, 1, 2, 8, 8), (1, 1, 2, 4)),
+    )
+
+    handle.on_transition(transition)
+
+    assert handle.state.hybrid_pending is True
+    assert handle.state.hybrid_second_order_thw == (2, 4, 4)
+    assert handle.state.hybrid_target_stream_shapes == transition.target_stream_shapes
+    assert tuple(handle.state.old_denoised.unbind()[0].shape[-3:]) == (2, 8, 8)
+    handle.close()
+
+
+def test_hybrid_temporal_transition_falls_back_to_reset():
+    handle = create_res_multistep_sampler_handle(history_mode="hybrid")
+    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+    handle.on_transition(_transition((2, 4, 4), (3, 8, 8)))
+
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None
+    assert handle.state.hybrid_pending is False
+
+
+def test_hybrid_coincident_transition_keeps_original_projector_block():
+    handle = create_res_multistep_sampler_handle(history_mode="hybrid")
+    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
+    handle.state.old_sigma_down = 0.5
+    handle.state.prev_sigma_in = 0.6
+    first = SpeedTransition(
+        0, 2.0, 0.5, 0.4, (2, 4, 4), (2, 8, 8),
+        target_stream_shapes=((1, 1, 2, 8, 8), (1, 1, 2, 4)),
+    )
+    second = SpeedTransition(
+        1, 1.5, 0.4, 0.3, (2, 8, 8), (2, 16, 16),
+        target_stream_shapes=((1, 1, 2, 16, 16), (1, 1, 2, 4)),
+    )
+    handle.on_transition(first)
+    handle.on_transition(second)
+
+    assert handle.state.hybrid_pending is True
+    assert handle.state.hybrid_second_order_thw == (2, 4, 4)
+    assert handle.state.hybrid_target_stream_shapes == second.target_stream_shapes
+    assert tuple(handle.state.old_denoised.unbind()[0].shape[-3:]) == (2, 16, 16)
+    handle.close()

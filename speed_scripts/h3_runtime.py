@@ -627,6 +627,10 @@ def run_speed_pipeline(
                         tuple(public_video.shape),
                         tuple(public_audio.shape),
                     ),
+                    target_stream_shapes=(
+                        tuple(transitioned_video.shape),
+                        tuple(transitioned_audio.shape),
+                    ),
                 )
             )
 

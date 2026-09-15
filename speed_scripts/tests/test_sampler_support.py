@@ -197,21 +197,23 @@ def test_factory_routes_res_to_stateful_handle_without_native_sampler(monkeypatc
 
 
 def test_res_history_modes_are_ordered_and_factory_defaults_to_reset():
-    assert RES_HISTORY_MODES == ("reset", "projected")
+    assert RES_HISTORY_MODES == ("reset", "projected", "hybrid")
     default = create_speed_sampler_handle("res_multistep")
     explicit = create_speed_sampler_handle("res_multistep", res_history_mode="reset")
     projected = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
+    hybrid = create_speed_sampler_handle("res_multistep", res_history_mode="hybrid")
     assert default.history_mode == explicit.history_mode == "reset"
     assert projected.history_mode == "projected"
-    for handle in (default, explicit, projected):
+    assert hybrid.history_mode == "hybrid"
+    for handle in (default, explicit, projected, hybrid):
         handle.close()
 
 
 def test_invalid_history_mode_fails_closed_for_all_sampler_factories():
     with pytest.raises(ValueError, match="Unsupported RES history mode"):
-        create_speed_sampler_handle("res_multistep", res_history_mode="hybrid")
+        create_speed_sampler_handle("res_multistep", res_history_mode="unknown")
     with pytest.raises(ValueError, match="Unsupported RES history mode"):
-        create_speed_sampler_handle("euler", res_history_mode="hybrid")
+        create_speed_sampler_handle("euler", res_history_mode="unknown")
 
 
 @pytest.mark.parametrize("name", STATELESS_SPEED_SAMPLERS)
@@ -425,8 +427,14 @@ def test_transition_hook_fires_once_per_transition_at_the_documented_position(mo
     # stage's grid, target geometry is the next stage's grid.
     assert transitions_seen[0].source_thw == (2, 3, 3)
     assert transitions_seen[0].target_thw == (2, 5, 5)
+    assert transitions_seen[0].target_stream_shapes == (
+        (1, 1, 2, 5, 5), (1, 1, 2, 44),
+    )
     assert transitions_seen[1].source_thw == (2, 5, 5)
     assert transitions_seen[1].target_thw == (2, 8, 8)
+    assert transitions_seen[1].target_stream_shapes == (
+        (1, 1, 2, 8, 8), (1, 1, 2, 44),
+    )
 
 
 def test_hook_failure_aborts_the_run_before_the_next_stage_samples(monkeypatch):

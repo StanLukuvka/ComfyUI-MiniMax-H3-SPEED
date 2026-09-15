@@ -60,12 +60,18 @@ class ResMultistepState:
     old_denoised: object | None = None
     old_sigma_down: float | None = None
     prev_sigma_in: float | None = None
+    hybrid_pending: bool = False
+    hybrid_second_order_thw: tuple[int, int, int] | None = None
+    hybrid_target_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
 
     def clear(self) -> None:
         """Release every previous-step history reference."""
         self.old_denoised = None
         self.old_sigma_down = None
         self.prev_sigma_in = None
+        self.hybrid_pending = False
+        self.hybrid_second_order_thw = None
+        self.hybrid_target_stream_shapes = None
 
 
 def project_clean_history(history, target_thw: tuple[int, int, int], source_stream_shapes=None):
