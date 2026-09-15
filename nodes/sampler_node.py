@@ -7,9 +7,6 @@ power-spectrum threshold. The cond-patching is done via LatentWalker — the
 latent lifecycle is owned by the walker, not embedded in h3_runtime.
 """
 
-# FLOW-PRODUCED: public five-sampler Automatic node.
-# FLOW-PRODUCED: expose RES history mode after sampler_name.
-
 from __future__ import annotations
 
 import comfy.samplers
@@ -19,7 +16,7 @@ from speed_scripts.automatic_config import (
     build_automatic_speed_config,
 )
 from speed_scripts.h3_runtime import run_speed_pipeline
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
+from speed_scripts.sampler_support import RES_HISTORY_MODES, SUPPORTED_SPEED_SAMPLERS
 
 
 class MiniMaxH3SPEEDSampler:
@@ -61,7 +58,7 @@ class MiniMaxH3SPEEDSampler:
                 "noise_decay_exponent": ("FLOAT", {"default": 0.773, "min": 0.0, "max": 10.0, "step": 0.0001, "round": 0.0001}),
                 "seed_offset": ("INT", {"default": 10000, "min": 0, "max": 2**31 - 1}),
                 "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
-                "res_history_mode": (["reset", "projected"], {"default": "reset"}),
+                "res_history_mode": (list(RES_HISTORY_MODES), {"default": "reset"}),
             },
         }
 
