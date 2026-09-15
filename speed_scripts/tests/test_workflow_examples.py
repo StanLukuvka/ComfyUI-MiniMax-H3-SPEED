@@ -1,6 +1,4 @@
-"""Committed workflow examples keep Euler as the default sampler."""
-
-# FLOW-PRODUCED: V2 workflow widget compatibility coverage.
+"""Committed workflow examples keep Euler + reset as SPEED defaults."""
 
 import json
 from pathlib import Path
