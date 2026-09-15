@@ -333,6 +333,19 @@ def test_res_i2v_smoke_restores_pristine_and_keeps_history_separate(monkeypatch)
     assert guider.stage_entries[-1] is None
 
 
+def test_res_hybrid_i2v_restores_pristine_conditions_and_cleans_state(monkeypatch):
+    guider, keyframes, refs, pristine = _i2v_guider()
+    handle, out, denoised = _run_res(
+        _explicit_ladder_cfg(2), guider, monkeypatch,
+        res_history_mode="hybrid",
+    )
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+    _assert_pristine_conds(keyframes, refs, pristine)
+    assert not hasattr(guider, _LW_ATTR)
+    _assert_res_state_cleared(handle)
+
+
 class ExplodingAtStage2(ResExecGuider):
     def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
         if len(self.sigma_calls) == 2:
@@ -356,6 +369,28 @@ def test_failure_during_sampler_call_clears_res_state(monkeypatch):
     assert len(guider.stage_entries) == 2
     assert guider.stage_entries[1] is None
     _assert_res_state_cleared(handle)
+    assert not hasattr(guider, _LW_ATTR)
+    _assert_pristine_conds(keyframes, refs, pristine)
+
+
+def test_failure_after_hybrid_transition_clears_pending_state(monkeypatch):
+    guider, keyframes, refs, pristine = _i2v_guider(ExplodingAtStage2)
+    captured = []
+
+    def factory(name, **kwargs):
+        handle = create_speed_sampler_handle(name, **kwargs)
+        captured.append(handle)
+        return handle
+
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", factory)
+    with pytest.raises(RuntimeError, match="sampler call exploded"):
+        run_speed_pipeline(
+            SeededRandomNoise(), guider, SIGMAS, make_latent(),
+            _explicit_ladder_cfg(3), sampler_name="res_multistep",
+            res_history_mode="hybrid", disable_pbar=True,
+        )
+    assert captured
+    _assert_res_state_cleared(captured[0])
     assert not hasattr(guider, _LW_ATTR)
     _assert_pristine_conds(keyframes, refs, pristine)
 
@@ -469,3 +504,98 @@ def test_res_reset_mode_matches_explicit_boundary_reset_control(monkeypatch):
     handle_reset, out_reset, _ = _run_res(cfg, ResetAtBoundary(), monkeypatch)
     assert handle_reset.state.old_denoised is None
     assert torch.equal(out_default["samples"].unbind()[0], out_reset["samples"].unbind()[0])
+
+
+class HybridInspectGuider(ResExecGuider):
+    """Record hybrid metadata at each stage entry."""
+
+    def __init__(self):
+        super().__init__()
+        self.hybrid_entries = []
+
+    def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+        state = getattr(sampler, "state", None)
+        self.hybrid_entries.append((
+            None if state is None else state.hybrid_pending,
+            None if state is None else state.hybrid_second_order_thw,
+            None if state is None else state.hybrid_target_stream_shapes,
+        ))
+        return super().sample(noise, latent_image, sampler, sigmas, callback, **kwargs)
+
+
+def test_res_hybrid_two_stage_consumes_pending_history_after_one_real_interval(monkeypatch):
+    guider = HybridInspectGuider()
+    handle, out, denoised = _run_res(
+        _explicit_ladder_cfg(2), guider, monkeypatch, res_history_mode="hybrid",
+    )
+    assert guider.hybrid_entries[0] == (False, None, None)
+    assert guider.hybrid_entries[1][0] is True
+    assert guider.hybrid_entries[1][1] == (2, 4, 4)
+    assert guider.hybrid_entries[1][2] is not None
+    assert guider.model_evals == len(SIGMAS) - 1
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+    _assert_res_state_cleared(handle)
+
+
+@pytest.mark.parametrize("stages", (3, 4))
+def test_res_hybrid_multi_stage_ladders_keep_one_sampler_and_nfe(monkeypatch, stages):
+    guider = HybridInspectGuider()
+    handle, out, denoised = _run_res(
+        _explicit_ladder_cfg(stages), guider, monkeypatch, res_history_mode="hybrid",
+    )
+    assert len(guider.sigma_calls) == stages
+    assert guider.samplers == [guider.samplers[0]] * stages
+    assert guider.model_evals == len(SIGMAS) - 1
+    assert all(entry[0] is True for entry in guider.hybrid_entries[1:])
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+    _assert_res_state_cleared(handle)
+
+
+@pytest.mark.parametrize("noise_policy", ("direct_coarse", "coupled_full_grid"))
+def test_res_hybrid_is_independent_of_noise_policy(monkeypatch, noise_policy):
+    guider = HybridInspectGuider()
+    handle, out, denoised = _run_res(
+        _explicit_ladder_cfg(2, noise_policy=noise_policy), guider, monkeypatch,
+        res_history_mode="hybrid",
+    )
+    assert guider.model_evals == len(SIGMAS) - 1
+    assert guider.hybrid_entries[1][0] is True
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+    _assert_res_state_cleared(handle)
+
+
+def test_res_hybrid_coincident_boundaries_keep_last_real_projector_source(monkeypatch):
+    guider = HybridInspectGuider()
+    captured = []
+    transitions = []
+    original_factory = create_speed_sampler_handle
+
+    def factory(name, **kwargs):
+        handle = original_factory(name, **kwargs)
+        original_hook = handle.on_transition
+
+        def hook(transition):
+            original_hook(transition)
+            transitions.append((transition, handle.state.hybrid_second_order_thw))
+
+        handle.on_transition = hook
+        captured.append((name, handle))
+        return handle
+
+    monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", factory)
+    out, _ = run_speed_pipeline(
+        SeededRandomNoise(), guider, SIGMAS, make_latent(),
+        _automatic_calibrated_cfg(3), sampler_name="res_multistep",
+        res_history_mode="hybrid", disable_pbar=True,
+    )
+    assert len(transitions) == 2
+    assert len(guider.sigma_calls[1]) == 1
+    assert transitions[0][1] == (2, 3, 3)
+    assert transitions[1][1] == (2, 3, 3)
+    assert guider.hybrid_entries[2][0] is True
+    assert guider.model_evals == len(SIGMAS) - 1
+    _assert_full_res_nested(out)
+    _assert_res_state_cleared(captured[0][1])
