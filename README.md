@@ -21,7 +21,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 ```
 
 1. Replace your `KSampler` / `SamplerCustomAdvanced` with **MiniMax H3 SPEED — Sampler (Automatic)**. Wire the same `noise`, `guider`, `sigmas`, `latent_image`.
-2. Set **`stages = 2`** (fastest) or **`3`** (balanced, default) and hit Queue. Current default settings are the conservative sigma harvest at 0.5% delta.
+2. Set **`stages = 2`** or **`3`** (balanced, default) and hit Queue. Current default settings are the conservative sigma harvest at 0.5% delta.
 
 
 ## Which node do I need?
@@ -34,17 +34,19 @@ Just `stages` (2, 3, or 4) that correspond to how many resolution stages there a
 
 `Tolerance (Delta)`, `noise_amplitude`, `noise_decay_exponent` determine at what steps each stage is triggered at, generally leave unless experimenting.
 
-`res_history_mode` controls what happens to RES Multistep history at each
-resolution transition. Choose `reset` (default) to clear the history at every
-transition, or `projected` to preserve and rebase compatible history for the
-next resolution.
+`res_history_mode` only affects RES Multistep. `reset` is the default: it
+discards RES previous-step history at every SPEED resolution transition, so
+the first later RES interval rebuilds history from the new resolution.
+`projected` restores the historical pre-reset comparison path: it DCT-projects
+the previous denoised history into the target video geometry and rebases its
+sigma metadata. `projected` is experimental; it is not claimed to be equivalent
+to an uninterrupted target-resolution RES trajectory.
 
 **Manual — Sampler (Step-Through)**
 You set up to four `(goal, resolution)` pairs yourself. `goal` = step where that stage ends, `resolution` = scale like `0.25` = quarter. Set `goal` or `resolution` to `0` to skip a stage. Use only to copy a paper schedule or test a custom ladder.
 
-Manual SPEED also provides `res_history_mode` with the exact choices `reset`
-(default) and `projected`. `reset` clears RES history at each transition.
-`projected` preserves and rebases compatible history for the next resolution.
+Manual SPEED exposes the same RES history choices: `reset` (default) and
+`projected` (historical comparison path).
 
 
 **Sigma Harvest (Native Sampler)**
@@ -69,17 +71,18 @@ The Automatic, Manual, and Sigma Harvest nodes expose the same list.
 - **Heun**, **DPM2**, and **Exp Heun 2 X0** are native stateless samplers.
   They can use extra model evaluations per step, which can reduce SPEED's
   wall-clock gain.
-- **RES Multistep** is the only stateful sampler. Its SPEED adapter applies the
-  selected boundary history policy: `reset` clears history at each transition,
-  while `projected` preserves and rebases compatible history for the next
-  resolution. It is deterministic and non-ancestral only: no SDE and no CFG++.
+- **RES Multistep** is the only stateful sampler. Its SPEED adapter exposes two
+  boundary policies: `reset` is the default and cold-starts RES history after
+  each resolution transition; `projected` reproduces the historical
+  project-and-rebase behavior for controlled comparison. The projected path
+  is experimental and is not a claim of native RES continuity across a
+  geometry change. The supported adapter is deterministic and non-ancestral
+  only: no SDE and no CFG++.
 - All five names are public, but RES remains experimental until a user passes
   the H3 GPU validation gate. The repository provides automated seam and
   state tests, not a claim of measured hardware parity.
 
 Automatic and Manual share the normal sampling inputs and return output and denoised LATENTs. Harvest shares the same `noise`, `guider`, `sigmas`, and `latent_image` inputs, plus sampler selection, and returns calibration JSON plus a diagnostic LATENT. Sigma Harvest stays native and has no `res_history_mode` widget.
-
-<!-- FLOW-PRODUCED: V2 non-protected documentation slice -->
 
 ## Diagnostics
 
@@ -122,7 +125,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 It measures how noise power falls with frequency on a full-res run: `P(ω) = A·|ω|^-β` (β ~0.77 for MiniMax-H3's validated fits; see Defaults below). For each scale `s`, `ω = s·min(H,W)/2`, `P = A·ω^-β`, then `thr = 1/(1+√(δ/(P·(1+P-δ))))` (δ = Tolerance, 0.005 = 0.5% allowed error). The first `sigmas[i] ≤ thr` is where that stage ends. Continuous sigma, just quantized to your sigma schedule.
 
-Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise/guider/sigmas/latent + Tolerance`, run the selected native sampler at full resolution with 28-32 steps and `sampler = simple`, then copy its `calibration` JSON into the matching Automatic run's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`.
+Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise/guider/sigmas/latent + Tolerance`, run the selected native sampler at full resolution with the same sigma scheduler and step count you intend to use in SPEED, then copy its `calibration` JSON into the matching Automatic run's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler.
 
 Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`.
 
