@@ -282,11 +282,11 @@ def test_projected_runtime_carries_flat_history_through_host_seam(monkeypatch, s
 
     assert guider.model_evals == len(SIGMAS) - 1
     video, audio = out["samples"].unbind()
-    denoised_video, denoised_audio = denoised["samples"].unbind()
+    denoised_flat = denoised["samples"]
     assert tuple(video.shape[-2:]) == (8, 8)
     assert audio.ndim == 4
-    assert tuple(denoised_video.shape[-2:]) == (8, 8)
-    assert denoised_audio.ndim == 4
+    assert denoised_flat.ndim == 3
+    assert denoised_flat.shape[-1] == math.prod(video.shape[1:]) + math.prod(audio.shape[1:])
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None
