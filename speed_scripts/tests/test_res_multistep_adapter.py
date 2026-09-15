@@ -22,6 +22,10 @@ Everything here runs against a deterministic fake model on plain float
 schedules — no ComfyUI import is needed below the handle seam.
 """
 
+# FLOW-PRODUCED: RES candidate-helper regression coverage.
+
+
+import math
 
 import torch
 import pytest
@@ -30,6 +34,8 @@ from speed_scripts.flow import aligned_sigma
 from speed_scripts.res_multistep_adapter import (
     ResMultistepSampler,
     ResMultistepState,
+    _res_first_order_update,
+    _res_second_order_update,
     project_clean_history,
     rebase_res_history_sigmas,
     res_multistep_sampler,
@@ -55,6 +61,55 @@ TOLERANCE = 1e-6
 #: Interior boundary used by the split oracle: both segments carry real
 #: RES intervals, so the carried history is exercised at the seam.
 SPLIT_INDEX = 4
+
+
+def test_first_order_candidate_preserves_existing_algebra():
+    x = torch.tensor([[[[1.0, 2.0]]]])
+    denoised = torch.tensor([[[[0.25, 1.5]]]])
+    sigma = 0.8
+    sigma_down = 0.3
+
+    expected = x + (x - denoised) / sigma * (sigma_down - sigma)
+
+    assert torch.equal(
+        _res_first_order_update(x, denoised, sigma, sigma_down), expected,
+    )
+
+
+def test_second_order_candidate_preserves_existing_algebra():
+    x = torch.tensor([[[[1.0, 2.0]]]])
+    denoised = torch.tensor([[[[0.25, 1.5]]]])
+    old_denoised = torch.tensor([[[[0.5, 1.25]]]])
+    sigma_f = 0.8
+    sigma_down_f = 0.3
+    old_sigma_down = 0.7
+    prev_sigma_in = 0.9
+
+    t_old = -torch.log(torch.tensor(old_sigma_down)).item()
+    t_next = -torch.log(torch.tensor(sigma_down_f)).item()
+    t_prev = -torch.log(torch.tensor(prev_sigma_in)).item()
+    h = t_next + torch.log(torch.tensor(sigma_f)).item()
+    c2 = (t_prev - t_old) / h
+    phi1 = torch.expm1(torch.tensor(-h)).item() / (-h)
+    phi2 = (phi1 - 1.0) / (-h)
+    b1 = 0.0 if torch.isnan(torch.tensor(phi1 - phi2 / c2)) else phi1 - phi2 / c2
+    b2 = 0.0 if torch.isnan(torch.tensor(phi2 / c2)) else phi2 / c2
+    expected = math.exp(-h) * x + h * (b1 * denoised + b2 * old_denoised)
+
+    assert torch.allclose(
+        _res_second_order_update(
+            x,
+            denoised,
+            old_denoised,
+            sigma_f,
+            sigma_down_f,
+            old_sigma_down,
+            prev_sigma_in,
+        ),
+        expected,
+        atol=1e-6,
+        rtol=0.0,
+    )
 
 
 class DeterministicModel:

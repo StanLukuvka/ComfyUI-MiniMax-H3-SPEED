@@ -16,6 +16,8 @@ to the selected boundary policy, and reads ``t_prev`` from the state instead
 of the schedule.
 """
 
+# FLOW-PRODUCED: RES candidate-helper refactor.
+
 from __future__ import annotations
 
 import math
@@ -162,6 +164,34 @@ def rebase_res_history_sigmas(
             _, state.prev_sigma_in = aligned_sigma(prev, ratio)
 
 
+def _res_first_order_update(x, denoised, sigma, sigma_down):
+    """Return the existing first-order RES candidate for one interval."""
+    d = (x - denoised) / sigma
+    return x + d * (sigma_down - sigma)
+
+
+def _res_second_order_update(
+    x,
+    denoised,
+    old_denoised,
+    sigma_f,
+    sigma_down_f,
+    old_sigma_down,
+    prev_sigma_in,
+):
+    """Return the existing second-order RES candidate for one interval."""
+    t_old = -math.log(old_sigma_down)
+    t_next = -math.log(sigma_down_f)
+    t_prev = -math.log(prev_sigma_in)
+    h = t_next + math.log(sigma_f)
+    c2 = (t_prev - t_old) / h
+    phi1 = math.expm1(-h) / (-h)
+    phi2 = (phi1 - 1.0) / (-h)
+    b1 = 0.0 if math.isnan(phi1 - phi2 / c2) else phi1 - phi2 / c2
+    b2 = 0.0 if math.isnan(phi2 / c2) else phi2 / c2
+    return math.exp(-h) * x + h * (b1 * denoised + b2 * old_denoised)
+
+
 def res_multistep_sampler(
     model,
     noise,
@@ -220,20 +250,13 @@ def res_multistep_sampler(
             # t = -ln(sigma) space. t_prev comes from the carried state,
             # never from sigmas[i - 1]: on the first step of a stage-local
             # schedule that index is the wrong element.
-            t_old = -math.log(old_sigma_down)
-            t_next = -math.log(sigma_down_f)
-            t_prev = -math.log(prev_sigma_in)
-            h = t_next + math.log(sigma_f)
-            c2 = (t_prev - t_old) / h
-            phi1 = math.expm1(-h) / (-h)
-            phi2 = (phi1 - 1.0) / (-h)
-            b1 = 0.0 if math.isnan(phi1 - phi2 / c2) else phi1 - phi2 / c2
-            b2 = 0.0 if math.isnan(phi2 / c2) else phi2 / c2
-            x = math.exp(-h) * x + h * (b1 * denoised + b2 * old_denoised)
+            x = _res_second_order_update(
+                x, denoised, old_denoised,
+                sigma_f, sigma_down_f, old_sigma_down, prev_sigma_in,
+            )
         else:
             # First order (Euler).
-            d = (x - denoised) / sigma
-            x = x + d * (sigma_down - sigma)
+            x = _res_first_order_update(x, denoised, sigma, sigma_down)
 
         state.old_denoised = denoised
         state.old_sigma_down = sigma_down_f
