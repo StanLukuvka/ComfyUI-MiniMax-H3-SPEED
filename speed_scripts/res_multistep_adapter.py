@@ -11,9 +11,11 @@ in function locals, so every SPEED stage call would restart with empty
 history. Worse, the native code derives the previous input sigma from
 ``sigmas[i - 1]``, which is the wrong element on the first step of a
 stage-local schedule. This adapter owns that history explicitly in a
-``ResMultistepState`` that the SPEED runtime can carry across stages according
-according to the selected boundary policy, and reads ``t_prev`` from the state instead
-of the schedule. ``reset`` is the default boundary policy. ``projected`` is
+``ResMultistepState`` that the SPEED runtime can carry across stages
+according to the selected boundary policy, and reads ``t_prev`` from the
+state instead of the schedule.
+
+``reset`` is the default boundary policy. ``projected`` is
 the historical project-and-rebase comparison path. Experimental V3.0
 ``hybrid`` applies one spatial-only VIDEO DCT candidate mix and uses the
 first-order AUDIO candidate. Temporal transitions clear history instead of

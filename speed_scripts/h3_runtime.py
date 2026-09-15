@@ -5,6 +5,7 @@ always sees a buffer matching its latent_shapes. The stage loop delegates sample
 """
 
 # FLOW-PRODUCED: sampler-aware stage runtime.
+# FLOW-PRODUCED: RES V3 hybrid boundary documentation.
 
 from __future__ import annotations
 
@@ -609,8 +610,10 @@ def run_speed_pipeline(
             # after the boundary sigma is aligned and patched into the working
             # schedule and the spectral + audio transitions are done, before
             # the next stage re-enters guider.sample(). Stateless samplers
-            # no-op here; RES `reset` clears boundary history, while `projected`
-            # preserves and rebases compatible history. Never called per
+            # no-op here; RES `reset` (the default) clears boundary history,
+            # `projected` applies the historical project/rebase experiment
+            # (the GPU A/B negative control), and `hybrid` prepares the
+            # one-interval experimental VIDEO blend. Never called per
             # denoising step and never after the final stage. The per-stream
             # shapes let a stateful handle slice its flat packed history (the
             # real host packs nested latents before the sampler sees them) back
