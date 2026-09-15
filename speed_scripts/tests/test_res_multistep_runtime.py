@@ -162,7 +162,7 @@ def _capture_public_factory(monkeypatch):
     captured = []
 
     def factory(name, **kwargs):
-        handle = create_speed_sampler_handle(name)
+        handle = create_speed_sampler_handle(name, **kwargs)
         captured.append((name, handle))
         return handle
 
@@ -264,12 +264,11 @@ def test_res_callback_count_equals_global_denoising_intervals(monkeypatch, stage
 
 
 # ---------------------------------------------------------------------------
-# §20 state transport — configured transitions carried through state,
-# alignment rebase exercised across stage boundaries
+# §20 reset-mode stage boundaries
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("stages", (2, 3, 4))
-def test_res_state_is_carried_and_rebased_across_stage_boundaries(monkeypatch, stages):
+def test_res_reset_mode_starts_each_stage_without_history(monkeypatch, stages):
     """Each real SPEED boundary starts the next RES stage without history."""
     guider = ResExecGuider()
     _run_res(_explicit_ladder_cfg(stages), guider, monkeypatch)
@@ -500,7 +499,7 @@ def test_res_second_generation_after_completed_run_starts_clean(monkeypatch):
 # §23 zero-step torture — coincident boundaries through the real runtime
 # ---------------------------------------------------------------------------
 
-def test_res_coincident_boundary_zero_step_stages_preserve_history(monkeypatch):
+def test_res_coincident_boundary_zero_step_stages_remain_empty(monkeypatch):
     """Coincident boundaries stay empty until the final stage runs an interval."""
     guider = ResExecGuider()
     _, out, _ = _run_res(_automatic_calibrated_cfg(3), guider, monkeypatch)
@@ -517,8 +516,8 @@ def test_res_coincident_boundary_zero_step_stages_preserve_history(monkeypatch):
     assert not hasattr(guider, _LW_ATTR)
 
 
-def test_res_final_stage_second_order_behavior_depends_on_carried_history(monkeypatch):
-    """The V1 boundary reset matches an explicit test-only reset control."""
+def test_res_reset_mode_matches_explicit_boundary_reset_control(monkeypatch):
+    """The default reset mode matches an explicit test-only reset control."""
     cfg = _explicit_ladder_cfg(2)
 
     class ResetAtBoundary(ResExecGuider):
@@ -529,7 +528,7 @@ def test_res_final_stage_second_order_behavior_depends_on_carried_history(monkey
                 noise, latent_image, sampler, sigmas, callback=callback, **kwargs
             )
 
-    _, out_carried, _ = _run_res(cfg, ResExecGuider(), monkeypatch)
+    _, out_default, _ = _run_res(cfg, ResExecGuider(), monkeypatch)
     handle_reset, out_reset, _ = _run_res(cfg, ResetAtBoundary(), monkeypatch)
     assert handle_reset.state.old_denoised is None
-    assert torch.equal(out_carried["samples"].unbind()[0], out_reset["samples"].unbind()[0])
+    assert torch.equal(out_default["samples"].unbind()[0], out_reset["samples"].unbind()[0])
