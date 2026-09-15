@@ -58,11 +58,11 @@ class SpeedTransition:
     patched into the working schedule, and handed to the sampler handle's
     transition hook exactly once.
 
-    ``source_stream_shapes`` lists the per-stream latent shapes the stage's
-    sampler saw, in the host's flat-pack order (video first, then audio).
-    Stateless samplers ignore it; the stateful RES handle needs it to slice
-    a flat packed history tensor back into its video and audio streams,
-    because the host packs nested latents flat before any sampler code runs.
+    ``source_stream_shapes`` lists the per-stream latent shapes the source
+    stage's sampler saw, in the host's flat-pack order (video first, then
+    audio). Stateless samplers ignore it. RES ``projected`` mode uses it to
+    split a flat packed history tensor back into its video and audio streams;
+    ``reset`` mode does not need it.
     """
 
     stage_idx: int
@@ -136,16 +136,30 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
         if self.history_mode == "reset":
             self.state.clear()
             return
-        if self.state.old_denoised is None:
-            return
-        from .res_multistep_adapter import project_clean_history, rebase_res_history_sigmas
 
-        self.state.old_denoised = project_clean_history(
-            self.state.old_denoised,
-            transition.target_thw,
-            source_stream_shapes=transition.source_stream_shapes,
-        )
-        rebase_res_history_sigmas(self.state, transition.new_sigma, transition.ratio)
+        if self.history_mode == "projected":
+            if self.state.old_denoised is None:
+                return
+            from .res_multistep_adapter import (
+                project_clean_history,
+                rebase_res_history_sigmas,
+            )
+
+            self.state.old_denoised = project_clean_history(
+                self.state.old_denoised,
+                transition.target_thw,
+                source_stream_shapes=transition.source_stream_shapes,
+            )
+            rebase_res_history_sigmas(
+                self.state, transition.new_sigma, transition.ratio
+            )
+            return
+
+        # Construction validates the mode, so reaching this branch means the
+        # handle was mutated or a future mode was added without an explicit
+        # boundary implementation. Never silently treat a new mode as
+        # ``projected``.
+        raise RuntimeError(f"Unhandled RES history mode {self.history_mode!r}")
 
     def close(self) -> None:
         self.state.clear()
