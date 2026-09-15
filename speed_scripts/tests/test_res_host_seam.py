@@ -128,6 +128,7 @@ class _FlatSnapshot:
         self.old_denoised = state.old_denoised
         self.old_sigma_down = state.old_sigma_down
         self.prev_sigma_in = state.prev_sigma_in
+        self.hybrid_target_stream_shapes = state.hybrid_target_stream_shapes
 
 
 def _flat_ladder_cfg(stages, **overrides):
@@ -290,3 +291,29 @@ def test_projected_runtime_carries_flat_history_through_host_seam(monkeypatch, s
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None
+
+
+@pytest.mark.parametrize("stages", (2, 3, 4))
+def test_hybrid_runtime_carries_flat_history_through_host_seam(monkeypatch, stages):
+    guider = HostShapedGuider()
+    handle, out, denoised = _run_flat_host(
+        _flat_ladder_cfg(stages), guider, monkeypatch,
+        res_history_mode="hybrid",
+    )
+
+    assert handle.history_mode == "hybrid"
+    assert guider.model_evals == len(SIGMAS) - 1
+    assert len(guider.sigma_calls) == stages
+    assert all(snap is not None for snap in guider.stage_entries[1:])
+    for snap in guider.stage_entries[1:]:
+        assert snap.old_denoised.ndim == 3
+        shapes = snap.hybrid_target_stream_shapes
+        assert shapes is not None
+        expected_length = sum(math.prod(shape[1:]) for shape in shapes)
+        assert snap.old_denoised.shape[-1] == expected_length
+    video, audio = out["samples"].unbind()
+    assert tuple(video.shape[-2:]) == (8, 8)
+    assert audio.ndim == 4
+    assert denoised["samples"].ndim == 3
+    assert handle.state.old_denoised is None
+    assert handle.state.hybrid_pending is False

@@ -11,10 +11,19 @@ in function locals, so every SPEED stage call would restart with empty
 history. Worse, the native code derives the previous input sigma from
 ``sigmas[i - 1]``, which is the wrong element on the first step of a
 stage-local schedule. This adapter owns that history explicitly in a
-``ResMultistepState`` that the SPEED runtime can carry across stages according
-to the selected boundary policy, and reads ``t_prev`` from the state instead
-of the schedule.
+``ResMultistepState`` that the SPEED runtime can carry across stages
+according to the selected boundary policy, and reads ``t_prev`` from the
+state instead of the schedule.
+
+``reset`` is the default boundary policy. ``projected`` is
+the historical project-and-rebase comparison path. Experimental V3.0
+``hybrid`` applies one spatial-only VIDEO DCT candidate mix and uses the
+first-order AUDIO candidate. Temporal transitions clear history instead of
+using that operator. Flat host tensors fail closed when recorded stream shape
+metadata is absent or inconsistent. These semantics are covered by automated
+tests only; this module does not claim GPU or native ComfyUI validation.
 """
+
 
 from __future__ import annotations
 
@@ -24,7 +33,7 @@ from dataclasses import dataclass
 import torch
 
 from .flow import aligned_sigma
-from .spectral import spectral_expand_clean_3d
+from .spectral import dct2, dct_temporal, idct2, idct_temporal, spectral_expand_clean_3d
 
 
 def _host_ksampler_class():
@@ -58,12 +67,18 @@ class ResMultistepState:
     old_denoised: object | None = None
     old_sigma_down: float | None = None
     prev_sigma_in: float | None = None
+    hybrid_pending: bool = False
+    hybrid_second_order_thw: tuple[int, int, int] | None = None
+    hybrid_target_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
 
     def clear(self) -> None:
         """Release every previous-step history reference."""
         self.old_denoised = None
         self.old_sigma_down = None
         self.prev_sigma_in = None
+        self.hybrid_pending = False
+        self.hybrid_second_order_thw = None
+        self.hybrid_target_stream_shapes = None
 
 
 def project_clean_history(history, target_thw: tuple[int, int, int], source_stream_shapes=None):
@@ -75,11 +90,10 @@ def project_clean_history(history, target_thw: tuple[int, int, int], source_stre
     fresh high-frequency noise and is not scaled by sigma. The audio slice is
     copied unchanged by this historical projected-mode operation.
 
-    This helper defines the mechanics of the experimental ``projected``
-    boundary mode. It does not establish that the result is equivalent to the
-    history an uninterrupted target-resolution RES trajectory would have
-    produced; native RES has no geometry-changing boundary to provide such an
-    oracle.
+    This helper defines the mechanics of the historical experimental
+    ``projected`` boundary mode. It does not establish equivalence to an
+    uninterrupted target-resolution RES trajectory. Native RES has no
+    geometry-changing boundary to provide such an oracle.
 
     Two shapes arrive here, depending on where the history was captured:
 
@@ -94,6 +108,8 @@ def project_clean_history(history, target_thw: tuple[int, int, int], source_stre
       ``[B, 1, N]`` tensor. ``source_stream_shapes`` carries the per-stream
       shapes from that pack; the video slice is the first
       ``prod(video_shape[1:])`` elements and the audio slice is the rest.
+      Missing or inconsistent metadata raises ``ValueError``. The helper
+      never infers a stream split from the flat element count.
     """
     if getattr(history, "is_nested", False):
         streams = list(history.unbind())
@@ -162,6 +178,115 @@ def rebase_res_history_sigmas(
             _, state.prev_sigma_in = aligned_sigma(prev, ratio)
 
 
+def _res_first_order_update(x, denoised, sigma, sigma_down):
+    """Return the existing first-order RES candidate for one interval."""
+    d = (x - denoised) / sigma
+    return x + d * (sigma_down - sigma)
+
+
+def _res_second_order_update(
+    x,
+    denoised,
+    old_denoised,
+    sigma_f,
+    sigma_down_f,
+    old_sigma_down,
+    prev_sigma_in,
+):
+    """Return the existing second-order RES candidate for one interval."""
+    t_old = -math.log(old_sigma_down)
+    t_next = -math.log(sigma_down_f)
+    t_prev = -math.log(prev_sigma_in)
+    h = t_next + math.log(sigma_f)
+    c2 = (t_prev - t_old) / h
+    phi1 = math.expm1(-h) / (-h)
+    phi2 = (phi1 - 1.0) / (-h)
+    b1 = 0.0 if math.isnan(phi1 - phi2 / c2) else phi1 - phi2 / c2
+    b2 = 0.0 if math.isnan(phi2 / c2) else phi2 / c2
+    return math.exp(-h) * x + h * (b1 * denoised + b2 * old_denoised)
+
+
+def _hybridize_video(first_video, second_video, source_thw):
+    """Replace the source geometry coefficient block in a VIDEO candidate."""
+    source_t, source_h, source_w = source_thw
+    target_t, target_h, target_w = first_video.shape[-3:]
+    if any(source > target for source, target in zip(
+        source_thw, (target_t, target_h, target_w),
+    )):
+        raise ValueError("RES hybrid source geometry cannot exceed target VIDEO geometry")
+    mixed_coeff = dct2(dct_temporal(first_video))
+    mixed_coeff[..., :source_t, :source_h, :source_w] = dct2(
+        dct_temporal(second_video)
+    )[..., :source_t, :source_h, :source_w]
+    return idct_temporal(idct2(mixed_coeff)).to(dtype=first_video.dtype)
+
+
+def hybridize_res_candidates(
+    first_order,
+    second_order,
+    second_order_thw: tuple[int, int, int],
+    target_stream_shapes=None,
+):
+    """Blend VIDEO candidates in DCT space and retain first-order AUDIO.
+
+    The accepted inputs are the nested H3 video/audio pair or the flat
+    ``[B, 1, N]`` pack produced by the real host. Flat packs require the
+    host-recorded stream shapes because their boundary does not describe the
+    split itself. This is the experimental V3.0 one-interval operator for
+    spatial-only transitions. Missing or inconsistent metadata fails closed.
+    """
+    source_t, source_h, source_w = (int(v) for v in second_order_thw)
+    if min(source_t, source_h, source_w) < 1:
+        raise ValueError("RES hybrid source geometry must be positive")
+
+    nested = getattr(first_order, "is_nested", False)
+    if nested != getattr(second_order, "is_nested", False):
+        raise ValueError("RES hybrid candidates must use the same representation")
+    if nested:
+        first_streams = list(first_order.unbind())
+        second_streams = list(second_order.unbind())
+        if len(first_streams) != 2 or len(second_streams) != 2:
+            raise ValueError("RES hybrid candidates must contain exactly video and audio")
+        first_video, first_audio = first_streams
+        second_video, second_audio = second_streams
+        if first_video.shape != second_video.shape or first_audio.shape != second_audio.shape:
+            raise ValueError("RES hybrid candidate stream shapes must agree")
+        if first_video.ndim != 5 or first_audio.ndim != 4:
+            raise ValueError("RES hybrid nested candidates must be H3 video and audio")
+        mixed_video = _hybridize_video(
+            first_video, second_video, (source_t, source_h, source_w),
+        )
+        return type(first_order)([mixed_video, first_audio])
+
+    if not (torch.is_tensor(first_order) and torch.is_tensor(second_order)):
+        raise ValueError("RES hybrid candidates must be nested pairs or flat tensors")
+    if first_order.ndim != 3 or first_order.shape[1] != 1:
+        raise ValueError("flat RES hybrid candidates must have shape [B, 1, N]")
+    if second_order.shape != first_order.shape:
+        raise ValueError("RES hybrid candidate pack shapes must agree")
+    if not target_stream_shapes or len(target_stream_shapes) != 2:
+        raise ValueError("flat RES hybrid candidates need target stream shapes")
+    shapes = [tuple(int(d) for d in shape) for shape in target_stream_shapes]
+    if len(shapes[0]) != 5 or len(shapes[1]) != 4:
+        raise ValueError("target stream shapes must describe H3 video and audio")
+    if any(shape[0] != first_order.shape[0] for shape in shapes):
+        raise ValueError("target stream shapes must match the packed batch")
+    video_count = math.prod(shapes[0][1:])
+    audio_count = math.prod(shapes[1][1:])
+    if video_count + audio_count != first_order.shape[-1]:
+        raise ValueError("target stream shapes do not match the packed candidates")
+    first_video = first_order[..., :video_count].reshape(shapes[0])
+    second_video = second_order[..., :video_count].reshape(shapes[0])
+    first_audio = first_order[..., video_count:].reshape(shapes[1])
+    mixed_video = _hybridize_video(
+        first_video, second_video, (source_t, source_h, source_w),
+    )
+    return torch.cat(
+        (mixed_video.reshape(first_order.shape[0], 1, -1), first_audio.reshape(first_order.shape[0], 1, -1)),
+        dim=-1,
+    )
+
+
 def res_multistep_sampler(
     model,
     noise,
@@ -220,24 +345,31 @@ def res_multistep_sampler(
             # t = -ln(sigma) space. t_prev comes from the carried state,
             # never from sigmas[i - 1]: on the first step of a stage-local
             # schedule that index is the wrong element.
-            t_old = -math.log(old_sigma_down)
-            t_next = -math.log(sigma_down_f)
-            t_prev = -math.log(prev_sigma_in)
-            h = t_next + math.log(sigma_f)
-            c2 = (t_prev - t_old) / h
-            phi1 = math.expm1(-h) / (-h)
-            phi2 = (phi1 - 1.0) / (-h)
-            b1 = 0.0 if math.isnan(phi1 - phi2 / c2) else phi1 - phi2 / c2
-            b2 = 0.0 if math.isnan(phi2 / c2) else phi2 / c2
-            x = math.exp(-h) * x + h * (b1 * denoised + b2 * old_denoised)
+            x_first = _res_first_order_update(x, denoised, sigma, sigma_down)
+            x_second = _res_second_order_update(
+                x, denoised, old_denoised,
+                sigma_f, sigma_down_f, old_sigma_down, prev_sigma_in,
+            )
+            if state.hybrid_pending and state.hybrid_second_order_thw is not None:
+                x = hybridize_res_candidates(
+                    x_first,
+                    x_second,
+                    state.hybrid_second_order_thw,
+                    state.hybrid_target_stream_shapes,
+                )
+            else:
+                x = x_second
         else:
             # First order (Euler).
-            d = (x - denoised) / sigma
-            x = x + d * (sigma_down - sigma)
+            x = _res_first_order_update(x, denoised, sigma, sigma_down)
 
         state.old_denoised = denoised
         state.old_sigma_down = sigma_down_f
         state.prev_sigma_in = sigma_f
+        if state.hybrid_pending:
+            state.hybrid_pending = False
+            state.hybrid_second_order_thw = None
+            state.hybrid_target_stream_shapes = None
     return x
 
 

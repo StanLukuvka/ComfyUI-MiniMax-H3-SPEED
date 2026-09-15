@@ -609,8 +609,10 @@ def run_speed_pipeline(
             # after the boundary sigma is aligned and patched into the working
             # schedule and the spectral + audio transitions are done, before
             # the next stage re-enters guider.sample(). Stateless samplers
-            # no-op here; RES `reset` clears boundary history, while `projected`
-            # preserves and rebases compatible history. Never called per
+            # no-op here; RES `reset` (the default) clears boundary history,
+            # `projected` applies the historical project/rebase experiment
+            # (the GPU A/B negative control), and `hybrid` prepares the
+            # one-interval experimental VIDEO blend. Never called per
             # denoising step and never after the final stage. The per-stream
             # shapes let a stateful handle slice its flat packed history (the
             # real host packs nested latents before the sampler sees them) back
@@ -626,6 +628,10 @@ def run_speed_pipeline(
                     source_stream_shapes=(
                         tuple(public_video.shape),
                         tuple(public_audio.shape),
+                    ),
+                    target_stream_shapes=(
+                        tuple(transitioned_video.shape),
+                        tuple(transitioned_audio.shape),
                     ),
                 )
             )
