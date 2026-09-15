@@ -50,12 +50,7 @@ from speed_scripts.sampler_support import (
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
 
 
-# ---------------------------------------------------------------------------
-# Host-shaped helpers
-# ---------------------------------------------------------------------------
-
 def _pack_latents(streams):
-    """The host ``comfy.utils.pack_latents`` layout, verbatim."""
     shapes, tensors = [], []
     for tensor in streams:
         shapes.append(tuple(tensor.shape))
@@ -64,7 +59,6 @@ def _pack_latents(streams):
 
 
 def _unpack_latents(combined, shapes):
-    """The host ``comfy.utils.unpack_latents`` layout, verbatim."""
     out, work = [], combined
     for shape in shapes:
         cut = math.prod(shape[1:])
@@ -74,22 +68,6 @@ def _unpack_latents(combined, shapes):
 
 
 class HostShapedGuider:
-    """A guider with the real host CFGGuider calling conventions.
-
-    ``sample`` packs nested noise + latent flat, then invokes the sampler
-    object through the host sampler-object contract: a WrapperExecutor-style
-    ``getattr(sampler, "sample")`` lookup followed by the positional call
-    ``sampler.sample(self, sigmas, extra_args, callback, noise, latent_image,
-    denoise_mask, disable_pbar)``. The model callable is the host's
-    ``KSamplerX0Inpaint`` shape (inner call receives only
-    ``(x, sigma, model_options, seed)``). The sampler output is unpacked back
-    into a nested pair, like ``CFGGuider.sample`` does. Records the sampler
-    objects it saw and the state snapshot at each stage entry.
-
-    Carries ``model_patcher.model`` with the sigma-shift attributes the
-    SPEED runtime resolves from the guider, like the real host guider does.
-    """
-
     class _Model:
         sigma_shift_video = 12.0
         sigma_shift_audio = 3.0
@@ -103,15 +81,9 @@ class HostShapedGuider:
         self.sigma_calls = []
         self.stage_entries = []
         self.model_evals = 0
-        # Per-stream shapes of the most recent stage's nested latent (the
-        # layout the model call must slice, set fresh by every sample() call).
         self.stream_shapes = [(1, 1, 2, 4, 4), (1, 1, 2, 8)]
 
     def __call__(self, x, sigma, denoise_mask=None, model_options=None, seed=None):
-        # CFGGuider shape: the guider itself is the model wrapper KSAMPLER
-        # wraps; its call produces the denoised prediction for the flat pack.
-        # The prediction covers the same flat layout, so the video and audio
-        # slices are transformed separately, like the real H3 model does.
         self.model_evals += 1
         s = float(sigma)
         video_elems = math.prod(self.stream_shapes[0][1:])
@@ -135,14 +107,11 @@ class HostShapedGuider:
             self.stage_entries.append(_FlatSnapshot(state))
         else:
             self.stage_entries.append(None)
-        count = len(sigmas) - 1
 
         def host_callback(step, x0, x, total_steps):
             if callback is not None:
                 callback(step, x0, x, total_steps)
 
-        # The exact host invocation: sampler.sample(guider, sigmas,
-        # extra_args, callback, noise, latent_image, denoise_mask, pbar).
         out_flat = sampler.sample(
             self, sigmas, {}, host_callback, noise_flat,
             latent_image=latent_flat, denoise_mask=None, disable_pbar=True,
@@ -155,8 +124,6 @@ class HostShapedGuider:
 
 
 class _FlatSnapshot:
-    """What the run-scoped RES state held when one stage began (flat path)."""
-
     def __init__(self, state):
         self.old_denoised = state.old_denoised
         self.old_sigma_down = state.old_sigma_down
@@ -192,13 +159,7 @@ def _run_flat_host(cfg, guider, monkeypatch, **kwargs):
     return handle, out, denoised
 
 
-# ---------------------------------------------------------------------------
-# Critical 1: the host sampler-object contract (.sample)
-# ---------------------------------------------------------------------------
-
 def test_res_sampler_object_exposes_host_sample_contract():
-    """The attribute the host resolves is ``.sample`` (WrapperExecutor wraps
-    ``sampler.sample``), with the host's positional shape."""
     sampler = ResMultistepSampler()
     assert hasattr(sampler, "sample")
     import inspect
@@ -210,10 +171,6 @@ def test_res_sampler_object_exposes_host_sample_contract():
 
 
 def test_host_shaped_sample_call_runs_and_preserves_state():
-    """A host-shaped ``.sample`` call runs the real stateful RES function and
-    routes through the same state object a follow-up call sees. The guider
-    doubles as the model callable (``KSamplerX0Inpaint`` wraps the guider's
-    model, which the wrapper invokes with only ``(x, sigma, ...)``)."""
     sampler = ResMultistepSampler()
     seen = []
 
@@ -232,22 +189,17 @@ def test_host_shaped_sample_call_runs_and_preserves_state():
         latent_image=latent_flat, denoise_mask=None, disable_pbar=True,
     )
     assert out.shape == noise_flat.shape
-    # Four intervals, each evaluated once, with the denoise_mask contract the
-    # host KSAMPLER injects into extra_args.
     assert len(seen) == 4
-    # History was written by the run and is the host's flat tensor shape.
     assert sampler.state.old_denoised is not None
     assert torch.is_tensor(sampler.state.old_denoised)
     assert sampler.state.old_denoised.shape == noise_flat.shape
     assert sampler.state.old_sigma_down == pytest.approx(0.6)
     assert sampler.state.prev_sigma_in == pytest.approx(0.7)
-    # A second host-shaped call carries the same state forward.
     out2 = sampler.sample(
         model, SIGMAS[4:], {}, None, noise_flat,
         latent_image=latent_flat, denoise_mask=None, disable_pbar=True,
     )
     assert out2.shape == out.shape
-    # 4 intervals in the first call, 6 in the second.
     assert len(seen) == 10
 
 
@@ -262,12 +214,7 @@ def test_res_multistep_state_clear_releases_history():
     assert state.prev_sigma_in is None
 
 
-# ---------------------------------------------------------------------------
-# Critical 2: flat packed history at the sampler boundary
-# ---------------------------------------------------------------------------
-
 def test_flat_history_on_transition_is_cleared():
-    """A flat packed history is discarded in reset mode."""
     video = torch.arange(16, dtype=torch.float32).reshape(1, 1, 2, 2, 4) / 16
     audio = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 4) / 8
     flat, shapes = _pack_latents([video, audio])
@@ -286,7 +233,6 @@ def test_flat_history_on_transition_is_cleared():
 
 
 def test_flat_history_on_transition_does_not_require_stream_shapes():
-    """Resetting flat history does not need to infer stream boundaries."""
     handle = create_speed_sampler_handle("res_multistep")
     handle.state.old_denoised = torch.zeros(1, 1, 40)
     handle.on_transition(SpeedTransition(
@@ -296,33 +242,51 @@ def test_flat_history_on_transition_does_not_require_stream_shapes():
     assert handle.state.old_denoised is None
 
 
-# ---------------------------------------------------------------------------
-# End-to-end: a CFGGuider-shaped guider through the real runtime
-# ---------------------------------------------------------------------------
-
 @pytest.mark.parametrize("stages", (2, 3))
 def test_runtime_with_cfgguider_shaped_guider_completes(monkeypatch, stages):
-    """Full run with the guider shaped like the real host ``CFGGuider``:
-    nested in the runtime's hands, flat at the sampler boundary, sampler
-    invoked via ``.sample``. Both criticals crashed exactly here before the
-    fix — no ``.sample`` attribute, then ValueError at the first transition."""
     guider = HostShapedGuider()
     handle, out, denoised = _run_flat_host(_flat_ladder_cfg(stages), guider, monkeypatch)
 
     assert len(guider.sigma_calls) == stages
     assert guider.model_evals == len(SIGMAS) - 1
-    # Every stage received the SAME run-scoped sampler object.
     assert guider.samplers == [guider.samplers[0]] * stages
     assert isinstance(guider.samplers[0], ResMultistepSampler)
     video, audio = out["samples"].unbind()
     assert tuple(video.shape[-2:]) == (8, 8)
     assert audio.ndim == 4
-    # Stage entries: every stage boundary starts empty under reset mode.
     assert guider.stage_entries[0] is None
     for snap in guider.stage_entries[1:]:
         assert snap is None
-    # Run-level cleanup ran.
     assert not hasattr(guider, _LW_ATTR)
+    assert handle.state.old_denoised is None
+    assert handle.state.old_sigma_down is None
+    assert handle.state.prev_sigma_in is None
+
+
+@pytest.mark.parametrize("stages", (2, 3))
+def test_projected_runtime_carries_flat_history_through_host_seam(monkeypatch, stages):
+    guider = HostShapedGuider()
+    handle, out, denoised = _run_flat_host(
+        _flat_ladder_cfg(stages), guider, monkeypatch,
+        res_history_mode="projected",
+    )
+
+    assert handle.history_mode == "projected"
+    assert guider.stage_entries[0] is None
+    for snap in guider.stage_entries[1:]:
+        assert snap is not None
+        assert torch.is_tensor(snap.old_denoised)
+        assert snap.old_denoised.ndim == 3
+        assert snap.old_sigma_down is not None
+        assert snap.prev_sigma_in is not None
+
+    assert guider.model_evals == len(SIGMAS) - 1
+    video, audio = out["samples"].unbind()
+    denoised_video, denoised_audio = denoised["samples"].unbind()
+    assert tuple(video.shape[-2:]) == (8, 8)
+    assert audio.ndim == 4
+    assert tuple(denoised_video.shape[-2:]) == (8, 8)
+    assert denoised_audio.ndim == 4
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None
