@@ -20,14 +20,10 @@ RES uses reset-only boundary behavior. It clears its previous-step history
 at every SPEED stage boundary.
 """
 
-
 from dataclasses import dataclass
 from enum import Enum
 
 
-#: Stateless, step-local samplers exposed by SPEED. Their behavior at a
-#: SPEED stage boundary needs no cross-stage state, so their handle hook is
-#: a no-op.
 STATELESS_SPEED_SAMPLERS = (
     "euler",
     "heun",
@@ -35,33 +31,19 @@ STATELESS_SPEED_SAMPLERS = (
     "exp_heun_2_x0",
 )
 
-#: Public selector list. RES is stateful and uses the adapter below.
-#: All five names are exposed by the three public nodes.
-SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + (
-    "res_multistep",
-)
-
+SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + ("res_multistep",)
 
 
 class SamplerCapability(Enum):
     """What a sampler needs from the SPEED stage loop."""
 
-    #: Pure per-step function; no state survives a stage boundary.
     STATELESS_STEP_LOCAL = "stateless_step_local"
-    #: Owns one previous-step history record; the run-scoped handle decides
-    #: how that history is treated at a SPEED boundary.
     SINGLE_HISTORY = "single_history"
 
 
 @dataclass(frozen=True)
 class SpeedTransition:
-    """One configured SPEED transition boundary.
-
-    Produced by the stage loop after the boundary sigma has been aligned and
-    patched into the working schedule, and handed to the sampler handle's
-    transition hook exactly once.
-
-    """
+    """One configured SPEED transition boundary."""
 
     stage_idx: int
     ratio: float
@@ -72,14 +54,7 @@ class SpeedTransition:
 
 
 class SpeedSamplerHandle:
-    """Run-scoped wrapper around one SPEED sampler choice.
-
-    The stage loop receives this handle from ``run_speed_pipeline`` and never
-    touches the raw sampler name or any sampler state. Stateless samplers
-    need nothing at boundaries, so both methods are no-ops; stateful
-    ``res_multistep`` handles override them. The handle owns its boundary
-    policy and never mutates the scheduler or working sigma schedule.
-    """
+    """Run-scoped wrapper around one SPEED sampler choice."""
 
     sampler: object
     capability: SamplerCapability
@@ -92,13 +67,7 @@ class SpeedSamplerHandle:
 
 
 class _StatelessSamplerHandle(SpeedSamplerHandle):
-    """Run-scoped handle for a stateless, step-local sampler."""
-
     def __init__(self, name: str):
-        # Built exactly once per SPEED run, here — never per stage, never
-        # per denoising step. Imported lazily because the surrounding
-        # package must import (and its tests must collect) outside a full
-        # ComfyUI install, which only provides comfy.samplers at runtime.
         from comfy.samplers import sampler_object
 
         self.sampler = sampler_object(name)
@@ -106,14 +75,7 @@ class _StatelessSamplerHandle(SpeedSamplerHandle):
 
 
 class _ResMultistepSamplerHandle(SpeedSamplerHandle):
-    """Run-scoped handle for the stateful RES Multistep adapter.
-
-    Owns one ``ResMultistepState`` per SPEED run. The wrapped sampler
-    object keeps that state across each stage's ``guider.sample()`` call, and
-    the handle decides what survives a stage boundary; ``close()`` (run-level
-    cleanup) releases it. Never routes through the stage-resetting native
-    ``sampler_object("res_multistep")``.
-    """
+    """Run-scoped deterministic RES sampler with reset-only boundaries."""
 
     def __init__(self):
         from .res_multistep_adapter import ResMultistepSampler, ResMultistepState
@@ -129,14 +91,8 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
         self.state.clear()
 
 
-def create_speed_sampler_handle(
-    sampler_name: str,
-) -> SpeedSamplerHandle:
-    """Build the run-scoped handle for ``sampler_name``.
-
-    Unknown names raise ``ValueError`` listing the invalid name and the
-    supported names. Never falls back to Euler.
-    """
+def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
+    """Build the run-scoped handle for ``sampler_name`` and fail closed."""
     if sampler_name not in SUPPORTED_SPEED_SAMPLERS:
         supported = ", ".join(repr(name) for name in SUPPORTED_SPEED_SAMPLERS)
         raise ValueError(
@@ -145,14 +101,8 @@ def create_speed_sampler_handle(
         )
     if sampler_name == "res_multistep":
         return create_res_multistep_sampler_handle()
-
     return _StatelessSamplerHandle(sampler_name)
 
 
 def create_res_multistep_sampler_handle() -> "_ResMultistepSamplerHandle":
-    """Build the run-scoped stateful RES handle (runtime-only seam).
-
-    The public selector routes ``res_multistep`` through this factory so the
-    runtime keeps one stateful handle for the whole SPEED run.
-    """
     return _ResMultistepSamplerHandle()

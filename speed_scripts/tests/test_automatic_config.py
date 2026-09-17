@@ -62,7 +62,7 @@ def test_builder_maps_stage_count_to_exact_scale_ladder(stages):
         seed_offset=10000,
     )
     assert cfg.scales == STAGES_TO_SCALES[stages]
-    assert cfg.transition_steps == tuple(range(1, stages))
+    assert cfg.transition_steps == ()
     assert cfg.transition_mode == "delta_custom"
     assert (cfg.full_latent_h, cfg.full_latent_w) == (24, 40)
 
@@ -84,8 +84,6 @@ def test_node_forwards_generation_configuration_to_shared_builder(monkeypatch):
     assert cfg.transition_seed_offset == 777
     assert (cfg.full_latent_h, cfg.full_latent_w) == (45, 80)
 
-    # The widget accepts 4-decimal A/beta (step/round 0.0001); the node must
-    # forward them to the shared builder unrounded.
     four_digit = _capture_node_config(
         monkeypatch,
         noise_amplitude=12.1054,

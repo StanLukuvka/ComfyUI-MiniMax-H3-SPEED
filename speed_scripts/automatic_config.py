@@ -1,12 +1,4 @@
-"""Shared automatic SPEED config construction.
-
-Centralizes the Automatic SPEED sampler's stage ladder and SpeedConfig
-construction: the stages->scale mapping, the legacy preset-name aliases, and
-the assembly of a validated `SpeedConfig` from the node's widget inputs all
-live here, and the node calls `build_automatic_speed_config` instead of
-building configs inline. The delta value arrives already alias-resolved —
-the widget-label alias handling stays in the node layer.
-"""
+"""Automatic SPEED stage ladder and config construction."""
 
 from __future__ import annotations
 
@@ -14,14 +6,12 @@ from speed_scripts.config import SpeedConfig
 from speed_scripts.nodes_common import full_res_dims
 
 
-# Stages -> scale ladder for Automatic. Evenly spaced, ends at 1.0.
-# 2: 0.5 → 1.0, 3: 0.33 → 0.66 → 1.0, 4: 0.25 → 0.5 → 0.75 → 1.0
 STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
     2: (0.5, 1.0),
     3: (0.3333333333, 0.6666666667, 1.0),
     4: (0.25, 0.5, 0.75, 1.0),
 }
-# Backwards compat: old preset names -> stages (for workflows saved before the rename)
+
 PRESET_TO_STAGES: dict[str, int] = {
     "half_then_full": 2,
     "three_quarter_then_full": 2,
@@ -41,21 +31,11 @@ def build_automatic_speed_config(
     noise_decay_exponent,
     seed_offset,
 ) -> SpeedConfig:
-    """Build the SpeedConfig the Automatic sampler runs today.
-
-    `stages` selects the scale ladder and must already be normalized to
-    2-4 (the caller clamps). The transition steps are dummies: in
-    delta_custom mode the runtime places the real boundaries from the
-    power-spectrum threshold, so only the count matters (one boundary
-    between each pair of stages). `delta` is the Tolerance (Delta)
-    widget value.
-    """
-    scales = STAGES_TO_SCALES[stages]
-    transition_steps = tuple(range(1, len(scales)))
+    """Build the runtime config used by the Automatic node."""
     full_h, full_w = full_res_dims(latent_image)
     return SpeedConfig(
-        scales=tuple(scales),
-        transition_steps=transition_steps,
+        scales=STAGES_TO_SCALES[stages],
+        transition_steps=(),
         transition_mode="delta_custom",
         noise_policy=noise_policy,
         delta=float(delta),
