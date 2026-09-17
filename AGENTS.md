@@ -24,13 +24,11 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 
 ## Sampler architecture
 
-Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter whose boundary policy is selected by `res_history_mode`. `reset` is the default and clears all previous-step RES history at every SPEED stage boundary. `projected` is the historical pre-reset comparison path: it DCT-projects the previous denoised history into the target video geometry and rebases its sigma metadata. Do not describe `projected` as equivalent to an uninterrupted target-resolution RES trajectory; native RES does not define a geometry-changing boundary. The global SPEED scheduler remains sampler-agnostic. `hybrid` prepares the one-interval experimental VIDEO DCT blend between first- and second-order candidates while keeping AUDIO first-order in V3.0; it is not validated or recommended until native GPU evidence exists. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
+Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that clears all previous-step RES history at every SPEED stage boundary (reset behavior). There is no history-mode widget or switch. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
 
 ## Development Conventions
 
 - SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
-- Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter for SPEED. `res_history_mode=reset` (default) clears history at each stage boundary. `res_history_mode=projected` restores the historical project-and-rebase behavior for controlled comparison; treat it as experimental boundary behavior, not as a theorem about RES continuity across a resolution change.
-- Any future RES boundary mode must have an explicit branch in `_ResMultistepSamplerHandle.on_transition()`. Never let a new mode silently fall through to `projected` semantics.
 - All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
 - Calibration happens offline; the baked defaults live in the node's widget defaults in `nodes/sampler_node.py` (`speed_scripts/config.py` holds the SpeedConfig dataclass defaults, which the node path always overrides explicitly). The stage ladder + config assembly is centralized in `speed_scripts/automatic_config.py` (`build_automatic_speed_config`).

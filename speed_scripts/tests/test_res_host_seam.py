@@ -15,7 +15,6 @@ earlier runtime tests bypassed:
    ``comfy.utils.pack_latents`` (each stream reshaped ``[B, 1, -1]``,
    concatenated on the last axis) before any sampler code runs, and unpacks
    the sampler output back into a nested tensor afterwards. Reset mode clears
-   the flat RES history at the boundary without splitting it; projected mode
    uses the runtime-recorded stream shapes when it needs to split the pack.
 
 The conftest ``KSAMPLER`` stub models the host shape; these tests use it the
@@ -128,7 +127,6 @@ class _FlatSnapshot:
         self.old_denoised = state.old_denoised
         self.old_sigma_down = state.old_sigma_down
         self.prev_sigma_in = state.prev_sigma_in
-        self.hybrid_target_stream_shapes = state.hybrid_target_stream_shapes
 
 
 def _flat_ladder_cfg(stages, **overrides):
@@ -215,24 +213,6 @@ def test_res_multistep_state_clear_releases_history():
     assert state.prev_sigma_in is None
 
 
-def test_flat_history_on_transition_is_cleared():
-    video = torch.arange(16, dtype=torch.float32).reshape(1, 1, 2, 2, 4) / 16
-    audio = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 4) / 8
-    flat, shapes = _pack_latents([video, audio])
-    handle = create_speed_sampler_handle("res_multistep")
-    handle.state.old_denoised = flat
-    handle.state.old_sigma_down = 0.5
-    handle.state.prev_sigma_in = 0.7
-    handle.on_transition(SpeedTransition(
-        stage_idx=0, ratio=2.0, old_sigma=0.5, new_sigma=0.4,
-        source_thw=(2, 2, 4), target_thw=(2, 4, 8),
-        source_stream_shapes=shapes,
-    ))
-    assert handle.state.old_denoised is None
-    assert handle.state.old_sigma_down is None
-    assert handle.state.prev_sigma_in is None
-
-
 def test_flat_history_on_transition_does_not_require_stream_shapes():
     handle = create_speed_sampler_handle("res_multistep")
     handle.state.old_denoised = torch.zeros(1, 1, 40)
@@ -241,7 +221,6 @@ def test_flat_history_on_transition_does_not_require_stream_shapes():
         source_thw=(2, 2, 4), target_thw=(2, 4, 8),
     ))
     assert handle.state.old_denoised is None
-
 
 @pytest.mark.parametrize("stages", (2, 3))
 def test_runtime_with_cfgguider_shaped_guider_completes(monkeypatch, stages):
@@ -262,58 +241,3 @@ def test_runtime_with_cfgguider_shaped_guider_completes(monkeypatch, stages):
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None
-
-
-@pytest.mark.parametrize("stages", (2, 3))
-def test_projected_runtime_carries_flat_history_through_host_seam(monkeypatch, stages):
-    guider = HostShapedGuider()
-    handle, out, denoised = _run_flat_host(
-        _flat_ladder_cfg(stages), guider, monkeypatch,
-        res_history_mode="projected",
-    )
-
-    assert handle.history_mode == "projected"
-    assert guider.stage_entries[0] is None
-    for snap in guider.stage_entries[1:]:
-        assert snap is not None
-        assert torch.is_tensor(snap.old_denoised)
-        assert snap.old_denoised.ndim == 3
-        assert snap.old_sigma_down is not None
-        assert snap.prev_sigma_in is not None
-
-    assert guider.model_evals == len(SIGMAS) - 1
-    video, audio = out["samples"].unbind()
-    denoised_flat = denoised["samples"]
-    assert tuple(video.shape[-2:]) == (8, 8)
-    assert audio.ndim == 4
-    assert denoised_flat.ndim == 3
-    assert denoised_flat.shape[-1] == math.prod(video.shape[1:]) + math.prod(audio.shape[1:])
-    assert handle.state.old_denoised is None
-    assert handle.state.old_sigma_down is None
-    assert handle.state.prev_sigma_in is None
-
-
-@pytest.mark.parametrize("stages", (2, 3, 4))
-def test_hybrid_runtime_carries_flat_history_through_host_seam(monkeypatch, stages):
-    guider = HostShapedGuider()
-    handle, out, denoised = _run_flat_host(
-        _flat_ladder_cfg(stages), guider, monkeypatch,
-        res_history_mode="hybrid",
-    )
-
-    assert handle.history_mode == "hybrid"
-    assert guider.model_evals == len(SIGMAS) - 1
-    assert len(guider.sigma_calls) == stages
-    assert all(snap is not None for snap in guider.stage_entries[1:])
-    for snap in guider.stage_entries[1:]:
-        assert snap.old_denoised.ndim == 3
-        shapes = snap.hybrid_target_stream_shapes
-        assert shapes is not None
-        expected_length = sum(math.prod(shape[1:]) for shape in shapes)
-        assert snap.old_denoised.shape[-1] == expected_length
-    video, audio = out["samples"].unbind()
-    assert tuple(video.shape[-2:]) == (8, 8)
-    assert audio.ndim == 4
-    assert denoised["samples"].ndim == 3
-    assert handle.state.old_denoised is None
-    assert handle.state.hybrid_pending is False

@@ -15,7 +15,6 @@ from conftest import make_fake_noise, make_latent
 import speed_scripts.h3_runtime as h3_runtime
 from speed_scripts.res_multistep_adapter import ResMultistepSampler
 from speed_scripts.sampler_support import (
-    RES_HISTORY_MODES,
     SUPPORTED_SPEED_SAMPLERS,
     SamplerCapability,
     create_speed_sampler_handle,
@@ -158,32 +157,10 @@ def test_manual_without_sampler_name_executes_euler():
     assert _same_latents(no_field[0], explicit[0])
 
 
-def test_sample_signatures_keep_selector_defaults():
-    automatic_cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
-    manual_cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
-    for cls in (automatic_cls, manual_cls):
-        params = inspect.signature(cls.sample).parameters
-        assert params["sampler_name"].default == "euler"
-        assert params["res_history_mode"].default == "reset"
-
-
 # ---------------------------------------------------------------------------
 # Widget/input ordering: existing inputs are untouched, then sampler_name,
 # then the newly appended RES history mode.
 # ---------------------------------------------------------------------------
-
-def test_automatic_appends_selector_after_existing_inputs():
-    cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
-    required = cls.INPUT_TYPES()["required"]
-    keys = tuple(required)
-    assert keys == AUTOMATIC_INPUT_ORDER_BEFORE + ("sampler_name", "res_history_mode")
-
-
-def test_manual_appends_selector_after_existing_inputs():
-    cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
-    required = cls.INPUT_TYPES()["required"]
-    keys = tuple(required)
-    assert keys == MANUAL_INPUT_ORDER_BEFORE + ("sampler_name", "res_history_mode")
 
 
 def test_sampler_dropdown_is_exactly_the_supported_names_defaulting_to_euler():
@@ -193,15 +170,6 @@ def test_sampler_dropdown_is_exactly_the_supported_names_defaulting_to_euler():
         values, options = cls.INPUT_TYPES()["required"]["sampler_name"]
         assert tuple(values) == tuple(SUPPORTED_SPEED_SAMPLERS)
         assert options["default"] == "euler"
-
-
-def test_history_dropdown_uses_shared_modes_defaulting_to_reset():
-    automatic_cls = _node("sampler_node", "MiniMaxH3SPEEDSampler")
-    manual_cls = _node("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
-    for cls in (automatic_cls, manual_cls):
-        values, options = cls.INPUT_TYPES()["required"]["res_history_mode"]
-        assert tuple(values) == RES_HISTORY_MODES
-        assert options["default"] == "reset"
 
 
 # ---------------------------------------------------------------------------
@@ -256,19 +224,3 @@ def test_manual_routes_res_to_the_stateful_public_factory(monkeypatch):
     assert handle.capability is SamplerCapability.SINGLE_HISTORY
     assert samplers == [samplers[0]] * 4
     assert isinstance(samplers[0], ResMultistepSampler)
-
-
-def test_automatic_forwards_history_mode_to_the_runtime(monkeypatch):
-    captured, _samplers = _run_res_node(
-        _run_automatic, monkeypatch, res_history_mode="projected"
-    )
-    assert len(captured) == 1
-    assert captured[0][1].history_mode == "projected"
-
-
-def test_manual_forwards_history_mode_to_the_runtime(monkeypatch):
-    captured, _samplers = _run_res_node(
-        _run_manual, monkeypatch, res_history_mode="projected"
-    )
-    assert len(captured) == 1
-    assert captured[0][1].history_mode == "projected"

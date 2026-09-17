@@ -16,13 +16,8 @@ objects. RES uses this repository's deterministic stateful adapter because
 its run-scoped state and boundary policy belong to the sampler handle. The
 SPEED scheduler itself remains sampler-agnostic.
 
-RES boundary modes are explicit policies. ``reset`` is the default and clears
-history. ``projected`` is the historical project-and-rebase comparison path.
-``hybrid`` is experimental V3.0: it prepares one spatial-only video DCT
-candidate mix, keeps audio first-order, and falls back to reset when temporal
-geometry changes. Flat host tensors require recorded stream shapes. Missing or
-inconsistent metadata must raise rather than guess a video/audio split. These
-paths have automated tests but no native ComfyUI or GPU validation claim.
+RES uses reset-only boundary behavior. It clears its previous-step history
+at every SPEED stage boundary.
 """
 
 
@@ -46,7 +41,6 @@ SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + (
     "res_multistep",
 )
 
-RES_HISTORY_MODES = ("reset", "projected", "hybrid")
 
 
 class SamplerCapability(Enum):
@@ -67,14 +61,6 @@ class SpeedTransition:
     patched into the working schedule, and handed to the sampler handle's
     transition hook exactly once.
 
-    ``source_stream_shapes`` lists the per-stream latent shapes the source
-    stage's sampler saw, in the host's flat-pack order (video first, then
-    audio). Stateless samplers ignore it. RES ``projected`` mode uses it to
-    split a flat packed history tensor back into its video and audio streams;
-    ``reset`` mode does not need it. ``target_stream_shapes`` records the
-    authoritative post-transition pack layout for hybrid boundary metadata.
-    Hybrid rejects flat input when either shape record is missing or does not
-    match the packed tensor, so it cannot silently mix the wrong streams.
     """
 
     stage_idx: int
@@ -83,8 +69,6 @@ class SpeedTransition:
     new_sigma: float
     source_thw: tuple[int, int, int]
     target_thw: tuple[int, int, int]
-    source_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
-    target_stream_shapes: tuple[tuple[int, ...], tuple[int, ...]] | None = None
 
 
 class SpeedSamplerHandle:
@@ -131,81 +115,15 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
     ``sampler_object("res_multistep")``.
     """
 
-    def __init__(self, history_mode: str = "reset"):
+    def __init__(self):
         from .res_multistep_adapter import ResMultistepSampler, ResMultistepState
 
-        if history_mode not in RES_HISTORY_MODES:
-            raise ValueError(
-                f"Unsupported RES history mode {history_mode!r}. "
-                f"Supported modes: {', '.join(repr(mode) for mode in RES_HISTORY_MODES)}."
-            )
-
-        self.history_mode = history_mode
         self.state = ResMultistepState()
         self.sampler = ResMultistepSampler(self.state)
         self.capability = SamplerCapability.SINGLE_HISTORY
 
     def on_transition(self, transition: SpeedTransition) -> None:
-        if self.history_mode == "reset":
-            self.state.clear()
-            return
-
-        if self.history_mode == "projected":
-            if self.state.old_denoised is None:
-                return
-            from .res_multistep_adapter import (
-                project_clean_history,
-                rebase_res_history_sigmas,
-            )
-
-            self.state.old_denoised = project_clean_history(
-                self.state.old_denoised,
-                transition.target_thw,
-                source_stream_shapes=transition.source_stream_shapes,
-            )
-            rebase_res_history_sigmas(
-                self.state, transition.new_sigma, transition.ratio
-            )
-            return
-
-        if self.history_mode == "hybrid":
-            if self.state.old_denoised is None:
-                self.state.clear()
-                return
-            if transition.source_thw[0] != transition.target_thw[0]:
-                # V3 only mixes spatial boundaries. Temporal changes fall back
-                # to reset until a temporal hybrid operator is defined.
-                self.state.clear()
-                return
-
-            from .res_multistep_adapter import (
-                project_clean_history,
-                rebase_res_history_sigmas,
-            )
-
-            if not self.state.hybrid_pending:
-                self.state.hybrid_second_order_thw = transition.source_thw
-            source_stream_shapes = (
-                transition.source_stream_shapes
-                or self.state.hybrid_target_stream_shapes
-            )
-            self.state.old_denoised = project_clean_history(
-                self.state.old_denoised,
-                transition.target_thw,
-                source_stream_shapes=source_stream_shapes,
-            )
-            rebase_res_history_sigmas(
-                self.state, transition.new_sigma, transition.ratio
-            )
-            self.state.hybrid_target_stream_shapes = transition.target_stream_shapes
-            self.state.hybrid_pending = True
-            return
-
-        # Construction validates the mode, so reaching this branch means the
-        # handle was mutated or a future mode was added without an explicit
-        # boundary implementation. Never silently treat a new mode as
-        # ``projected``.
-        raise RuntimeError(f"Unhandled RES history mode {self.history_mode!r}")
+        self.state.clear()
 
     def close(self) -> None:
         self.state.clear()
@@ -213,19 +131,12 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
 
 def create_speed_sampler_handle(
     sampler_name: str,
-    *,
-    res_history_mode: str = "reset",
 ) -> SpeedSamplerHandle:
     """Build the run-scoped handle for ``sampler_name``.
 
     Unknown names raise ``ValueError`` listing the invalid name and the
     supported names. Never falls back to Euler.
     """
-    if res_history_mode not in RES_HISTORY_MODES:
-        raise ValueError(
-            f"Unsupported RES history mode {res_history_mode!r}. "
-            f"Supported modes: {', '.join(repr(mode) for mode in RES_HISTORY_MODES)}."
-        )
     if sampler_name not in SUPPORTED_SPEED_SAMPLERS:
         supported = ", ".join(repr(name) for name in SUPPORTED_SPEED_SAMPLERS)
         raise ValueError(
@@ -233,18 +144,15 @@ def create_speed_sampler_handle(
             f"Supported samplers: {supported}."
         )
     if sampler_name == "res_multistep":
-        return create_res_multistep_sampler_handle(history_mode=res_history_mode)
+        return create_res_multistep_sampler_handle()
 
     return _StatelessSamplerHandle(sampler_name)
 
 
-def create_res_multistep_sampler_handle(
-    *,
-    history_mode: str = "reset",
-) -> "_ResMultistepSamplerHandle":
+def create_res_multistep_sampler_handle() -> "_ResMultistepSamplerHandle":
     """Build the run-scoped stateful RES handle (runtime-only seam).
 
     The public selector routes ``res_multistep`` through this factory so the
     runtime keeps one stateful handle for the whole SPEED run.
     """
-    return _ResMultistepSamplerHandle(history_mode=history_mode)
+    return _ResMultistepSamplerHandle()
