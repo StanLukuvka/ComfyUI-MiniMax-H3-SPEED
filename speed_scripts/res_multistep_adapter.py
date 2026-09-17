@@ -1,27 +1,15 @@
-"""Stateful RES Multistep adapter for the SPEED pipeline.
+"""Stateful deterministic RES Multistep adapter for the SPEED pipeline.
 
-Deterministic, non-ancestral RES Multistep (``eta=0``): no noise injection,
-no SDE, no CFG++ path. Original implementation written from the published
-RES second-order multistep formulation (exponential integrators in
-``t = -ln(sigma)`` space). ComfyUI is used only as the behavioral reference
-for the host sampler-function contract — its solver source is never copied.
+The native ComfyUI sampler keeps previous-step history in function locals, so
+separate ``guider.sample()`` calls do not share it. This adapter makes that
+history explicit while preserving the host sampler-object contract. SPEED's
+shipping boundary policy is reset-only: the run-scoped handle clears history
+at every resolution transition, so the first real interval at the new
+resolution cold-starts before normal RES multistep history rebuilds.
 
-Why this exists: the native ``res_multistep`` sampler keeps its step history
-in function locals, so every SPEED stage call would restart with empty
-history. Worse, the native code derives the previous input sigma from
-``sigmas[i - 1]``, which is the wrong element on the first step of a
-stage-local schedule. This adapter owns that history explicitly in a
-``ResMultistepState`` that the SPEED runtime can carry across stages
-according to the reset-only boundary policy, and reads ``t_prev`` from the
-state instead of the schedule.
-
-the historical project-and-rebase comparison path. Experimental V3.0
-first-order AUDIO candidate. Temporal transitions clear history instead of
-using that operator. Flat host tensors fail closed when recorded stream shape
-metadata is absent or inconsistent. These semantics are covered by automated
-tests only; this module does not claim GPU or native ComfyUI validation.
+Only deterministic, non-ancestral RES is supported here (``eta=0``, no SDE,
+no CFG++ path).
 """
-
 
 from __future__ import annotations
 
@@ -31,16 +19,8 @@ from dataclasses import dataclass
 import torch
 
 
-
 def _host_ksampler_class():
-    """The host's real ``KSAMPLER`` class, resolved lazily.
-
-    Importing it at module load would break ComfyUI-free environments (the
-    surrounding package and its tests must import without a full ComfyUI
-    install, which only provides ``comfy.samplers`` at runtime). ``None``
-    means no real host is installed; then only the sampler-function contract
-    is available and the object must not pretend otherwise.
-    """
+    """Resolve the host's real ``KSAMPLER`` lazily."""
     try:
         from comfy.samplers import KSAMPLER
     except Exception:
@@ -50,15 +30,7 @@ def _host_ksampler_class():
 
 @dataclass
 class ResMultistepState:
-    """History maintained by one RES sampler run; the run-scoped handle owns
-    the policy for what survives a SPEED boundary.
-
-    ``old_denoised`` is the previous model denoised estimate, ``old_sigma_down``
-    the previous interval's destination sigma, and ``prev_sigma_in`` the
-    previous interval's input sigma. All three are written after every
-    completed interval; a single-sigma stage executes zero intervals and
-    leaves them untouched.
-    """
+    """Previous-step history owned by one RES sampler run."""
 
     old_denoised: object | None = None
     old_sigma_down: float | None = None
@@ -72,7 +44,7 @@ class ResMultistepState:
 
 
 def _res_first_order_update(x, denoised, sigma, sigma_down):
-    """Return the existing first-order RES candidate for one interval."""
+    """Return the deterministic first-order RES update for one interval."""
     d = (x - denoised) / sigma
     return x + d * (sigma_down - sigma)
 
@@ -86,7 +58,7 @@ def _res_second_order_update(
     old_sigma_down,
     prev_sigma_in,
 ):
-    """Return the existing second-order RES candidate for one interval."""
+    """Return the deterministic second-order RES update for one interval."""
     t_old = -math.log(old_sigma_down)
     t_next = -math.log(sigma_down_f)
     t_prev = -math.log(prev_sigma_in)
@@ -108,16 +80,7 @@ def res_multistep_sampler(
     callback=None,
     disable=None,
 ):
-    """Run deterministic RES Multistep over ``sigmas``, carrying ``state``.
-
-    Matches the host ``KSAMPLER`` sampler-FUNCTION contract: called as
-    ``fn(model, noise, sigmas, extra_args=..., callback=..., disable=...)``
-    where ``model(x, sigma, **extra_args)`` returns the denoised estimate
-    and ``callback`` receives the native per-step dict. ``disable`` is
-    accepted for contract compatibility; this implementation has no progress
-    bar of its own. (The sampler-OBJECT contract is ``.sample`` on
-    :class:`ResMultistepSampler`; the two are not interchangeable.)
-    """
+    """Run deterministic RES Multistep over ``sigmas`` while carrying ``state``."""
     extra_args = {} if extra_args is None else extra_args
     x = noise
     s_in = x.new_ones([x.shape[0]]) if torch.is_tensor(x) else 1.0
@@ -125,12 +88,13 @@ def res_multistep_sampler(
     for i in range(len(sigmas) - 1):
         sigma = sigmas[i]
         denoised = model(x, sigma * s_in, **extra_args)
-        # Deterministic RES (eta=0): the destination sigma is the next
-        # schedule entry and no noise is ever added.
         sigma_down = sigmas[i + 1]
         if callback is not None:
             callback({
-                "x": x, "i": i, "sigma": sigma, "sigma_hat": sigma,
+                "x": x,
+                "i": i,
+                "sigma": sigma,
+                "sigma_hat": sigma,
                 "denoised": denoised,
             })
 
@@ -139,12 +103,7 @@ def res_multistep_sampler(
         old_denoised = state.old_denoised
         old_sigma_down = state.old_sigma_down
         prev_sigma_in = state.prev_sigma_in
-        # First order when the destination sigma is zero, when the carried
-        # history is missing, or when the interval is degenerate (zero width
-        # or a zero previous-step gap, which would divide by zero below).
-        # For every well-formed strictly decreasing schedule this reduces to
-        # the plan rule: first order iff destination sigma is zero or
-        # old_denoised is missing.
+
         use_second_order = (
             0.0 < sigma_down_f < sigma_f
             and old_denoised is not None
@@ -153,18 +112,16 @@ def res_multistep_sampler(
             and old_sigma_down != prev_sigma_in
         )
         if use_second_order:
-            # Second order RES multistep: exponential integrators in
-            # t = -ln(sigma) space. t_prev comes from the carried state,
-            # never from sigmas[i - 1]: on the first step of a stage-local
-            # schedule that index is the wrong element.
-            x_first = _res_first_order_update(x, denoised, sigma, sigma_down)
-            x_second = _res_second_order_update(
-                x, denoised, old_denoised,
-                sigma_f, sigma_down_f, old_sigma_down, prev_sigma_in,
+            x = _res_second_order_update(
+                x,
+                denoised,
+                old_denoised,
+                sigma_f,
+                sigma_down_f,
+                old_sigma_down,
+                prev_sigma_in,
             )
-            x = x_second
         else:
-            # First order (Euler).
             x = _res_first_order_update(x, denoised, sigma, sigma_down)
 
         state.old_denoised = denoised
@@ -174,25 +131,7 @@ def res_multistep_sampler(
 
 
 class ResMultistepSampler:
-    """Host sampler object wrapping the stateful RES function.
-
-    The host guider invokes a sampler *object* as
-    ``sampler.sample(guider, sigmas, extra_args, callback, noise,
-    latent_image, denoise_mask, disable_pbar)`` (``CFGGuider.inner_sample``
-    wraps ``sampler.sample`` in its wrapper executor), which is the contract
-    native ``KSAMPLER`` objects implement. This class therefore wraps the
-    host's own ``KSAMPLER`` — constructed with :func:`res_multistep_sampler`
-    as its sampler function — and delegates ``.sample`` to it, so
-    ``noise_scaling``, the inpaint model wrapper, the per-step callback
-    adaptation, and ``inverse_noise_scaling`` all stay host-native (plan §13:
-    do not bypass ``guider.sample()``).
-
-    ``__call__`` is the separate sampler-*function* contract: it runs
-    :func:`res_multistep_sampler` directly on already-host-processed inputs,
-    as a plain ``KSAMPLER`` sampler function would receive them. The two
-    contracts are not interchangeable; only ``.sample`` satisfies the host
-    sampler-object seam.
-    """
+    """Host sampler object wrapping the stateful deterministic RES function."""
 
     def __init__(self, state: ResMultistepState | None = None):
         self.state = state if state is not None else ResMultistepState()
@@ -206,20 +145,51 @@ class ResMultistepSampler:
 
     def _run(self, model, noise, sigmas, extra_args=None, callback=None, disable=None):
         return res_multistep_sampler(
-            model, noise, sigmas, self.state,
-            extra_args=extra_args, callback=callback, disable=disable,
+            model,
+            noise,
+            sigmas,
+            self.state,
+            extra_args=extra_args,
+            callback=callback,
+            disable=disable,
         )
 
-    def sample(self, model_wrap, sigmas, extra_args, callback, noise,
-               latent_image=None, denoise_mask=None, disable_pbar=False):
+    def sample(
+        self,
+        model_wrap,
+        sigmas,
+        extra_args,
+        callback,
+        noise,
+        latent_image=None,
+        denoise_mask=None,
+        disable_pbar=False,
+    ):
         return self._ksampler.sample(
-            model_wrap, sigmas, extra_args, callback, noise,
-            latent_image=latent_image, denoise_mask=denoise_mask,
+            model_wrap,
+            sigmas,
+            extra_args,
+            callback,
+            noise,
+            latent_image=latent_image,
+            denoise_mask=denoise_mask,
             disable_pbar=disable_pbar,
         )
 
-    def __call__(self, model, noise, sigmas, extra_args=None, callback=None, disable=None):
+    def __call__(
+        self,
+        model,
+        noise,
+        sigmas,
+        extra_args=None,
+        callback=None,
+        disable=None,
+    ):
         return self._run(
-            model, noise, sigmas,
-            extra_args=extra_args, callback=callback, disable=disable,
+            model,
+            noise,
+            sigmas,
+            extra_args=extra_args,
+            callback=callback,
+            disable=disable,
         )

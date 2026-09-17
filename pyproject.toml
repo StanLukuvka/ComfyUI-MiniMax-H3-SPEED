@@ -9,9 +9,8 @@ description = "MiniMax-H3 SPEED progressive-resolution sampler as three ComfyUI 
 readme = "README.md"
 license = {text = "PolyForm Noncommercial 1.0.0"}
 requires-python = ">=3.10"
-# ComfyUI core + torch are provided by the host at runtime. numpy is a
-# direct runtime dep of this pack (numpy in harvest.py).
-dependencies = ["torch", "numpy"]
+# ComfyUI provides torch; numpy is the only additional direct runtime dependency.
+dependencies = ["numpy"]
 
 [tool.setuptools.packages.find]
 include = ["speed_scripts*", "nodes*"]
