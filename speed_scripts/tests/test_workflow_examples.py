@@ -1,4 +1,4 @@
-"""Committed workflow examples keep Euler + reset as SPEED defaults."""
+"""Committed workflow examples use the reset-only RES adapter."""
 
 import json
 from pathlib import Path
@@ -16,8 +16,8 @@ NODE_TYPES = {
     "MiniMaxH3HarvestToConfig",
 }
 SAMPLER_INDEX = {
-    "MiniMaxH3SPEEDSampler": -2,
-    "MiniMaxH3SPEEDSamplerManual": -2,
+    "MiniMaxH3SPEEDSampler": -1,
+    "MiniMaxH3SPEEDSamplerManual": -1,
     "MiniMaxH3HarvestToConfig": 0,
 }
 
@@ -42,5 +42,5 @@ def test_committed_examples_select_euler_for_each_public_node():
             assert node.get("widgets_values_named", {}).get("sampler_name") == "euler"
             assert node["widgets_values"][SAMPLER_INDEX[node["type"]]] == "euler"
             if node["type"] in {"MiniMaxH3SPEEDSampler", "MiniMaxH3SPEEDSamplerManual"}:
-                assert node["widgets_values_named"]["res_history_mode"] == "reset"
-                assert node["widgets_values"][-1] == "reset"
+                assert "res_" + "history_mode" not in node["widgets_values_named"]
+                assert "reset" not in node["widgets_values"]

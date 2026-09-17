@@ -29,14 +29,11 @@ import math
 import torch
 import pytest
 
-from speed_scripts.flow import aligned_sigma
 from speed_scripts.res_multistep_adapter import (
     ResMultistepSampler,
     ResMultistepState,
     _res_first_order_update,
     _res_second_order_update,
-    project_clean_history,
-    rebase_res_history_sigmas,
     res_multistep_sampler,
 )
 from speed_scripts.sampler_support import (
@@ -48,7 +45,7 @@ from speed_scripts.sampler_support import (
     create_res_multistep_sampler_handle,
     create_speed_sampler_handle,
 )
-from speed_scripts.spectral import dct2, dct_temporal, spectral_expand_clean_3d
+
 
 #: Fixed strictly decreasing schedule; the trailing zero is the clean point.
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
@@ -169,26 +166,6 @@ def _split_segment(sigmas, start, end):
 # ---------------------------------------------------------------------------
 # State object (plan S7 §12)
 # ---------------------------------------------------------------------------
-
-def test_state_starts_empty_and_clear_releases_everything():
-    state = ResMultistepState()
-    assert state.old_denoised is None
-    assert state.old_sigma_down is None
-    assert state.prev_sigma_in is None
-    tensor = torch.zeros(2, 2)
-    state.old_denoised = tensor
-    state.old_sigma_down = 0.5
-    state.prev_sigma_in = 0.9
-    state.hybrid_pending = True
-    state.hybrid_second_order_thw = (2, 4, 4)
-    state.hybrid_target_stream_shapes = ((1, 1, 2, 8, 8), (1, 1, 2, 4))
-    state.clear()
-    assert state.old_denoised is None
-    assert state.old_sigma_down is None
-    assert state.prev_sigma_in is None
-    assert state.hybrid_pending is False
-    assert state.hybrid_second_order_thw is None
-    assert state.hybrid_target_stream_shapes is None
 
 
 def test_single_sigma_stage_executes_zero_intervals_and_touches_nothing():
@@ -386,117 +363,12 @@ def _known_audio(t_audio=6, channels=1, batch=1, seed=123):
     return torch.randn(batch, channels, 2, t_audio, generator=g)
 
 
-def test_clean_projection_copies_low_band_and_zeroes_high_band():
-    """Round-trip property: the target's combined DCT equals the source's
-    block embedded in an all-zero target tensor. Any random high-frequency
-    content or sigma scaling would break this by orders of magnitude."""
-    source = _known_video()
-    source_dct = dct2(dct_temporal(source))
-    target = spectral_expand_clean_3d(source, (3, 6, 6))
-    expected_dct = torch.zeros(1, 1, 3, 6, 6)
-    expected_dct[..., :2, :4, :4] = source_dct
-    assert torch.allclose(
-        dct2(dct_temporal(target)), expected_dct, atol=1e-5, rtol=0.0,
-    )
-
-
-def test_clean_projection_is_deterministic_and_shape_exact():
-    """No randomness anywhere: two calls agree bit-for-bit, and an exact-shape
-    call reconstructs the input (zero-filled new space is empty)."""
-    source = _known_video()
-    first = spectral_expand_clean_3d(source, (3, 6, 6))
-    second = spectral_expand_clean_3d(source, (3, 6, 6))
-    assert torch.equal(first, second)
-    assert first.shape == (1, 1, 3, 6, 6)
-    exact = spectral_expand_clean_3d(source, (2, 4, 4))
-    assert torch.allclose(exact, source, atol=1e-5, rtol=0.0)
-
-
-def test_clean_projection_preserves_dtype_device_and_rejects_shrinking():
-    source16 = _known_video().to(dtype=torch.float16)
-    out16 = spectral_expand_clean_3d(source16, (3, 6, 6))
-    assert out16.dtype == torch.float16
-    assert out16.device.type == source16.device.type
-    with pytest.raises(ValueError):
-        spectral_expand_clean_3d(_known_video(t=4, h=6, w=6), (2, 4, 4))
-
-
-def test_clean_history_projection_video_moves_audio_untouched():
-    """Nested H3 history: video geometry grows, the clean audio estimate is
-    numerically unchanged and stays a nested video/audio pair."""
-    video, audio = _known_video(), _known_audio()
-    history = _Nested([video, audio])
-    projected = project_clean_history(history, (4, 8, 8))
-    assert getattr(projected, "is_nested", False)
-    p_video, p_audio = projected.unbind()
-    assert p_video.shape == (1, 1, 4, 8, 8)
-    assert p_audio is audio
-    assert not torch.equal(p_video, video)
-    assert torch.allclose(
-        dct2(dct_temporal(p_video))[..., :2, :4, :4],
-        dct2(dct_temporal(video)),
-        atol=1e-5, rtol=0.0,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Sigma rebase (plan S7 §17, §31 step 38)
-# ---------------------------------------------------------------------------
-
-def test_rebase_sigmas_sets_destination_and_aligns_prev_input():
-    """Independent expected values: old_sigma_down becomes the aligned
-    boundary sigma; prev_sigma_in maps through aligned_sigma with the same
-    ratio. Empty fields stay empty."""
-    state = ResMultistepState(
-        old_sigma_down=0.42, prev_sigma_in=0.68,
-    )
-    new_q = 0.25
-    ratio = 2.0
-    expected_prev = aligned_sigma(0.68, ratio)[1]
-    rebase_res_history_sigmas(state, new_q, ratio)
-    assert state.old_sigma_down == pytest.approx(new_q)
-    assert state.prev_sigma_in == pytest.approx(expected_prev)
-
-    partial = ResMultistepState(old_sigma_down=0.3)
-    rebase_res_history_sigmas(partial, new_q, ratio)
-    assert partial.old_sigma_down == pytest.approx(new_q)
-    assert partial.prev_sigma_in is None
-
-
-def test_rebase_sigmas_keeps_input_sigma_of_one():
-    """History may legitimately hold prev_sigma_in = 1.0 (a stage starting at
-    pure noise). aligned_sigma rejects q >= 1, but its own formula is the
-    identity there, so the rebased value must stay 1.0 instead of raising."""
-    state = ResMultistepState(old_sigma_down=0.5, prev_sigma_in=1.0)
-    rebase_res_history_sigmas(state, 0.25, 2.0)
-    assert state.old_sigma_down == pytest.approx(0.25)
-    assert state.prev_sigma_in == pytest.approx(1.0)
-
-
-def test_rebase_sigmas_never_mutates_scheduler_data():
-    """The rebase is metadata-only. The state's history tensor is aliased into
-    a schedule-like container standing in for scheduler-owned data: if the
-    rebase ever wrote through the tensor it holds, the alias would surface
-    the write and fail the byte-identical check."""
-    schedule_like = {"boundary": torch.tensor([1.0, 0.9, 0.5, 0.25, 0.0])}
-    snapshot = schedule_like["boundary"].clone()
-    state = ResMultistepState(
-        old_sigma_down=0.5, prev_sigma_in=0.9, old_denoised=schedule_like["boundary"],
-    )
-    rebase_res_history_sigmas(state, float(schedule_like["boundary"][3]), 1.5)
-    assert torch.equal(schedule_like["boundary"], snapshot)
-
-
-# ---------------------------------------------------------------------------
-# on_transition handle hook (plan S7 §18, §31 steps 39-41)
-# ---------------------------------------------------------------------------
-
 def _transition(source_thw, target_thw, ratio=2.0, old_sigma=0.5, stage_idx=0):
     return SpeedTransition(
         stage_idx=stage_idx,
         ratio=ratio,
         old_sigma=old_sigma,
-        new_sigma=aligned_sigma(old_sigma, ratio)[1],
+        new_sigma=old_sigma,
         source_thw=source_thw,
         target_thw=target_thw,
     )
@@ -589,59 +461,3 @@ def test_on_transition_twice_at_coincident_boundary_no_new_history():
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None
-
-
-def test_hybrid_transition_projects_history_and_records_boundary_metadata():
-    handle = create_res_multistep_sampler_handle(history_mode="hybrid")
-    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
-    handle.state.old_sigma_down = 0.5
-    handle.state.prev_sigma_in = 0.6
-    transition = SpeedTransition(
-        stage_idx=0, ratio=2.0, old_sigma=0.5, new_sigma=0.4,
-        source_thw=(2, 4, 4), target_thw=(2, 8, 8),
-        target_stream_shapes=((1, 1, 2, 8, 8), (1, 1, 2, 4)),
-    )
-
-    handle.on_transition(transition)
-
-    assert handle.state.hybrid_pending is True
-    assert handle.state.hybrid_second_order_thw == (2, 4, 4)
-    assert handle.state.hybrid_target_stream_shapes == transition.target_stream_shapes
-    assert tuple(handle.state.old_denoised.unbind()[0].shape[-3:]) == (2, 8, 8)
-    handle.close()
-
-
-def test_hybrid_temporal_transition_falls_back_to_reset():
-    handle = create_res_multistep_sampler_handle(history_mode="hybrid")
-    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
-    handle.state.old_sigma_down = 0.5
-    handle.state.prev_sigma_in = 0.6
-    handle.on_transition(_transition((2, 4, 4), (3, 8, 8)))
-
-    assert handle.state.old_denoised is None
-    assert handle.state.old_sigma_down is None
-    assert handle.state.prev_sigma_in is None
-    assert handle.state.hybrid_pending is False
-
-
-def test_hybrid_coincident_transition_keeps_original_projector_block():
-    handle = create_res_multistep_sampler_handle(history_mode="hybrid")
-    handle.state.old_denoised = _Nested([_known_video(), _known_audio()])
-    handle.state.old_sigma_down = 0.5
-    handle.state.prev_sigma_in = 0.6
-    first = SpeedTransition(
-        0, 2.0, 0.5, 0.4, (2, 4, 4), (2, 8, 8),
-        target_stream_shapes=((1, 1, 2, 8, 8), (1, 1, 2, 4)),
-    )
-    second = SpeedTransition(
-        1, 1.5, 0.4, 0.3, (2, 8, 8), (2, 16, 16),
-        target_stream_shapes=((1, 1, 2, 16, 16), (1, 1, 2, 4)),
-    )
-    handle.on_transition(first)
-    handle.on_transition(second)
-
-    assert handle.state.hybrid_pending is True
-    assert handle.state.hybrid_second_order_thw == (2, 4, 4)
-    assert handle.state.hybrid_target_stream_shapes == second.target_stream_shapes
-    assert tuple(handle.state.old_denoised.unbind()[0].shape[-3:]) == (2, 16, 16)
-    handle.close()

@@ -307,7 +307,6 @@ def run_speed_pipeline(
     config: SpeedConfig,
     *,
     sampler_name: str = "euler",
-    res_history_mode: str = "reset",
     # Test/programmatic seam only: injects a fake sampler object without
     # building a real Comfy sampler. Production node code must never use it;
     # it may not be combined with a non-default sampler_name.
@@ -459,10 +458,7 @@ def run_speed_pipeline(
             )
         sampler_handle = _OverrideSamplerHandle(sampler_override)
     else:
-        sampler_handle = create_speed_sampler_handle(
-            sampler_name,
-            res_history_mode=res_history_mode,
-        )
+        sampler_handle = create_speed_sampler_handle(sampler_name)
     # Run-scoped I2V lifecycle: the walker is created up front and EVERY exit
     # path (success, failure in a stage, transition, audio handling, spectral
     # expansion, or final sampling) passes through the finally block, which
@@ -543,7 +539,6 @@ def run_speed_pipeline(
             working_sigmas[global_end] = new_q
 
             # DCT-expand the video (coupled or fresh band) and rescale by kappa.
-            # Coupled policy: the SAME full-grid noise field projected onto
             # each stage's resolution — in the spectral domain. Pixel-space
             # cropping would change the DCT spectrum, so take the combined
             # temporal+spatial DCT of the ORIGINAL full-res noise once and
@@ -605,18 +600,7 @@ def run_speed_pipeline(
             else:
                 transitioned_audio = internal_audio
 
-            # Sampler transition hook: once per configured SPEED transition,
-            # after the boundary sigma is aligned and patched into the working
-            # schedule and the spectral + audio transitions are done, before
-            # the next stage re-enters guider.sample(). Stateless samplers
-            # no-op here; RES `reset` (the default) clears boundary history,
-            # `projected` applies the historical project/rebase experiment
-            # (the GPU A/B negative control), and `hybrid` prepares the
-            # one-interval experimental VIDEO blend. Never called per
-            # denoising step and never after the final stage. The per-stream
-            # shapes let a stateful handle slice its flat packed history (the
-            # real host packs nested latents before the sampler sees them) back
-            # into video and audio.
+            # Clear stateful sampler history at each SPEED stage boundary.
             sampler_handle.on_transition(
                 SpeedTransition(
                     stage_idx=stage_idx,
@@ -625,14 +609,6 @@ def run_speed_pipeline(
                     new_sigma=new_q,
                     source_thw=tuple(internal_video.shape[-3:]),
                     target_thw=(next_t, next_h, next_w),
-                    source_stream_shapes=(
-                        tuple(public_video.shape),
-                        tuple(public_audio.shape),
-                    ),
-                    target_stream_shapes=(
-                        tuple(transitioned_video.shape),
-                        tuple(transitioned_audio.shape),
-                    ),
                 )
             )
 

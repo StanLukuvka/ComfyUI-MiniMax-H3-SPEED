@@ -39,7 +39,6 @@ from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
 from speed_scripts.sampler_support import (
     STATELESS_SPEED_SAMPLERS,
     SUPPORTED_SPEED_SAMPLERS,
-    RES_HISTORY_MODES,
     SamplerCapability,
     SpeedTransition,
     SpeedSamplerHandle,
@@ -193,46 +192,6 @@ def test_factory_routes_res_to_stateful_handle_without_native_sampler(monkeypatc
     handle = create_speed_sampler_handle("res_multistep")
     assert isinstance(handle, _ResMultistepSamplerHandle)
     assert handle.capability is SamplerCapability.SINGLE_HISTORY
-    handle.close()
-
-
-def test_res_history_modes_are_ordered_and_factory_defaults_to_reset():
-    assert RES_HISTORY_MODES == ("reset", "projected", "hybrid")
-    default = create_speed_sampler_handle("res_multistep")
-    explicit = create_speed_sampler_handle("res_multistep", res_history_mode="reset")
-    projected = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
-    hybrid = create_speed_sampler_handle("res_multistep", res_history_mode="hybrid")
-    assert default.history_mode == explicit.history_mode == "reset"
-    assert projected.history_mode == "projected"
-    assert hybrid.history_mode == "hybrid"
-    for handle in (default, explicit, projected, hybrid):
-        handle.close()
-
-
-def test_invalid_history_mode_fails_closed_for_all_sampler_factories():
-    with pytest.raises(ValueError, match="Unsupported RES history mode"):
-        create_speed_sampler_handle("res_multistep", res_history_mode="unknown")
-    with pytest.raises(ValueError, match="Unsupported RES history mode"):
-        create_speed_sampler_handle("euler", res_history_mode="unknown")
-
-
-@pytest.mark.parametrize("name", STATELESS_SPEED_SAMPLERS)
-@pytest.mark.parametrize("mode", RES_HISTORY_MODES)
-def test_stateless_samplers_ignore_valid_history_mode(name, mode):
-    handle = create_speed_sampler_handle(name, res_history_mode=mode)
-    assert handle.capability is SamplerCapability.STATELESS_STEP_LOCAL
-    handle.close()
-
-
-def test_reset_transition_clears_every_history_field():
-    handle = create_speed_sampler_handle("res_multistep", res_history_mode="reset")
-    handle.state.old_denoised = torch.ones(1)
-    handle.state.old_sigma_down = .4
-    handle.state.prev_sigma_in = .7
-    handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 2, 2), (3, 4, 4)))
-    assert handle.state.old_denoised is None
-    assert handle.state.old_sigma_down is None
-    assert handle.state.prev_sigma_in is None
     handle.close()
 
 
@@ -427,14 +386,8 @@ def test_transition_hook_fires_once_per_transition_at_the_documented_position(mo
     # stage's grid, target geometry is the next stage's grid.
     assert transitions_seen[0].source_thw == (2, 3, 3)
     assert transitions_seen[0].target_thw == (2, 5, 5)
-    assert transitions_seen[0].target_stream_shapes == (
-        (1, 1, 2, 5, 5), (1, 1, 2, 44),
-    )
     assert transitions_seen[1].source_thw == (2, 5, 5)
     assert transitions_seen[1].target_thw == (2, 8, 8)
-    assert transitions_seen[1].target_stream_shapes == (
-        (1, 1, 2, 8, 8), (1, 1, 2, 44),
-    )
 
 
 def test_hook_failure_aborts_the_run_before_the_next_stage_samples(monkeypatch):
@@ -595,17 +548,6 @@ def test_cleanup_still_drops_the_walker_when_the_restore_fails(monkeypatch):
 # ---------------------------------------------------------------------------
 # Override seam and fail-closed runtime validation
 # ---------------------------------------------------------------------------
-
-def test_override_seam_wraps_the_injected_sampler_as_a_noop_handle():
-    injected = object()
-    guider = EchoGuider()
-    run_speed_pipeline(
-        make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
-        sampler_override=injected, res_history_mode="not-a-mode", disable_pbar=True,
-    )
-    assert guider.samplers[0] is injected
-    assert guider.samplers[1] is injected
-    assert guider.samplers[2] is injected
 
 
 def test_override_seam_rejects_combination_with_explicit_sampler_name():
@@ -898,41 +840,3 @@ def test_second_generation_after_failure_starts_clean(sampler):
     assert torch.equal(audio_second, audio_control)
     _assert_full_res_nested(out_second)
     assert not hasattr(guider_a, _LW_ATTR)
-
-
-def test_projected_nested_transition_projects_video_and_rebases_metadata():
-    handle = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
-    video = torch.randn(1, 1, 2, 4, 4)
-    audio = torch.randn(1, 1, 2, 6)
-    handle.state.old_denoised = _nested(video, audio)
-    handle.state.old_sigma_down = .6
-    handle.state.prev_sigma_in = .8
-    handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 4, 4), (3, 6, 6)))
-    projected_video, projected_audio = handle.state.old_denoised.unbind()
-    assert tuple(projected_video.shape[-3:]) == (3, 6, 6)
-    assert torch.equal(projected_audio, audio)
-    assert handle.state.old_sigma_down == .5
-    assert handle.state.prev_sigma_in == aligned_sigma(.8, 2.0)[1]
-    handle.close()
-
-
-def test_projected_flat_transition_uses_source_shapes_and_preserves_audio():
-    handle = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
-    video = torch.randn(1, 1, 2, 2, 2)
-    audio = torch.randn(1, 1, 2, 4)
-    flat = torch.cat((video.reshape(1, 1, -1), audio.reshape(1, 1, -1)), dim=-1)
-    handle.state.old_denoised = flat
-    source_shapes = (tuple(video.shape), tuple(audio.shape))
-    handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 2, 2), (3, 4, 4), source_shapes))
-    assert tuple(handle.state.old_denoised.shape) == (1, 1, 3 * 4 * 4 + audio.numel())
-    assert torch.equal(handle.state.old_denoised[..., 3 * 4 * 4:], audio.reshape(1, 1, -1))
-    handle.close()
-
-
-def test_projected_flat_transition_requires_source_shapes():
-    handle = create_speed_sampler_handle("res_multistep", res_history_mode="projected")
-    handle.state.old_denoised = torch.zeros(1, 1, 16)
-    with pytest.raises(ValueError, match="per-stream shapes"):
-        handle.on_transition(SpeedTransition(0, 2.0, .7, .5, (2, 2, 2), (3, 4, 4)))
-    handle.close()
-

@@ -35,31 +35,10 @@ Just `stages` (2, 3, or 4) that correspond to how many resolution stages there a
 
 `Tolerance (Delta)`, `noise_amplitude`, `noise_decay_exponent` determine at what steps each stage is triggered at, generally leave unless experimenting.
 
-`res_history_mode` only affects RES Multistep. `reset` is the default: it
-discards RES previous-step history at every SPEED resolution transition, so
-the first later RES interval rebuilds history from the new resolution.
-`projected` is the historical negative control: it DCT-projects the previous
-denoised history into the target video geometry and rebases its sigma
-metadata. The GPU A/B on the known aggressive workload reproduced transient
-flash / colour artifacts with `projected` while `reset` stayed stable. This is
-external V2 evidence, not GPU validation supplied by this repository.
-`hybrid` is experimental: on the first interval after a spatial-only
-transition it blends a VIDEO DCT block from a second-order candidate into the
-first-order update and uses the first-order update for audio in V3.0.
-For flat host tensors, hybrid requires recorded target video/audio shapes and
-fails closed when that metadata is missing or inconsistent instead of guessing
-the stream split.
-`hybrid` is an experiment, not a recommendation: it is not established as
-correct or valid RES, and the one-interval blend is not second-order accurate;
-`reset` remains the default.
+RES Multistep uses reset-only history. It clears previous-step history at every SPEED resolution transition.
 
 **Manual — Sampler (Step-Through)**
 You set up to four `(goal, resolution)` pairs yourself. `goal` = step where that stage ends, `resolution` = scale like `0.25` = quarter. Set `goal` or `resolution` to `0` to skip a stage. Use only to copy a paper schedule or test a custom ladder.
-
-Manual SPEED exposes the same RES history choices: `reset` (default),
-`projected` (historical negative control — external V2 GPU evidence reproduced
-transient artifacts with it), and `hybrid` (experimental one-interval VIDEO
-DCT blend, first-order audio in V3.0; not a recommendation).
 
 
 **Sigma Harvest (Native Sampler)**
@@ -84,24 +63,9 @@ The Automatic, Manual, and Sigma Harvest nodes expose the same list.
 - **Heun**, **DPM2**, and **Exp Heun 2 X0** are native stateless samplers.
   They can use extra model evaluations per step, which can reduce SPEED's
   wall-clock gain.
-- **RES Multistep** is the only stateful sampler. Its SPEED adapter exposes three
-  boundary policies: `reset` is the default and cold-starts RES history after
-  each resolution transition; `projected` reproduces the historical
-  project-and-rebase behavior as a negative control — external V2 GPU evidence
-  on the known aggressive workload reproduced transient flash / colour
-  artifacts with it while `reset` stayed stable; `hybrid` is an experimental
-  one-interval VIDEO DCT blend between first- and second-order candidates
-  with first-order audio in V3.0. Neither `projected` nor `hybrid` claims
-  native RES continuity across a geometry change: native RES does not define
-  a geometry-changing boundary, and `hybrid` in particular is not established
-  as correct or valid RES and is not second-order accurate. The supported
-  adapter is deterministic and non-ancestral only: no SDE and no CFG++.
-- All five names are public, but RES remains experimental until a user passes
-  the H3 GPU validation gate. The repository provides automated seam and
-  state tests, not a claim of measured hardware parity or native ComfyUI
-  validation for the hybrid path.
+- **RES Multistep** is the only stateful sampler. Its adapter clears history at every resolution transition.
 
-Automatic and Manual share the normal sampling inputs and return output and denoised LATENTs. Harvest shares the same `noise`, `guider`, `sigmas`, and `latent_image` inputs, plus sampler selection, and returns calibration JSON plus a diagnostic LATENT. Sigma Harvest stays native and has no `res_history_mode` widget.
+Automatic and Manual share the normal sampling inputs and return output and denoised LATENTs. Harvest shares the same `noise`, `guider`, `sigmas`, and `latent_image` inputs, plus sampler selection, and returns calibration JSON plus a diagnostic LATENT. Sigma Harvest stays native.
 
 ## Diagnostics
 
