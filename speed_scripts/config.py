@@ -37,10 +37,13 @@ class SpeedConfig:
             raise ValueError("transition_mode must be 'explicit' or 'delta_custom'")
         if not scales:
             raise ValueError("at least one scale required")
-        if abs(scales[-1] - 1.0) > 1e-6:
-            raise ValueError("final scale must be 1.0 (full resolution)")
         if not all(0.0 < scale <= 1.0 for scale in scales):
             raise ValueError("every scale must be in (0, 1]")
+        if len(scales) == 1:
+            if abs(scales[0] - 1.0) > 1e-6:
+                raise ValueError("single scale must be 1.0 (full resolution)")
+        elif abs(scales[-1] - 1.0) > 1e-6:
+            raise ValueError("final scale must be 1.0 (full resolution)")
         if not all(left < right for left, right in zip(scales[:-1], scales[1:])):
             raise ValueError("scales must be strictly increasing")
 

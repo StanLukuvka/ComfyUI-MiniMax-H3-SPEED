@@ -32,8 +32,8 @@ Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-
 - All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
 - Automatic configs do not store placeholder transition indices. `delta_custom` boundaries are computed from the live sigma schedule at runtime; `transition_steps` is only meaningful in explicit/manual mode.
-- The Automatic stage ladder + config assembly lives in `speed_scripts/automatic_config.py` (`build_automatic_speed_config`).
-- `speed_scripts/h3_runtime.py` owns only the run orchestration and transition helpers: stage geometry, sigma-boundary resolution, preview timeline, spectral expansion, audio transition, sampler boundary hook, and final output assembly.
+- Stage geometry, transition-threshold math, Automatic config construction, and Manual schedule normalization live together in `speed_scripts/planning.py`. `speed_scripts/automatic_config.py` is only a compatibility re-export for older imports.
+- `speed_scripts/h3_runtime.py` owns execution rather than planning: H3 latent validation, preview timeline, spectral/audio boundary application, sampler hooks, stage calls, and output assembly.
 - I2V latent lifecycle lives in `speed_scripts/latent_class.py` as one `LatentWalker`. It snapshots only keyframe latents, always resizes from pristine full resolution, restores them before the final stage and on failure, and never wraps or resizes `minimax_refs`. The walker is local to one `run_speed_pipeline()` call; it is not stored on the guider.
 - No random configuration, no silent randomization in config paths.
 - Tests: `speed_scripts/tests/` — run with the repo venv (`.venv/bin/python -m pytest speed_scripts/tests/ -q`); the repo has no CI workflows for dev PRs, so the local suite is the gate.

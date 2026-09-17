@@ -8,7 +8,6 @@ the boundary sigma, resizes I2V keyframes, and re-enters at the next grid.
 from __future__ import annotations
 
 import logging
-import math
 
 import torch
 
@@ -22,6 +21,12 @@ from .flow import (
     to_internal_state,
 )
 from .latent_class import LatentWalker
+from .planning import (
+    activation_threshold,
+    power_at_frequency,
+    resolve_transition_steps,
+    stage_resolution,
+)
 from .sampler_support import (
     SamplerCapability,
     SpeedSamplerHandle,
@@ -40,8 +45,8 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-# Kept as a compatibility marker for tests/older callers. The walker is now
-# purely local to one run and is no longer attached to the guider.
+# Compatibility marker for older tests/callers. The walker is now purely local
+# to one run and is never attached to the guider.
 _LW_ATTR = "_speed_latent_walker"
 
 
@@ -51,30 +56,6 @@ class _OverrideSamplerHandle(SpeedSamplerHandle):
     def __init__(self, sampler):
         self.sampler = sampler
         self.capability = SamplerCapability.STATELESS_STEP_LOCAL
-
-
-def stage_resolution(config: SpeedConfig, stage_idx: int, full_h: int, full_w: int, full_t: int):
-    """Return ``(h, w, t)`` for one configured stage."""
-    scale = config.scales[stage_idx]
-    height = max(1, round(full_h * scale))
-    width = max(1, round(full_w * scale))
-    if config.temporal_scales:
-        frames = max(1, round(full_t * config.temporal_scales[stage_idx]))
-    else:
-        frames = full_t
-    return height, width, frames
-
-
-def power_at_frequency(omega: float, A: float, beta: float) -> float:
-    """Radial power-law spectrum ``P(omega) = A * |omega|**(-beta)``."""
-    return A * abs(omega) ** (-beta)
-
-
-def activation_threshold(power: float, delta: float) -> float:
-    """Return the SPEED activation threshold for one radial frequency."""
-    if delta >= 1.0:
-        raise ValueError("delta must be < 1.0")
-    return 1.0 / (1.0 + math.sqrt(delta / (power * (1.0 + power - delta))))
 
 
 def unpack_latent(samples):
@@ -194,41 +175,6 @@ def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total)
     return callback
 
 
-def _find_first_step_below(sigmas, threshold: float) -> int:
-    values = [float(sigma) for sigma in sigmas]
-    last = len(values) - 1
-    for index in range(last):
-        if values[index] <= threshold:
-            return index
-    return last
-
-
-def resolve_transition_steps(
-    config: SpeedConfig,
-    sigmas,
-    H_full: int | None = None,
-    W_full: int | None = None,
-) -> tuple[int, ...]:
-    """Resolve global sigma indices for every resolution transition."""
-    if config.transition_mode == "explicit":
-        return config.transition_steps
-
-    if H_full is None or W_full is None:
-        H_full, W_full = config.full_latent_h, config.full_latent_w
-
-    omega_max = min(H_full, W_full) / 2.0
-    steps = []
-    for scale in config.scales[:-1]:
-        power = power_at_frequency(
-            scale * omega_max,
-            config.noise_amplitude,
-            config.noise_decay_exponent,
-        )
-        threshold = activation_threshold(power, config.delta)
-        steps.append(_find_first_step_below(sigmas, threshold))
-    return tuple(steps)
-
-
 def _coupled_transition(
     internal_video,
     full_noise_video,
@@ -331,7 +277,6 @@ def run_speed_pipeline(
     )
     stage_start_latent = pack_latent(coarse_video, torch.zeros_like(full_audio))
 
-    full_noise = None
     full_noise_video = None
     if config.noise_policy == "coupled_full_grid":
         full_noise = noise.generate_noise(latent)
