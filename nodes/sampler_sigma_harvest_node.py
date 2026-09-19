@@ -41,14 +41,12 @@ class MiniMaxH3HarvestToConfig:
     """Measure one native sampler run and return an Automatic calibration."""
 
     DESCRIPTION = (
-        "Sigma Harvest — run this on a full-res native sampler generation to "
-        "calibrate the Automatic sampler. Re-run it when the sampler, model, "
-        "scheduler, step count, or other denoising behavior changes. It is an empirical H3 residual "
-        "calibration: it measures how the residual (x - denoised) falls off with "
-        "frequency (P = A·|ω|^-beta) and gives you A/beta to paste into the "
-        "Automatic node. It does NOT measure the clean-data power spectrum from "
-        "the SPEED paper. Does NOT use SPEED — it must run at full res with a "
-        "fixed sigma schedule."
+        "Sigma Harvest calibrates Automatic from one native full-resolution "
+        "sampler run. Re-run it when the sampler, model, scheduler, step count, "
+        "or denoising behavior changes. It fits the residual spectrum "
+        "(x - denoised) to P = A·|ω|^-beta and returns A/beta for Automatic. "
+        "The calibration basis is the H3 residual spectrum, separate from the "
+        "clean-data spectrum in the SPEED paper."
     )
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")
@@ -209,14 +207,14 @@ class MiniMaxH3HarvestToConfig:
         else:
             H_full, W_full = map(int, video_stream.shape[-2:])
 
-        # Keep plain Python sigma values for the reference transition report.
+        # Convert sigmas once for the transition report.
         try:
             sigmas_list = [float(s) for s in sigmas]
         except Exception:
             sigmas_list = [float(sigmas[i]) for i in range(len(sigmas))]
 
-        # Automatic only needs A, beta, and delta. It calculates transition
-        # steps from the live sigma schedule.
+        # Automatic uses A, beta, and delta to calculate transition steps
+        # from the live sigma schedule.
         calibration = {
             "schema_version": 2,
             "noise_amplitude": A,
@@ -225,12 +223,11 @@ class MiniMaxH3HarvestToConfig:
             "r2": r2,
             "health": health,
             "sampler_name": sampler_name,
-            # This fit measures x - denoised, not the clean x0 spectrum.
+            # This fit measures x - denoised; x0 uses a different calibration basis.
             "measurement_basis": "residual_x_minus_denoised",
             "calibration_kind": "empirical_h3_residual_fit",
         }
 
-        # Add the values a user actually needs to copy into Automatic.
         lines = [
             f"Empirical H3 residual calibration ({sampler_name}): noise_amplitude={A:.4f}  noise_decay_exponent={beta:.4f}  r²={r2:.4f}  health={health}",
         ]
