@@ -2,6 +2,20 @@
 
 This file is the source of truth for how this pack is intended to be used, developed, and maintained.
 
+## V2 Release Contract
+
+V2 is the major-release boundary for the multi-sampler/runtime rewrite. The public pack still ships exactly three nodes, but V2 expands the supported sampler surface and replaces most of the V1 execution/planning internals.
+
+Release-level invariants:
+
+- Existing Automatic and Manual calls that omit `sampler_name` continue to run Euler.
+- Existing Automatic/Manual inputs keep their order; sampler selection is appended rather than inserted between old widgets.
+- The three public node IDs remain stable.
+- Euler remains the reference path for baked calibration and benchmark evidence.
+- RES Multistep is deterministic, run-scoped, and reset-only at resolution boundaries. There is no history-mode widget.
+- `direct_coarse` remains the default noise policy. `coupled_full_grid` remains available as a deterministic full-grid coupling/ablation path, not as a claimed quality preset.
+- Internal `speed_scripts` APIs may break from V1 where required by the planner/runtime split; see `CHANGELOG.md` for migration details.
+
 ## Three Nodes
 
 The pack ships exactly three ComfyUI nodes:
@@ -10,7 +24,7 @@ The pack ships exactly three ComfyUI nodes:
 
 2. **`MiniMaxH3SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `resolution` is the stage scale in both modes. `ratio_mode steps` = goal is a step index (whole numbers only), `ratio` = goal is a 0-1 fraction of the schedule; the boundary is placed at `round(goal * total_steps)`. Used to copy paper schedules or test custom ladders.
 
-3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-resolution pass with the selected sampler (NOT the SPEED chain), captures `residual = x - denoised` per step, fits the radial DCT power spectrum `P = A·|ω|^-β`, and emits a flat sampler-specific `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the matching Automatic configuration. Run it when you change checkpoint, sampler, LoRA/addons, or the sigma schedule.
+3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-resolution pass with the selected sampler (NOT the SPEED chain), computes `residual = x - denoised` per step, immediately reduces each residual to a CPU radial DCT power profile, fits `P = A·|ω|^-β`, and emits a flat sampler-specific `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the matching Automatic configuration. Run it when you change checkpoint, sampler, LoRA/addons, or the sigma schedule.
 
 ## Sigma Harvest: Selected native sampler
 
@@ -25,6 +39,11 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 ## Sampler architecture
 
 Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that clears all previous-step RES history at every SPEED stage boundary. There is no history-mode widget or switch. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
+
+## Noise policies
+
+- **`direct_coarse`** — default. Starts on coarse Gaussian noise and fills newly exposed frequency bands from deterministic transition-seeded Gaussian noise.
+- **`coupled_full_grid`** — builds one seeded full-resolution Gaussian field, transforms it once to spectral coefficients, and reuses the relevant coefficient bands at each resolution transition. Its purpose is deterministic coupling to one full-grid realization and parity/ablation work. V2 does not claim it is generally sharper or higher quality than `direct_coarse`.
 
 ## Development Conventions
 
