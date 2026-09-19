@@ -2,7 +2,8 @@
 
 Native full-res sampler pass over the full sigma schedule using
 `guider.sample()` (not the SPEED chain), snapshots `residual = x - denoised`
-on each step, fits the radial DCT power spectrum `P = A * |omega|^(-beta)`,
+on each step, immediately reduces it to a radial DCT power profile, then fits
+`P = A * |omega|^(-beta)`,
 and emits a flat `calibration` JSON (schema_version, sampler_name,
 noise_amplitude,
 noise_decay_exponent, delta, r2, health, measurement_basis,
@@ -22,12 +23,13 @@ import json
 import comfy.samplers
 import comfy.utils
 import numpy as np
-import torch
 
 from speed_scripts.harvest import (
-    radial_dct_power,
-    fit_power_law,
     classify_fit_quality,
+    compute_video_residual,
+    extract_video_stream,
+    fit_power_law,
+    radial_dct_power,
 )
 from speed_scripts.planning import activation_threshold, power_at_frequency
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
@@ -88,22 +90,26 @@ class MiniMaxH3HarvestToConfig:
                 kwargs.get("delta", kwargs.get("Delta", 0.01)))))
         delta = float(delta)
 
-        residual_snapshots = []
+        capture_count = 0
+        freqs_all = []
+        profiles_all = []
 
-        def _capture(sigma_val, step_idx, x_current, denoised_est):
-            """Record one residual snapshot from (sigma, step, x, denoised)."""
+        def _capture(x_current, denoised_est):
+            """Reduce one residual to its CPU spectral profile immediately."""
+            nonlocal capture_count
             try:
-                residual = self.compute_video_residual(x_current, denoised_est)
+                residual = compute_video_residual(x_current, denoised_est)
             except Exception:
-                residual = None
-            if residual is not None:
-                residual_snapshots.append(
-                    {
-                        "step_index": int(step_idx),
-                        "sigma": float(sigma_val),
-                        "residual_video": residual,
-                    }
-                )
+                return
+            if residual is None:
+                return
+            capture_count += 1
+            try:
+                freqs, profile = radial_dct_power(residual)
+            except Exception:
+                return
+            freqs_all.append(freqs)
+            profiles_all.append(profile)
 
         # ComfyUI callback signatures across versions:
         #  - dict-arg: callback({"x", "i"/"step", "sigma", "denoised"})     (newer)
@@ -112,24 +118,13 @@ class MiniMaxH3HarvestToConfig:
         def _compat_callback(*args, **kwargs):
             if len(args) == 1 and isinstance(args[0], dict):
                 info = args[0]
-                return _capture(
-                    info.get("sigma", 0.0),
-                    info.get("i", info.get("step", 0)),
-                    info.get("x"),
-                    info.get("denoised"),
-                )
+                return _capture(info.get("x"), info.get("denoised"))
             if "sigma" in kwargs and "denoised" in kwargs:
-                return _capture(
-                    kwargs.get("sigma", 0.0),
-                    kwargs.get("i", kwargs.get("step", 0)),
-                    kwargs.get("x"),
-                    kwargs.get("denoised"),
-                )
+                return _capture(kwargs.get("x"), kwargs.get("denoised"))
             # Legacy positional: (step, denoised, x, total_steps)
             if len(args) >= 3:
-                step, denoised, x = args[0], args[1], args[2]
-                sigma_val = float(sigmas[step]) if step < len(sigmas) else 0.0
-                return _capture(sigma_val, step, x, denoised)
+                _step, denoised, x = args[0], args[1], args[2]
+                return _capture(x, denoised)
 
         # ComfyUI LATENT is always {"samples": <tensor>}; the fallback to the
         # raw input is paranoia for old test fakes that pass a tensor directly.
@@ -168,7 +163,7 @@ class MiniMaxH3HarvestToConfig:
                 latent_image,
             )
 
-        if not residual_snapshots:
+        if capture_count == 0:
             return (
                 _error_json(
                     "no_captures",
@@ -179,41 +174,19 @@ class MiniMaxH3HarvestToConfig:
                 latent_image,
             )
 
-        freqs_all, profiles_all = [], []
-        for cap in residual_snapshots:
-            residual_video = cap.get("residual_video")
-            if residual_video is not None and hasattr(residual_video, "shape"):
-                try:
-                    f, prof = radial_dct_power(residual_video)
-                    freqs_all.append(f)
-                    profiles_all.append(prof)
-                except Exception:
-                    continue
-
-        if not freqs_all:
+        if not profiles_all:
             return (
                 _error_json(
                     "no_spectral_profiles",
                     "Captured residuals produced no valid spectral profiles — residual may be zero or non-physical.",
                     sampler_name=sampler_name,
-                    n_captures=len(residual_snapshots),
+                    n_captures=capture_count,
                 ),
                 latent_image,
             )
 
-        max_len = max(len(p) for p in profiles_all)
-        padded = []
-        for prof in profiles_all:
-            if len(prof) < max_len:
-                pad = np.zeros(max_len, dtype=float)
-                pad[: len(prof)] = prof.astype(float)
-                padded.append(pad)
-            else:
-                padded.append(prof.astype(float))
-        profile_mean = np.mean(np.stack(padded, axis=0), axis=0)
+        profile_mean = np.mean(np.stack(profiles_all, axis=0), axis=0)
         freqs_mean = freqs_all[0]
-        if len(freqs_mean) < max_len:
-            freqs_mean = np.arange(max_len)
 
         try:
             fit = fit_power_law(freqs_mean, profile_mean)
@@ -223,7 +196,7 @@ class MiniMaxH3HarvestToConfig:
                     "fit_failed",
                     f"Power-law fit failed: {exc}",
                     sampler_name=sampler_name,
-                    n_captures=len(residual_snapshots),
+                    n_captures=capture_count,
                 ),
                 latent_image,
             )
@@ -233,25 +206,11 @@ class MiniMaxH3HarvestToConfig:
         r2 = float(fit["r_squared"])
         health = classify_fit_quality(fit)
 
-        full_video_shape = None
-        try:
-            samples = latent_tensor
-            if hasattr(samples, "is_nested") and samples.is_nested:
-                video_stream = [s for s in samples.unbind() if s.ndim == 5]
-                if video_stream:
-                    full_video_shape = list(video_stream[0].shape)
-            elif isinstance(samples, torch.Tensor):
-                full_video_shape = list(samples.shape)
-        except Exception:
-            full_video_shape = None
-
-        if full_video_shape is not None:
-            try:
-                H_full, W_full = full_video_shape[-2], full_video_shape[-1]
-            except (IndexError, TypeError):
-                H_full, W_full = 64, 64
-        else:
+        video_stream = extract_video_stream(latent_tensor)
+        if video_stream is None:
             H_full, W_full = 64, 64
+        else:
+            H_full, W_full = map(int, video_stream.shape[-2:])
 
         # sigmas_list not needed for plug-and-play, but keep for debugging if needed
         try:
@@ -328,23 +287,8 @@ class MiniMaxH3HarvestToConfig:
         return (output_json, output_latent)
 
     def compute_video_residual(self, x_tensor, denoised_tensor):
-        def extract_video_stream(t):
-            if hasattr(t, "is_nested") and t.is_nested:
-                vids = [s for s in t.unbind() if s.ndim == 5]
-                return vids[0] if vids else None
-            if isinstance(t, torch.Tensor) and t.ndim == 5:
-                return t
-            return None
-
-        x_vid = extract_video_stream(x_tensor)
-        d_vid = extract_video_stream(denoised_tensor)
-        if x_vid is not None and d_vid is not None:
-            return x_vid - d_vid
-        if isinstance(x_tensor, torch.Tensor) and isinstance(denoised_tensor, torch.Tensor):
-            if x_tensor.shape == denoised_tensor.shape and x_tensor.ndim == 5:
-                return x_tensor - denoised_tensor
-        return None
-
+        """Compatibility wrapper around the shared harvest helper."""
+        return compute_video_residual(x_tensor, denoised_tensor)
 
 NODE_CLASS_MAPPINGS = {"MiniMaxH3HarvestToConfig": MiniMaxH3HarvestToConfig}
 NODE_DISPLAY_NAME_MAPPINGS = {
