@@ -402,9 +402,7 @@ def test_first_real_interval_after_transition_rebuilds_history():
 
 
 def test_on_transition_never_touches_reentry_or_conditioning_tensors():
-    """The hook owns history only. The noisy re-entry and conditioning tensors
-    are aliased into the history itself: any write-through on the stored
-    history would surface in the aliases and fail the byte-identical check."""
+    """The transition hook clears RES history without changing re-entry or conditioning tensors."""
     reentry = torch.randn(1, 1, 2, 4, 4)
     conditioning = torch.randn(1, 1, 2, 4, 4)
     reentry_snapshot = reentry.clone()
