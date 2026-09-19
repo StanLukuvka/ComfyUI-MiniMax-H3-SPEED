@@ -38,6 +38,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Removed
 
+- Removed the legacy `speed_scripts/automatic_config.py` compatibility module and guider walker marker.
 - Removed V1 Automatic preset names; Automatic now uses only the explicit `stages` selector.
 - Removed the old `nodes_common.py` helper layer.
 - Removed cached full latent width and height from `SpeedConfig`.
