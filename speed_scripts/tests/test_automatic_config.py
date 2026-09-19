@@ -6,7 +6,6 @@ import pytest
 
 from conftest import make_latent
 from speed_scripts.automatic_config import (
-    PRESET_TO_STAGES,
     STAGES_TO_SCALES,
     build_automatic_speed_config,
 )
@@ -92,8 +91,11 @@ def test_node_forwards_generation_configuration_to_shared_builder(monkeypatch):
     assert four_digit.noise_decay_exponent == 0.7732
 
 
-def test_legacy_aliases_still_resolve(monkeypatch):
-    assert PRESET_TO_STAGES["quarter_half_3q_full"] == 4
-    assert _capture_node_config(monkeypatch, preset="quarter_half_3q_full").scales == STAGES_TO_SCALES[4]
+def test_removed_preset_argument_fails_clearly(monkeypatch):
+    with pytest.raises(TypeError, match="presets were removed"):
+        _capture_node_config(monkeypatch, preset="quarter_half_3q_full")
+
+
+def test_tolerance_aliases_still_resolve(monkeypatch):
     assert _capture_node_config(monkeypatch, delta=0.03).delta == pytest.approx(0.03)
     assert _capture_node_config(monkeypatch, **{"Tolerance (Delta)": 0.02}).delta == pytest.approx(0.02)
