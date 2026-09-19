@@ -13,14 +13,6 @@ STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
     4: (0.25, 0.5, 0.75, 1.0),
 }
 
-PRESET_TO_STAGES: dict[str, int] = {
-    "half_then_full": 2,
-    "three_quarter_then_full": 2,
-    "quarter_half_full": 3,
-    "aggressive": 3,
-    "quarter_half_3q_full": 4,
-}
-
 
 def stage_resolution(
     config: SpeedConfig,
@@ -181,7 +173,6 @@ def build_manual_speed_config(
 
 __all__ = [
     "STAGES_TO_SCALES",
-    "PRESET_TO_STAGES",
     "stage_resolution",
     "power_at_frequency",
     "activation_threshold",
