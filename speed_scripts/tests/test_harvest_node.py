@@ -78,7 +78,7 @@ def test_input_contract_uses_shared_sampler_dropdown_and_signature():
     assert list(required) == ["noise", "guider", "sigmas", "latent_image", "sampler_name"]
     assert optional["Tolerance (Delta)"][1]["default"] == 0.005
     assert list(inspect.signature(cls.harvest).parameters)[5] == "sampler_name"
-    assert inspect.signature(cls.harvest).parameters["sampler_name"].default == "euler"
+    assert inspect.signature(cls.harvest).parameters["sampler_name"].default is inspect.Parameter.empty
 
 
 @pytest.mark.parametrize("sampler_name", SUPPORTED_SPEED_SAMPLERS)
