@@ -52,7 +52,7 @@ def activation_threshold(power: float, delta: float) -> float:
     return 1.0 / (1.0 + math.sqrt(delta / (power * (1.0 + power - delta))))
 
 
-def _find_first_step_below(sigmas, threshold: float) -> int:
+def find_first_step_below(sigmas, threshold: float) -> int:
     values = [float(sigma) for sigma in sigmas]
     last = len(values) - 1
     for index in range(last):
@@ -82,7 +82,7 @@ def resolve_transition_steps(
             config.noise_decay_exponent,
         )
         threshold = activation_threshold(power, config.delta)
-        steps.append(_find_first_step_below(sigmas, threshold))
+        steps.append(find_first_step_below(sigmas, threshold))
     return tuple(steps)
 
 
@@ -184,6 +184,7 @@ __all__ = [
     "stage_resolution",
     "power_at_frequency",
     "activation_threshold",
+    "find_first_step_below",
     "resolve_transition_steps",
     "validate_transition_steps",
     "build_automatic_speed_config",
