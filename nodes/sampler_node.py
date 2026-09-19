@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import comfy.samplers
+import comfy.utils
 
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.planning import PRESET_TO_STAGES, build_automatic_speed_config
@@ -107,7 +107,6 @@ class MiniMaxH3SPEEDSampler:
             config,
             sampler_name=sampler_name,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
-            output_device=None,
         )
 
 

@@ -4,6 +4,7 @@ import pytest
 
 from speed_scripts.config import SpeedConfig
 from speed_scripts.h3_runtime import resolve_sigma_shifts
+from speed_scripts.planning import activation_threshold, power_at_frequency
 
 
 def test_h3_sigma_shifts_win_over_generic_comfy_sampling_shift():
@@ -38,8 +39,6 @@ def test_non_h3_model_is_rejected_instead_of_using_generic_shift():
 
 def test_power_spectrum_activation_math_matches_reference_equations():
     import math
-    from speed_scripts.h3_runtime import activation_threshold, power_at_frequency
-
     omega, amplitude, beta, delta = 8.0, 12.5, 1.8, .01
     power = power_at_frequency(omega, amplitude, beta)
     assert power == pytest.approx(amplitude * abs(omega) ** (-beta))

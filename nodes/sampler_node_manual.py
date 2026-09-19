@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import comfy.samplers
 import comfy.utils
 
 from speed_scripts.config import RATIO_MODES
@@ -110,7 +109,6 @@ class MiniMaxH3SPEEDSamplerManual:
             config,
             sampler_name=sampler_name,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
-            output_device=None,
         )
 
 
