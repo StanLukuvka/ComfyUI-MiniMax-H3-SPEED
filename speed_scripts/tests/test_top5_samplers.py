@@ -39,8 +39,6 @@ from speed_scripts.sampler_support import (
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
 
-# FLOW-PRODUCED: native stateless sampler coverage.
-
 #: The three non-Euler stateless samplers added on top of the Euler anchor.
 NEW_SAMPLERS = ("heun", "dpm_2", "exp_heun_2_x0")
 
