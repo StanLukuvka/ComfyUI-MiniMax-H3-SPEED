@@ -119,7 +119,7 @@ For the Manual node, `ratio_mode = steps` treats each goal as a global step inde
 
 ## V2 major release
 
-V2 updates the SPEED node and reworks several parts of the implementation.
+V2 updates the SPEED nodes and reworks several parts of the implementation.
 
 The biggest change is **sampler support**. SPEED is no longer tied to Euler: V2 supports Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep. The stateless samplers can use ComfyUI's normal sampler objects, but RES needs special handling because it remembers previous steps. That history is only valid while the latent grid stays the same, so V2 clears it whenever SPEED changes resolution instead of carrying stale state into a different-sized stage.
 
@@ -137,7 +137,7 @@ Progress and previews now behave like **one generation** instead of several unre
 
 I kept both noise policies for now. `direct_coarse` is still the default. I am not convinced `coupled_full_grid` is doing anything useful anymore, but I also cannot confirm that removing it would not make some cases worse, so I left it in. V2 at least avoids recomputing the same full-grid DCT at every transition.
 
-See **[CHANGELOG.md](CHANGELOG.md)** for the detailed API-level changes from the point where I started keeping track.
+See **[CHANGELOG.md](CHANGELOG.md)** for the detailed API-level changes from the point where I started tracking them.
 
 ## License
 
