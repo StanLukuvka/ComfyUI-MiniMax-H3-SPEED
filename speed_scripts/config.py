@@ -1,4 +1,4 @@
-"""Validated runtime configuration for the MiniMax-H3 SPEED sampler."""
+"""Validated settings for one SPEED run."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ RATIO_MODES = ("steps", "ratio")
 
 @dataclass(frozen=True)
 class SpeedConfig:
-    """Multi-stage progressive-resolution SPEED configuration."""
+    """Settings for the SPEED stage schedule and transitions."""
 
     scales: tuple[float, ...] = (0.5, 1.0)
     transition_steps: tuple[int, ...] = (5,)
@@ -26,7 +26,7 @@ class SpeedConfig:
     delta: float = 0.01
     noise_amplitude: float = 12.105
     noise_decay_exponent: float = 0.773
-    # Optional temporal ladder; when provided it must end at full temporal resolution.
+    # Optional time scale for each stage. The final stage must use full time resolution.
     temporal_scales: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
@@ -54,8 +54,7 @@ class SpeedConfig:
                     f"transition steps must be strictly increasing: got {list(steps)}"
                 )
         else:
-            # delta_custom computes boundaries from the sigma schedule at runtime;
-            # there is no reason to carry placeholder transition indices.
+            # Automatic mode calculates its transition steps from the live sigma schedule.
             steps = ()
 
         if not 0.0 < self.delta < 1.0:
