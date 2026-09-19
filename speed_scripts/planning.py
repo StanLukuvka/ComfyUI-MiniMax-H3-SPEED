@@ -64,15 +64,12 @@ def _find_first_step_below(sigmas, threshold: float) -> int:
 def resolve_transition_steps(
     config: SpeedConfig,
     sigmas,
-    H_full: int | None = None,
-    W_full: int | None = None,
+    H_full: int,
+    W_full: int,
 ) -> tuple[int, ...]:
     """Resolve global sigma indices for every resolution transition."""
     if config.transition_mode == "explicit":
         return config.transition_steps
-
-    if H_full is None or W_full is None:
-        H_full, W_full = config.full_latent_h, config.full_latent_w
 
     omega_max = min(H_full, W_full) / 2.0
     steps = []
@@ -85,17 +82,6 @@ def resolve_transition_steps(
         threshold = activation_threshold(power, config.delta)
         steps.append(_find_first_step_below(sigmas, threshold))
     return tuple(steps)
-
-
-def full_res_dims(latent_image) -> tuple[int, int]:
-    """Return the live full-resolution H/W from an H3 latent."""
-    # Local import keeps planning pure at module-import time while reusing the
-    # runtime's authoritative H3 nested-latent validation.
-    from .h3_runtime import unpack_latent
-
-    samples = latent_image["samples"] if isinstance(latent_image, dict) else latent_image
-    video, _ = unpack_latent(samples)
-    return int(video.shape[-2]), int(video.shape[-1])
 
 
 def validate_transition_steps(transition_steps, n_sigmas: int) -> None:
@@ -113,7 +99,6 @@ def validate_transition_steps(transition_steps, n_sigmas: int) -> None:
 
 
 def build_automatic_speed_config(
-    latent_image,
     *,
     stages,
     noise_policy,
@@ -123,7 +108,6 @@ def build_automatic_speed_config(
     seed_offset,
 ) -> SpeedConfig:
     """Build the runtime config used by the Automatic node."""
-    full_h, full_w = full_res_dims(latent_image)
     return SpeedConfig(
         scales=STAGES_TO_SCALES[stages],
         transition_steps=(),
@@ -133,13 +117,10 @@ def build_automatic_speed_config(
         noise_amplitude=float(noise_amplitude),
         noise_decay_exponent=float(noise_decay_exponent),
         transition_seed_offset=int(seed_offset),
-        full_latent_h=full_h,
-        full_latent_w=full_w,
     )
 
 
 def build_manual_speed_config(
-    latent_image,
     sigmas,
     *,
     transitions,
@@ -205,7 +186,6 @@ __all__ = [
     "power_at_frequency",
     "activation_threshold",
     "resolve_transition_steps",
-    "full_res_dims",
     "validate_transition_steps",
     "build_automatic_speed_config",
     "build_manual_speed_config",
