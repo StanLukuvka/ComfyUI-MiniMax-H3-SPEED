@@ -29,8 +29,8 @@ class _ConditionLatent:
         return cls(holder=holder, pristine=latent.clone())
 
     def resize(self, height: int, width: int) -> None:
-        # H3 uses 2x2 latent patches. ComfyUI pads the main video to an even
-        # size, but not keyframes, so round keyframes up to the same grid.
+        # H3 uses 2x2 latent patches. Round keyframes to the same even grid
+        # ComfyUI uses for the main video latent.
         height += height % 2
         width += width % 2
         current = self.holder.get("latent")
@@ -75,8 +75,8 @@ def _resize_condition(latent: torch.Tensor, height: int, width: int) -> torch.Te
 class LatentWalker:
     """Keep the original keyframes for one generation.
 
-    Every resize starts from the original tensor, so stage changes do not
-    accumulate interpolation loss. Reference latents are never resized.
+    Every resize starts from the original tensor, preventing interpolation
+    loss across stage changes. Reference latents stay at full resolution.
     """
 
     def __init__(self, guider):
