@@ -8,8 +8,6 @@ V2 is the major-release boundary for the multi-sampler/runtime rewrite. The publ
 
 Release-level invariants:
 
-- Existing Automatic and Manual calls that omit `sampler_name` continue to run Euler.
-- Existing Automatic/Manual inputs keep their order; sampler selection is appended rather than inserted between old widgets.
 - The three public node IDs remain stable.
 - Euler remains the reference path for baked calibration and benchmark evidence.
 - RES Multistep is deterministic, run-scoped, and reset-only at resolution boundaries. There is no history-mode widget.
