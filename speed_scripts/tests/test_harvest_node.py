@@ -113,11 +113,16 @@ def test_harvest_uses_selected_native_sampler_and_emits_identity(monkeypatch, sa
 
     report_lines = calibration["report"].splitlines()
     assert sampler_name in report_lines[0]
-    paste_line = next(line for line in report_lines if line.startswith("Paste into SPEED Sampler:"))
-    assert f"sampler_name={sampler_name}" in paste_line
-    assert "noise_amplitude=" + format(calibration["noise_amplitude"], ".4f") in paste_line
-    assert "noise_decay_exponent=" + format(calibration["noise_decay_exponent"], ".4f") in paste_line
-    assert "Tolerance (Delta)=" + format(calibration["delta"], ".3f") in paste_line
+    if calibration["noise_decay_exponent"] > 0 and calibration["health"] != "invalid":
+        paste_line = next(
+            line for line in report_lines if line.startswith("Paste into SPEED Sampler:")
+        )
+        assert f"sampler_name={sampler_name}" in paste_line
+        assert "noise_amplitude=" + format(calibration["noise_amplitude"], ".4f") in paste_line
+        assert "noise_decay_exponent=" + format(calibration["noise_decay_exponent"], ".4f") in paste_line
+        assert "Tolerance (Delta)=" + format(calibration["delta"], ".3f") in paste_line
+    else:
+        assert "Do not paste this calibration into Automatic" in calibration["report"]
 
 
 def test_harvest_reduces_each_residual_during_callback(monkeypatch):
@@ -150,6 +155,7 @@ def test_harvest_reduces_each_residual_during_callback(monkeypatch):
     text, _ = _harvest(cls, StreamingGuider(), "euler")
     assert "error" not in json.loads(text)
     assert len(reduced) == 19
+
 
 def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
     module = importlib.import_module("sampler_sigma_harvest_node")
