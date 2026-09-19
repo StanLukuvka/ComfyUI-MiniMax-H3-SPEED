@@ -17,6 +17,7 @@ def _capture_node_config(monkeypatch, **overrides):
         return latent_image, latent_image
 
     monkeypatch.setattr(mod, "run_speed_pipeline", fake_pipeline)
+    overrides.setdefault("sampler_name", "euler")
     mod.MiniMaxH3SPEEDSampler().sample(
         noise=object(),
         guider=type("Guider", (), {})(),
