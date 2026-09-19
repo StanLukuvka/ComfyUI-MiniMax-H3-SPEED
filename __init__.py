@@ -1,16 +1,7 @@
-"""ComfyUI custom node package for MiniMax H3 SPEED.
+"""Register the MiniMax-H3 SPEED nodes with ComfyUI.
 
-ComfyUI loads this directory as a package via ``importlib.util.spec_from_file_location``,
-which does NOT put this directory on ``sys.path``. We add it explicitly so the
-node-class modules are importable by name — the exact same pattern ComfyUI
-itself uses for its built-in nodes.
-
-Layout:
-
-- ``nodes/`` — one file per ComfyUI node (flat, imported by name).
-- ``speed_scripts/`` — the core SPEED library package (config, flow, spectral,
-  harvest, h3_runtime). The repository root is added to ``sys.path`` so the
-  ``from speed_scripts... import ...`` imports inside the node files resolve.
+ComfyUI does not add this package or ``nodes/`` to ``sys.path``, so add
+both before importing the node modules by name.
 """
 
 import importlib
@@ -18,9 +9,7 @@ import os
 import sys
 import traceback
 
-# Ensure our directory is on sys.path so flat node-module imports resolve
-# when ComfyUI imports this module (it loads siblings by flat name, NOT by
-# package path).
+# ComfyUI imports the node files by name, so both folders must be importable.
 _NODE_DIR = os.path.dirname(os.path.abspath(__file__))
 _NODES_DIR = os.path.join(_NODE_DIR, "nodes")
 for _p in (_NODE_DIR, _NODES_DIR):
@@ -40,10 +29,7 @@ def _register(_mod, _name):
     print("Registered %-28s %s" % (_name, ", ".join(sorted(_mappings)) or "(nothing exported)"))
 
 
-# All nodes — flat files under nodes/.
-# sampler_node = automatic (delta_custom, baked conservative fit)
-# sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
-# sampler_sigma_harvest_node = native selected-sampler power-law calibration
+# The pack exposes exactly these three node modules.
 _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",
