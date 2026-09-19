@@ -1,7 +1,7 @@
 """Create the sampler used by SPEED.
 
-Most samplers use ComfyUI directly. RES needs extra per-generation state, so
-its wrapper also clears RES history whenever SPEED changes resolution.
+Native ComfyUI samplers are used directly. RES keeps per-generation history
+and clears it at every resolution change.
 """
 
 from dataclasses import dataclass
@@ -19,7 +19,7 @@ SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + ("res_multistep",)
 
 
 class SamplerCapability(Enum):
-    """How much state a sampler keeps between steps."""
+    """State carried by a sampler between steps."""
 
     STATELESS_STEP_LOCAL = "stateless_step_local"
     SINGLE_HISTORY = "single_history"
@@ -76,7 +76,7 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
 
 
 def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
-    """Create the sampler for this generation and reject unsupported names."""
+    """Create the sampler for this generation."""
     if sampler_name not in SUPPORTED_SPEED_SAMPLERS:
         supported = ", ".join(repr(name) for name in SUPPORTED_SPEED_SAMPLERS)
         raise ValueError(
