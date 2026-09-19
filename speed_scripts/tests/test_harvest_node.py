@@ -240,3 +240,38 @@ def test_error_json_escapes_exception_text(monkeypatch, error_kind):
     assert error["error"] == error_kind
     assert message in error["message"]
     assert error["sampler_name"] == "dpm_2"
+
+
+def test_harvest_surfaces_first_residual_capture_failure(monkeypatch, caplog):
+    module = importlib.import_module("sampler_sigma_harvest_node")
+    cls = module.MiniMaxH3HarvestToConfig
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("residual exploded")
+
+    monkeypatch.setattr(module, "compute_video_residual", explode)
+    with caplog.at_level("WARNING", logger=module.__name__):
+        text, _ = _harvest(cls, Guider(), "euler")
+
+    error = json.loads(text)
+    assert error["error"] == "no_captures"
+    assert "residual exploded" in error["message"]
+    assert sum("residual capture failed" in record.message for record in caplog.records) == 1
+
+
+def test_harvest_surfaces_first_profile_reduction_failure(monkeypatch, caplog):
+    module = importlib.import_module("sampler_sigma_harvest_node")
+    cls = module.MiniMaxH3HarvestToConfig
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("profile exploded")
+
+    monkeypatch.setattr(module, "radial_dct_power", explode)
+    with caplog.at_level("WARNING", logger=module.__name__):
+        text, _ = _harvest(cls, Guider(), "euler")
+
+    error = json.loads(text)
+    assert error["error"] == "no_spectral_profiles"
+    assert "profile exploded" in error["message"]
+    assert error["n_captures"] > 0
+    assert sum("spectral profile reduction failed" in record.message for record in caplog.records) == 1
