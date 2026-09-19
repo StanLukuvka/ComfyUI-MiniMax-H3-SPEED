@@ -1,10 +1,10 @@
 """Use deterministic RES Multistep across SPEED stages.
 
-ComfyUI normally keeps RES history inside one sampler call. SPEED uses several
-sampler calls, so this adapter stores that history explicitly. History is
-cleared whenever SPEED changes resolution, then RES starts building it again.
+ComfyUI keeps RES history inside one sampler call. SPEED spans several calls,
+so this adapter stores that history explicitly. Each resolution change clears
+the history before RES starts again.
 
-Only deterministic RES is supported here: no ancestral sampling, SDE, or CFG++.
+This adapter supports deterministic RES: no ancestral sampling, SDE, or CFG++.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import torch
 
 
 def _host_ksampler_class():
-    """Load ComfyUI's ``KSAMPLER`` only when RES is used."""
+    """Load ComfyUI's ``KSAMPLER`` for the RES adapter."""
     try:
         from comfy.samplers import KSAMPLER
     except Exception:
