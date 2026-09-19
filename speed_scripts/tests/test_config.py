@@ -1,7 +1,5 @@
 """SpeedConfig validation contracts."""
 
-import math
-
 import pytest
 
 from speed_scripts.config import SpeedConfig
