@@ -14,7 +14,6 @@ Layout (after the reorganise-folder-structure commit):
 """
 
 import importlib
-import logging
 import os
 import sys
 import traceback
