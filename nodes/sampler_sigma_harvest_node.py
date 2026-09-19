@@ -17,6 +17,7 @@ spectrum from the SPEED paper.
 from __future__ import annotations
 
 import json
+import logging
 
 import comfy.samplers
 import comfy.utils
@@ -35,6 +36,9 @@ from speed_scripts.planning import (
     power_at_frequency,
 )
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
+
+
+log = logging.getLogger(__name__)
 
 
 def _error_json(error, message, **fields):
@@ -94,20 +98,34 @@ class MiniMaxH3HarvestToConfig:
         capture_count = 0
         freqs_all = []
         profiles_all = []
+        first_residual_error = None
+        first_profile_error = None
 
         def _capture(x_current, denoised_est):
             """Reduce one residual to its CPU spectral profile immediately."""
-            nonlocal capture_count
+            nonlocal capture_count, first_residual_error, first_profile_error
             try:
                 residual = compute_video_residual(x_current, denoised_est)
-            except Exception:
+            except Exception as exc:
+                if first_residual_error is None:
+                    first_residual_error = exc
+                    log.warning(
+                        "[SPEED-harvest] residual capture failed; later repeats suppressed: %r",
+                        exc,
+                    )
                 return
             if residual is None:
                 return
             capture_count += 1
             try:
                 freqs, profile = radial_dct_power(residual)
-            except Exception:
+            except Exception as exc:
+                if first_profile_error is None:
+                    first_profile_error = exc
+                    log.warning(
+                        "[SPEED-harvest] spectral profile reduction failed; later repeats suppressed: %r",
+                        exc,
+                    )
                 return
             freqs_all.append(freqs)
             profiles_all.append(profile)
@@ -143,10 +161,15 @@ class MiniMaxH3HarvestToConfig:
             )
 
         if capture_count == 0:
+            message = (
+                f"Residual capture failed: {first_residual_error}"
+                if first_residual_error is not None
+                else "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup."
+            )
             return (
                 _error_json(
                     "no_captures",
-                    "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup.",
+                    message,
                     sampler_name=sampler_name,
                     n_captures=0,
                 ),
@@ -154,10 +177,15 @@ class MiniMaxH3HarvestToConfig:
             )
 
         if not profiles_all:
+            message = (
+                f"Spectral profile reduction failed: {first_profile_error}"
+                if first_profile_error is not None
+                else "Captured residuals produced no valid spectral profiles — residual may be zero or non-physical."
+            )
             return (
                 _error_json(
                     "no_spectral_profiles",
-                    "Captured residuals produced no valid spectral profiles — residual may be zero or non-physical.",
+                    message,
                     sampler_name=sampler_name,
                     n_captures=capture_count,
                 ),
