@@ -5,7 +5,7 @@ which does NOT put this directory on ``sys.path``. We add it explicitly so the
 node-class modules are importable by name — the exact same pattern ComfyUI
 itself uses for its built-in nodes.
 
-Layout (after the reorganise-folder-structure commit):
+Layout:
 
 - ``nodes/`` — one file per ComfyUI node (flat, imported by name).
 - ``speed_scripts/`` — the core SPEED library package (config, flow, spectral,
