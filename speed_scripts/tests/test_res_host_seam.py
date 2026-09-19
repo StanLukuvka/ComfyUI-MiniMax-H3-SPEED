@@ -33,9 +33,9 @@ from conftest import (
     SeededRandomNoise,
     make_latent,
 )
-from speed_scripts.automatic_config import STAGES_TO_SCALES
+from speed_scripts.planning import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
+from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.res_multistep_adapter import (
     ResMultistepSampler,
     ResMultistepState,
@@ -237,7 +237,6 @@ def test_runtime_with_cfgguider_shaped_guider_completes(monkeypatch, stages):
     assert guider.stage_entries[0] is None
     for snap in guider.stage_entries[1:]:
         assert snap is None
-    assert not hasattr(guider, _LW_ATTR)
     assert handle.state.old_denoised is None
     assert handle.state.old_sigma_down is None
     assert handle.state.prev_sigma_in is None

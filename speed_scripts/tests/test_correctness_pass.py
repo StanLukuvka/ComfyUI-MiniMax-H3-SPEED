@@ -1,13 +1,12 @@
-"""Behavioral contracts for the focused correctness pass.
+"""Behavioral contracts for core MiniMax-H3 SPEED runtime invariants.
 
-Covers the four runtime invariants that must hold before the scheduler
-rework, without touching scheduling logic itself:
+Covers four execution properties independently of transition-planning tests:
 
 1. Coupled noise follows the configured stage ladder — each transition
    expands only to the NEXT stage's grid (spatial and 3D coupled paths).
 2. `denoised_output` preserves H3's full nested video+audio latent.
 3. The I2V LatentWalker lifecycle is exception-safe: any mid-run failure
-   restores pristine conditioning latents and drops the walker.
+   restores pristine conditioning latents.
 4. The `clock_reindex_audio_state` sigma bridge is exercised end-to-end
    through a real transition (audio-transition oracle).
 """
@@ -242,13 +241,11 @@ def test_denoised_output_preserves_video_and_audio_streams():
         assert a.ndim == 4, f"{name} audio stream missing/mangled"
 
 
-def test_forced_failure_restores_pristine_and_drops_walker():
-    """A mid-run failure must restore pristine conds and remove the walker.
+def test_forced_failure_restores_pristine_conditioning():
+    """A mid-run failure must restore pristine conditioning latents.
 
     Forces the failure inside the transition (spectral expansion of stage
-    1), after stage 0 has already downscaled the keyframe latents — the
-    exact window where the pre-try/finally code leaked half-resized conds
-    and a stashed `_speed_latent_walker`.
+    1), after stage 0 has already downscaled the keyframe latents.
     """
     cfg = _cfg()
     guider = make_recording_guider()
@@ -283,12 +280,8 @@ def test_forced_failure_restores_pristine_and_drops_walker():
     finally:
         rt.spectral_expand = expanded
 
-    from speed_scripts.h3_runtime import _LW_ATTR
-
-    # 1. The walker was removed from the guider.
-    assert not hasattr(guider, _LW_ATTR), "walker left stashed on the guider"
-    # 2. Conditioning latents are back at pristine full res (not the
-    #    half-res tensors stage 0 had installed).
+    # Conditioning latents are back at pristine full res rather than the
+    # half-res tensors stage 0 had installed.
     assert kf["latent"].shape == (1, 1, 2, 8, 8), "keyframe not restored"
     assert ref["latent"].shape == (1, 1, 2, 8, 8), "ref not restored"
 
@@ -423,11 +416,3 @@ def test_audio_transition_oracle_clock_reindex_bridge():
     assert torch.count_nonzero(final_audio) > 0
     assert final_audio.shape == reentry_audio.shape
 
-
-def test_successful_run_leaves_no_walker_on_guider():
-    """Happy path: the run-scoped finally must also drop the walker."""
-    from speed_scripts.h3_runtime import _LW_ATTR
-
-    guider = make_recording_guider()
-    _run(_cfg(), guider=guider)
-    assert not hasattr(guider, _LW_ATTR)

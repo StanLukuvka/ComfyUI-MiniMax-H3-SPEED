@@ -5,7 +5,7 @@ from __future__ import annotations
 import comfy.utils
 
 from speed_scripts.h3_runtime import run_speed_pipeline
-from speed_scripts.planning import PRESET_TO_STAGES, build_automatic_speed_config
+from speed_scripts.planning import build_automatic_speed_config
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
@@ -44,11 +44,11 @@ class MiniMaxH3SPEEDSampler:
                 ),
                 "noise_amplitude": (
                     "FLOAT",
-                    {"default": 12.105, "min": 0.0, "max": 1e6, "step": 0.0001, "round": 0.0001},
+                    {"default": 12.105, "min": 0.0001, "max": 1e6, "step": 0.0001, "round": 0.0001},
                 ),
                 "noise_decay_exponent": (
                     "FLOAT",
-                    {"default": 0.773, "min": 0.0, "max": 10.0, "step": 0.0001, "round": 0.0001},
+                    {"default": 0.773, "min": 0.0001, "max": 10.0, "step": 0.0001, "round": 0.0001},
                 ),
                 "seed_offset": (
                     "INT",
@@ -67,28 +67,20 @@ class MiniMaxH3SPEEDSampler:
         guider,
         sigmas,
         latent_image,
+        sampler_name,
         stages=3,
         noise_policy="direct_coarse",
         noise_amplitude=12.105,
         noise_decay_exponent=0.773,
         seed_offset=10000,
-        sampler_name="euler",
         **kwargs,
     ):
-        delta = kwargs.get(
-            "Tolerance (Delta)",
-            kwargs.get(
-                "Tolerance",
-                kwargs.get("tolerance", kwargs.get("delta", kwargs.get("Delta", 0.005))),
-            ),
-        )
-        if "preset" in kwargs:
-            stages = PRESET_TO_STAGES.get(kwargs.pop("preset"), stages)
-        try:
-            stages = int(stages)
-        except Exception:
-            stages = 3
-        stages = max(2, min(4, stages))
+        delta = kwargs.pop("Tolerance (Delta)", 0.005)
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"Unexpected Automatic option(s): {unexpected}")
+        if isinstance(stages, bool) or not isinstance(stages, int) or stages not in (2, 3, 4):
+            raise ValueError(f"stages must be exactly 2, 3, or 4; got {stages!r}")
 
         config = build_automatic_speed_config(
             stages=stages,

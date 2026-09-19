@@ -40,10 +40,6 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-# Compatibility marker for older tests/callers. The walker is now purely local
-# to one run and is never attached to the guider.
-_LW_ATTR = "_speed_latent_walker"
-
 
 class _OverrideSamplerHandle(SpeedSamplerHandle):
     """Test seam for injecting a sampler object without ComfyUI lookup."""
@@ -152,20 +148,21 @@ def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total)
 
         return callback
 
-    warned = False
+    preview_disabled = False
 
     def callback(step, x0, x, total_steps):
-        nonlocal warned
+        nonlocal preview_disabled
         capture_state["x0"] = x0
+        if preview_disabled:
+            return
         try:
             stock_cb(global_offset + step, x0, x, global_total)
         except Exception as exc:
-            if not warned:
-                warned = True
-                log.warning(
-                    "[SPEED-preview] preview callback failed (%r) — disabling updates for this run",
-                    exc,
-                )
+            preview_disabled = True
+            log.warning(
+                "[SPEED-preview] preview callback failed (%r) — disabling updates for this run",
+                exc,
+            )
 
     return callback
 
@@ -238,11 +235,11 @@ def run_speed_pipeline(
 ):
     """Run the configured progressive-resolution SPEED chain."""
     if "noise_mask" in latent:
-        raise ValueError("T2V oracle does not support noise masks")
+        raise ValueError("MiniMax-H3 SPEED does not support noise masks")
 
     full_video, full_audio = unpack_latent(latent.get("samples"))
     if torch.count_nonzero(full_video) or torch.count_nonzero(full_audio):
-        raise ValueError("T2V oracle currently requires an empty H3 latent")
+        raise ValueError("MiniMax-H3 SPEED requires empty input video/audio latent streams")
     if sigmas.ndim != 1 or len(sigmas) < 3:
         raise ValueError("sigmas must be a one-dimensional schedule")
 
@@ -302,7 +299,6 @@ def run_speed_pipeline(
     walker = LatentWalker(guider)
     global_start = 0
     global_done = 0
-    last_public = None
 
     try:
         for stage_idx, global_end in enumerate(transition_steps):
@@ -325,7 +321,6 @@ def run_speed_pipeline(
                 disable_pbar=disable_pbar,
                 seed=noise.seed,
             )
-            last_public = public
             global_done += len(stage_sigmas) - 1
 
             boundary_sigma = float(working_sigmas[global_end])

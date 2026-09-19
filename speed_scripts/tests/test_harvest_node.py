@@ -76,9 +76,9 @@ def test_input_contract_uses_shared_sampler_dropdown_and_signature():
     assert tuple(required["sampler_name"][0]) == SUPPORTED_SPEED_SAMPLERS
     assert required["sampler_name"][1]["default"] == "euler"
     assert list(required) == ["noise", "guider", "sigmas", "latent_image", "sampler_name"]
-    assert "Tolerance (Delta)" in optional
+    assert optional["Tolerance (Delta)"][1]["default"] == 0.005
     assert list(inspect.signature(cls.harvest).parameters)[5] == "sampler_name"
-    assert inspect.signature(cls.harvest).parameters["sampler_name"].default == "euler"
+    assert inspect.signature(cls.harvest).parameters["sampler_name"].default is inspect.Parameter.empty
 
 
 @pytest.mark.parametrize("sampler_name", SUPPORTED_SPEED_SAMPLERS)
@@ -96,7 +96,12 @@ def test_harvest_uses_selected_native_sampler_and_emits_identity(monkeypatch, sa
         native_sampler_object,
     )
     guider = Guider()
-    text, diagnostic = _harvest(cls, guider, sampler_name, delta=.01)
+    text, diagnostic = _harvest(
+        cls,
+        guider,
+        sampler_name,
+        **{"Tolerance (Delta)": .01},
+    )
     calibration = json.loads(text)
 
     assert native_calls == [sampler_name]
@@ -113,11 +118,16 @@ def test_harvest_uses_selected_native_sampler_and_emits_identity(monkeypatch, sa
 
     report_lines = calibration["report"].splitlines()
     assert sampler_name in report_lines[0]
-    paste_line = next(line for line in report_lines if line.startswith("Paste into SPEED Sampler:"))
-    assert f"sampler_name={sampler_name}" in paste_line
-    assert "noise_amplitude=" + format(calibration["noise_amplitude"], ".4f") in paste_line
-    assert "noise_decay_exponent=" + format(calibration["noise_decay_exponent"], ".4f") in paste_line
-    assert "Tolerance (Delta)=" + format(calibration["delta"], ".3f") in paste_line
+    if calibration["noise_decay_exponent"] > 0 and calibration["health"] != "invalid":
+        paste_line = next(
+            line for line in report_lines if line.startswith("Paste into SPEED Sampler:")
+        )
+        assert f"sampler_name={sampler_name}" in paste_line
+        assert "noise_amplitude=" + format(calibration["noise_amplitude"], ".4f") in paste_line
+        assert "noise_decay_exponent=" + format(calibration["noise_decay_exponent"], ".4f") in paste_line
+        assert "Tolerance (Delta)=" + format(calibration["delta"], ".3f") in paste_line
+    else:
+        assert "Do not paste this calibration into Automatic" in calibration["report"]
 
 
 def test_harvest_reduces_each_residual_during_callback(monkeypatch):
@@ -150,6 +160,30 @@ def test_harvest_reduces_each_residual_during_callback(monkeypatch):
     text, _ = _harvest(cls, StreamingGuider(), "euler")
     assert "error" not in json.loads(text)
     assert len(reduced) == 19
+
+
+def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
+    module = importlib.import_module("sampler_sigma_harvest_node")
+    cls = module.MiniMaxH3HarvestToConfig
+
+    monkeypatch.setattr(
+        module,
+        "fit_power_law",
+        lambda *args: {"A": 1.0, "beta": -0.5, "r_squared": 0.2, "n_bins": 8},
+    )
+    text, _ = _harvest(cls, Guider(), "euler")
+    calibration = json.loads(text)
+
+    assert calibration["health"] == "suspect"
+    assert "Do not paste this calibration into Automatic" in calibration["report"]
+    assert "Paste into SPEED Sampler:" not in calibration["report"]
+
+
+def test_removed_harvest_tolerance_alias_fails_closed():
+    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
+    with pytest.raises(TypeError, match="Unexpected Harvest option"):
+        _harvest(cls, Guider(), "euler", delta=.01)
+
 
 def test_res_harvest_uses_native_sampler_stub_not_speed_adapter(monkeypatch):
     cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
@@ -206,3 +240,38 @@ def test_error_json_escapes_exception_text(monkeypatch, error_kind):
     assert error["error"] == error_kind
     assert message in error["message"]
     assert error["sampler_name"] == "dpm_2"
+
+
+def test_harvest_surfaces_first_residual_capture_failure(monkeypatch, caplog):
+    module = importlib.import_module("sampler_sigma_harvest_node")
+    cls = module.MiniMaxH3HarvestToConfig
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("residual exploded")
+
+    monkeypatch.setattr(module, "compute_video_residual", explode)
+    with caplog.at_level("WARNING", logger=module.__name__):
+        text, _ = _harvest(cls, Guider(), "euler")
+
+    error = json.loads(text)
+    assert error["error"] == "no_captures"
+    assert "residual exploded" in error["message"]
+    assert sum("residual capture failed" in record.message for record in caplog.records) == 1
+
+
+def test_harvest_surfaces_first_profile_reduction_failure(monkeypatch, caplog):
+    module = importlib.import_module("sampler_sigma_harvest_node")
+    cls = module.MiniMaxH3HarvestToConfig
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("profile exploded")
+
+    monkeypatch.setattr(module, "radial_dct_power", explode)
+    with caplog.at_level("WARNING", logger=module.__name__):
+        text, _ = _harvest(cls, Guider(), "euler")
+
+    error = json.loads(text)
+    assert error["error"] == "no_spectral_profiles"
+    assert "profile exploded" in error["message"]
+    assert error["n_captures"] > 0
+    assert sum("spectral profile reduction failed" in record.message for record in caplog.records) == 1

@@ -27,9 +27,9 @@ from conftest import (
     make_latent,
     make_nested,
 )
-from speed_scripts.automatic_config import STAGES_TO_SCALES
+from speed_scripts.planning import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
+from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.res_multistep_adapter import (
     ResMultistepSampler,
 )
@@ -224,7 +224,6 @@ def test_res_stage_ladder_completes_at_full_resolution(monkeypatch, stages):
     assert isinstance(guider.samplers[0], ResMultistepSampler)
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
-    assert not hasattr(guider, _LW_ATTR)
     _assert_res_state_cleared(handle)
 
 
@@ -305,7 +304,6 @@ def test_res_i2v_smoke_restores_pristine_and_keeps_history_separate(monkeypatch)
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
     _assert_pristine_conds(keyframes, refs, pristine)
-    assert not hasattr(guider, _LW_ATTR)
     assert guider.stage_entries[-1] is None
 
 
@@ -332,7 +330,6 @@ def test_failure_during_sampler_call_clears_res_state(monkeypatch):
     assert len(guider.stage_entries) == 2
     assert guider.stage_entries[1] is None
     _assert_res_state_cleared(handle)
-    assert not hasattr(guider, _LW_ATTR)
     _assert_pristine_conds(keyframes, refs, pristine)
 
 
@@ -356,7 +353,6 @@ def test_failure_during_spectral_transition_clears_res_state(monkeypatch):
     _assert_res_seam(captured, handle)
     assert observed["history_existed"] is True
     _assert_res_state_cleared(handle)
-    assert not hasattr(guider, _LW_ATTR)
     _assert_pristine_conds(keyframes, refs, pristine)
 
 
@@ -380,7 +376,6 @@ def test_failure_during_audio_transition_clears_res_state(monkeypatch):
     _assert_res_seam(captured, handle)
     assert observed["history_existed"] is True
     _assert_res_state_cleared(handle)
-    assert not hasattr(guider, _LW_ATTR)
     _assert_pristine_conds(keyframes, refs, pristine)
 
 
@@ -401,7 +396,6 @@ def test_res_second_generation_after_completed_run_starts_clean(monkeypatch):
     video_c, audio_c = out_control["samples"].unbind()
     assert torch.equal(video_2, video_c)
     assert torch.equal(audio_2, audio_c)
-    assert not hasattr(guider, _LW_ATTR)
 
 
 def test_res_coincident_boundary_zero_step_stages_remain_empty(monkeypatch):
@@ -414,7 +408,6 @@ def test_res_coincident_boundary_zero_step_stages_remain_empty(monkeypatch):
     assert entries[1] is None
     assert entries[2] is None
     _assert_full_res_nested(out)
-    assert not hasattr(guider, _LW_ATTR)
 
 
 def test_res_reset_mode_matches_explicit_boundary_reset_control(monkeypatch):

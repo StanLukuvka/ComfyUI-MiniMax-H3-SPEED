@@ -18,8 +18,6 @@ exercise the same run-scoped handle path production uses; the override seam
 is covered separately.
 """
 
-# FLOW-PRODUCED: public sampler selector assertions.
-
 import pytest
 import torch
 
@@ -32,10 +30,10 @@ from conftest import (
     make_recording_guider,
 )
 from speed_scripts import h3_runtime
-from speed_scripts.automatic_config import STAGES_TO_SCALES
+from speed_scripts.planning import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
 from speed_scripts.flow import aligned_sigma
-from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
+from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.sampler_support import (
     STATELESS_SPEED_SAMPLERS,
     SUPPORTED_SPEED_SAMPLERS,
@@ -163,7 +161,7 @@ class HookGuider(EchoGuider):
 
 
 # ---------------------------------------------------------------------------
-# Public selector (source §9 "Public selector")
+# Public sampler selector
 # ---------------------------------------------------------------------------
 
 def test_public_selector_is_exactly_the_five_supported_names():
@@ -215,7 +213,7 @@ def test_base_handle_is_an_inert_noop():
 
 
 # ---------------------------------------------------------------------------
-# Euler regression (source §9 "Euler regression")
+# Euler regression coverage
 # ---------------------------------------------------------------------------
 
 def test_default_and_explicit_paths_select_euler_exactly_once_per_run(monkeypatch):
@@ -338,7 +336,7 @@ def test_euler_callback_count_equals_global_denoising_intervals():
 
 
 # ---------------------------------------------------------------------------
-# Hook position (source §7) — once per configured transition
+# Transition hook position — once per configured transition
 # ---------------------------------------------------------------------------
 
 def test_transition_hook_fires_once_per_transition_at_the_documented_position(monkeypatch):
@@ -409,7 +407,6 @@ def test_hook_failure_aborts_the_run_before_the_next_stage_samples(monkeypatch):
             disable_pbar=True,
         )
     assert guider.events.count("sample") == 1
-    assert not hasattr(guider, _LW_ATTR)
 
 
 def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
@@ -450,10 +447,10 @@ def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Run-scoped lifecycle (source §6 cleanup structure)
+# Run-scoped sampler and I2V lifecycle
 # ---------------------------------------------------------------------------
 
-def test_cleanup_runs_close_then_restore_then_drop_on_success(monkeypatch):
+def test_cleanup_closes_sampler_and_restores_on_success(monkeypatch):
     order = []
 
     class CleanupHandle(SpeedSamplerHandle):
@@ -474,13 +471,11 @@ def test_cleanup_runs_close_then_restore_then_drop_on_success(monkeypatch):
         disable_pbar=True,
     )
     # apply_final also runs once before the final stage (pre-final restore);
-    # the run-level cleanup then closes the sampler handle, restores again,
-    # and drops the walker from the guider.
+    # run-level cleanup then closes the sampler handle and restores again.
     assert order == ["apply_final", "close", "apply_final"]
-    assert not hasattr(guider, _LW_ATTR)
 
 
-def test_cleanup_still_restores_and_drops_when_sampler_close_fails(monkeypatch):
+def test_cleanup_still_restores_when_sampler_close_fails(monkeypatch):
     order = []
 
     class FailingHandle(SpeedSamplerHandle):
@@ -502,16 +497,13 @@ def test_cleanup_still_restores_and_drops_when_sampler_close_fails(monkeypatch):
             make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
             disable_pbar=True,
         )
-    # The failing close did not stop the walker restore (which also runs
-    # once earlier, before the final stage), and the walker was still
-    # dropped from the guider.
+    # The failing close did not stop the final keyframe restore, which also
+    # runs once earlier before the final stage.
     assert order == ["apply_final", "close", "apply_final"]
-    assert not hasattr(guider, _LW_ATTR)
 
 
-def test_cleanup_still_drops_the_walker_when_the_restore_fails(monkeypatch):
-    """If walker.apply_final() itself raises, _drop_walker() must still run —
-    the innermost finally of the required cleanup structure."""
+def test_cleanup_still_closes_sampler_when_restore_fails(monkeypatch):
+    """If the pre-final keyframe restore fails, sampler cleanup still runs."""
     order = []
 
     class CleanupHandle(SpeedSamplerHandle):
@@ -529,16 +521,14 @@ def test_cleanup_still_drops_the_walker_when_the_restore_fails(monkeypatch):
     monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: CleanupHandle())
     monkeypatch.setattr(h3_runtime.LatentWalker, "apply_final", exploding_final)
     guider = make_recording_guider()
-    # The restore also runs once before the final stage; the FIRST failing
-    # restore aborts the run there. The close still ran after it, and the
-    # walker was still dropped from the guider.
+    # The first restore fails before the final stage and aborts the run.
+    # The sampler handle is still closed, then cleanup attempts restoration again.
     with pytest.raises(RuntimeError, match="restore exploded"):
         run_speed_pipeline(
             make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
             disable_pbar=True,
         )
     assert order == ["apply_final", "close", "apply_final"]
-    assert not hasattr(guider, _LW_ATTR)
 
 
 # ---------------------------------------------------------------------------
@@ -568,8 +558,7 @@ def test_run_rejects_unsupported_sampler_name_fail_closed():
 
 
 # ---------------------------------------------------------------------------
-# S6: Noise policies (source §9 remainder) — both policies smoke on every
-# public stateless sampler through the real selector path
+# Noise policies — both policies smoke on every public stateless sampler
 # ---------------------------------------------------------------------------
 
 
@@ -608,8 +597,7 @@ def test_noise_policy_coupled_full_grid_smoke_per_sampler(sampler):
 
 
 # ---------------------------------------------------------------------------
-# S6: Progress / preview (source §22, PR A scope) — the public timeline is
-# one continuous 0..total denoising pass for every sampler
+# Progress / preview — the public timeline is one continuous denoising pass
 # ---------------------------------------------------------------------------
 
 
@@ -642,9 +630,8 @@ def test_shared_x0_output_and_final_denoised_are_valid_nested_h3(sampler):
 
 
 # ---------------------------------------------------------------------------
-# S6: Zero-step / 8-step Turbo torture (source §23, public stateless samplers) —
-# the coincident-boundary ladder still runs every configured transition and
-# alignment, and progress stays monotonic
+# Coincident-boundary short-schedule coverage — every configured transition
+# and alignment still runs, and progress stays monotonic
 # ---------------------------------------------------------------------------
 
 
@@ -683,10 +670,9 @@ def test_turbo_coincident_ladder_runs_every_transition_and_alignment(sampler):
 
 
 # ---------------------------------------------------------------------------
-# S6: I2V matrix (source §24, PR A scope) — keyframe/ref latents follow the
-# LatentWalker lifecycle per sampler, pristine conditioning is restored on
-# success and failure, and no sampler code mutates guider.original_conds
-# structurally
+# I2V matrix — keyframe/ref latents follow the LatentWalker lifecycle,
+# pristine conditioning is restored on success and failure, and sampler
+# code does not structurally replace guider.original_conds
 # ---------------------------------------------------------------------------
 
 def _i2v_guider():
@@ -730,7 +716,6 @@ def test_i2v_smoke_and_pristine_restore_on_success(sampler):
     cond = original_conds["positive"][0]
     assert cond["minimax_keyframes"] is keyframes
     assert cond["minimax_refs"] is refs
-    assert not hasattr(guider, _LW_ATTR)
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
@@ -758,21 +743,20 @@ def test_i2v_failure_restores_pristine_conditioning(sampler):
     for ref in refs:
         assert tuple(ref["latent"].shape[-2:]) == (8, 8)
     assert guider.original_conds is original_conds
-    assert not hasattr(guider, _LW_ATTR)
 
 
 # ---------------------------------------------------------------------------
-# S6: Failure cleanup (source §9 remainder) — forced sampler-stage failure
-# through the real selector path, then a clean second generation
+# Failure cleanup — force a sampler-stage failure, then run a clean second generation
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
-def test_stage_failure_closes_handle_restores_and_drops_walker(sampler):
-    """Force a mid-run failure inside the second stage's guider.sample call:
-    the run-scoped handle is closed and the walker attribute is removed from
-    the guider (with no I2V conds attached, the walker's own restore is a
-    no-op — the pristine-restore path is pinned by the I2V tests above)."""
+def test_stage_failure_closes_handle(sampler):
+    """Force a mid-run failure inside the second stage's guider.sample call.
+
+    The run-scoped sampler handle must still close; pristine I2V restoration
+    is covered separately by the I2V failure test above.
+    """
     closed = []
     events = []
 
@@ -806,15 +790,16 @@ def test_stage_failure_closes_handle_restores_and_drops_walker(sampler):
 
     assert closed == [True]
     assert events == ["sample", "sample"]  # stage 2 never ran
-    assert not hasattr(guider, _LW_ATTR)
 
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_second_generation_after_failure_starts_clean(sampler):
-    """After a failed run, the same guider can run a full generation: the
-    walker is recreated, the handle is rebuilt, and the output is identical
-    to a run that never saw the failure."""
+    """After a failed run, the same guider can run a full generation.
+
+    The sampler handle and generation-local I2V state are rebuilt, and the
+    output matches a control run that never failed.
+    """
     class ExplodingStageGuider(RecordingEchoGuider):
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
@@ -835,7 +820,6 @@ def test_second_generation_after_failure_starts_clean(sampler):
     guider_a.remaining_stage_failures = 1
     with pytest.raises(RuntimeError, match="first generation exploded"):
         _run(sampler, cfg, guider_a)
-    assert not hasattr(guider_a, _LW_ATTR)
 
     # Generation 2: same guider object, no special handling — must complete
     # and match a control run that never failed.
@@ -849,4 +833,3 @@ def test_second_generation_after_failure_starts_clean(sampler):
     assert torch.equal(video_second, video_control)
     assert torch.equal(audio_second, audio_control)
     _assert_full_res_nested(out_second)
-    assert not hasattr(guider_a, _LW_ATTR)

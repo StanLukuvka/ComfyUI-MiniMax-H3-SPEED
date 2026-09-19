@@ -141,6 +141,22 @@ def test_preview_callback_sees_one_continuous_global_timeline():
     assert seen == [(i, 10) for i in range(10)]
 
 
+def test_preview_callback_failure_disables_future_preview_updates():
+    seen = []
+
+    def preview(step, x0, x, total_steps):
+        seen.append(step)
+        raise RuntimeError("preview exploded")
+
+    cfg = SpeedConfig(
+        scales=(.25, .5, .75, 1.0),
+        transition_steps=(3, 5, 8),
+        transition_mode="explicit",
+    )
+    _run(cfg, preview_callback=preview)
+    assert seen == [0]
+
+
 def test_runtime_rejects_boundary_at_schedule_end():
     cfg = SpeedConfig(
         scales=(.5, 1.0),

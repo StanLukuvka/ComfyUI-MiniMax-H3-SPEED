@@ -1,4 +1,4 @@
-"""Committed workflow examples use the reset-only RES adapter."""
+"""Committed workflow examples match the public V2 node contracts."""
 
 import json
 from pathlib import Path
@@ -19,6 +19,11 @@ SAMPLER_INDEX = {
     "MiniMaxH3SPEEDSampler": -1,
     "MiniMaxH3SPEEDSamplerManual": -1,
     "MiniMaxH3HarvestToConfig": 0,
+}
+EXPECTED_OUTPUTS = {
+    "MiniMaxH3SPEEDSampler": ("output", "denoised_output"),
+    "MiniMaxH3SPEEDSamplerManual": ("output", "denoised_output"),
+    "MiniMaxH3HarvestToConfig": ("calibration", "diagnostic_latent"),
 }
 
 
@@ -41,6 +46,7 @@ def test_committed_examples_select_euler_for_each_public_node():
         for node in nodes:
             assert node.get("widgets_values_named", {}).get("sampler_name") == "euler"
             assert node["widgets_values"][SAMPLER_INDEX[node["type"]]] == "euler"
+            assert tuple(output["name"] for output in node["outputs"]) == EXPECTED_OUTPUTS[node["type"]]
             if node["type"] in {"MiniMaxH3SPEEDSampler", "MiniMaxH3SPEEDSamplerManual"}:
                 assert "res_" + "history_mode" not in node["widgets_values_named"]
                 assert "reset" not in node["widgets_values"]

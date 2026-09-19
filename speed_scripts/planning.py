@@ -13,14 +13,6 @@ STAGES_TO_SCALES: dict[int, tuple[float, ...]] = {
     4: (0.25, 0.5, 0.75, 1.0),
 }
 
-PRESET_TO_STAGES: dict[str, int] = {
-    "half_then_full": 2,
-    "three_quarter_then_full": 2,
-    "quarter_half_full": 3,
-    "aggressive": 3,
-    "quarter_half_3q_full": 4,
-}
-
 
 def stage_resolution(
     config: SpeedConfig,
@@ -52,7 +44,8 @@ def activation_threshold(power: float, delta: float) -> float:
     return 1.0 / (1.0 + math.sqrt(delta / (power * (1.0 + power - delta))))
 
 
-def _find_first_step_below(sigmas, threshold: float) -> int:
+def find_first_step_below(sigmas, threshold: float) -> int:
+    """Return the first non-final sigma index at or below `threshold`."""
     values = [float(sigma) for sigma in sigmas]
     last = len(values) - 1
     for index in range(last):
@@ -82,7 +75,7 @@ def resolve_transition_steps(
             config.noise_decay_exponent,
         )
         threshold = activation_threshold(power, config.delta)
-        steps.append(_find_first_step_below(sigmas, threshold))
+        steps.append(find_first_step_below(sigmas, threshold))
     return tuple(steps)
 
 
@@ -110,6 +103,8 @@ def build_automatic_speed_config(
     seed_offset,
 ) -> SpeedConfig:
     """Build the runtime config used by the Automatic node."""
+    if isinstance(stages, bool) or not isinstance(stages, int) or stages not in STAGES_TO_SCALES:
+        raise ValueError(f"stages must be exactly 2, 3, or 4; got {stages!r}")
     return SpeedConfig(
         scales=STAGES_TO_SCALES[stages],
         transition_steps=(),
@@ -180,10 +175,10 @@ def build_manual_speed_config(
 
 __all__ = [
     "STAGES_TO_SCALES",
-    "PRESET_TO_STAGES",
     "stage_resolution",
     "power_at_frequency",
     "activation_threshold",
+    "find_first_step_below",
     "resolve_transition_steps",
     "validate_transition_steps",
     "build_automatic_speed_config",

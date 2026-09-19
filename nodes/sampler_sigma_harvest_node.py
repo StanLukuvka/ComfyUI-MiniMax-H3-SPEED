@@ -16,9 +16,8 @@ spectrum from the SPEED paper.
 
 from __future__ import annotations
 
-# FLOW-PRODUCED: sampler-aware native Sigma Harvest.
-
 import json
+import logging
 
 import comfy.samplers
 import comfy.utils
@@ -31,8 +30,15 @@ from speed_scripts.harvest import (
     fit_power_law,
     radial_dct_power,
 )
-from speed_scripts.planning import activation_threshold, power_at_frequency
+from speed_scripts.planning import (
+    activation_threshold,
+    find_first_step_below,
+    power_at_frequency,
+)
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
+
+
+log = logging.getLogger(__name__)
 
 
 def _error_json(error, message, **fields):
@@ -44,8 +50,9 @@ class MiniMaxH3HarvestToConfig:
     """Sigma harvester — native sampler pass with per-step residual capture."""
 
     DESCRIPTION = (
-        "Sigma Harvest — run this ONCE on a full-res native sampler generation to "
-        "calibrate the Automatic sampler. It is an empirical H3 residual "
+        "Sigma Harvest — run this on a full-res native sampler generation to "
+        "calibrate the Automatic sampler. Re-run it when the sampler, model, "
+        "scheduler, step count, or other denoising behavior changes. It is an empirical H3 residual "
         "calibration: it measures how the residual (x - denoised) falls off with "
         "frequency (P = A·|ω|^-beta) and gives you A/beta to paste into the "
         "Automatic node. It does NOT measure the clean-data power spectrum from "
@@ -69,7 +76,7 @@ class MiniMaxH3HarvestToConfig:
                 "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
             },
             "optional": {
-                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
             },
         }
 
@@ -79,67 +86,57 @@ class MiniMaxH3HarvestToConfig:
         guider,
         sigmas,
         latent_image,
-        sampler_name="euler",
+        sampler_name,
         **kwargs,
     ):
 
-        # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
-        delta = kwargs.get("Tolerance (Delta)",
-                kwargs.get("Tolerance",
-                kwargs.get("tolerance",
-                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
-        delta = float(delta)
+        delta = float(kwargs.pop("Tolerance (Delta)", 0.005))
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
 
         capture_count = 0
         freqs_all = []
         profiles_all = []
+        first_residual_error = None
+        first_profile_error = None
 
         def _capture(x_current, denoised_est):
             """Reduce one residual to its CPU spectral profile immediately."""
-            nonlocal capture_count
+            nonlocal capture_count, first_residual_error, first_profile_error
             try:
                 residual = compute_video_residual(x_current, denoised_est)
-            except Exception:
+            except Exception as exc:
+                if first_residual_error is None:
+                    first_residual_error = exc
+                    log.warning(
+                        "[SPEED-harvest] residual capture failed; later repeats suppressed: %r",
+                        exc,
+                    )
                 return
             if residual is None:
                 return
             capture_count += 1
             try:
                 freqs, profile = radial_dct_power(residual)
-            except Exception:
+            except Exception as exc:
+                if first_profile_error is None:
+                    first_profile_error = exc
+                    log.warning(
+                        "[SPEED-harvest] spectral profile reduction failed; later repeats suppressed: %r",
+                        exc,
+                    )
                 return
             freqs_all.append(freqs)
             profiles_all.append(profile)
 
-        # ComfyUI callback signatures across versions:
-        #  - dict-arg: callback({"x", "i"/"step", "sigma", "denoised"})     (newer)
-        #  - kwargs:   callback(x=..., denoised=..., i=..., sigma=...)      (mid)
-        #  - legacy:   callback(step, denoised, x, total_steps)              (old)
-        def _compat_callback(*args, **kwargs):
-            if len(args) == 1 and isinstance(args[0], dict):
-                info = args[0]
-                return _capture(info.get("x"), info.get("denoised"))
-            if "sigma" in kwargs and "denoised" in kwargs:
-                return _capture(kwargs.get("x"), kwargs.get("denoised"))
-            # Legacy positional: (step, denoised, x, total_steps)
-            if len(args) >= 3:
-                _step, denoised, x = args[0], args[1], args[2]
-                return _capture(x, denoised)
+        # guider.sample exposes ComfyUI's packed callback contract:
+        # callback(step, denoised, x, total_steps).
+        def _capture_callback(step, denoised, x, total_steps):
+            return _capture(x, denoised)
 
-        # ComfyUI LATENT is always {"samples": <tensor>}; the fallback to the
-        # raw input is paranoia for old test fakes that pass a tensor directly.
-        latent_tensor = (
-            latent_image["samples"]
-            if isinstance(latent_image, dict) and "samples" in latent_image
-            else latent_image
-        )
-        try:
-            noise_tensor = noise.generate_noise(latent_image)
-        except Exception:
-            try:
-                noise_tensor = noise.generate_noise({"samples": latent_tensor})
-            except Exception:
-                noise_tensor = noise
+        latent_tensor = latent_image["samples"]
+        noise_tensor = noise.generate_noise(latent_image)
 
         try:
             sampler_obj = comfy.samplers.sampler_object(sampler_name)
@@ -148,7 +145,7 @@ class MiniMaxH3HarvestToConfig:
                 latent_tensor,
                 sampler_obj,
                 sigmas,
-                callback=_compat_callback,
+                callback=_capture_callback,
                 disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
                 seed=getattr(noise, "seed", 42),
             )
@@ -164,10 +161,15 @@ class MiniMaxH3HarvestToConfig:
             )
 
         if capture_count == 0:
+            message = (
+                f"Residual capture failed: {first_residual_error}"
+                if first_residual_error is not None
+                else "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup."
+            )
             return (
                 _error_json(
                     "no_captures",
-                    "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup.",
+                    message,
                     sampler_name=sampler_name,
                     n_captures=0,
                 ),
@@ -175,10 +177,15 @@ class MiniMaxH3HarvestToConfig:
             )
 
         if not profiles_all:
+            message = (
+                f"Spectral profile reduction failed: {first_profile_error}"
+                if first_profile_error is not None
+                else "Captured residuals produced no valid spectral profiles — residual may be zero or non-physical."
+            )
             return (
                 _error_json(
                     "no_spectral_profiles",
-                    "Captured residuals produced no valid spectral profiles — residual may be zero or non-physical.",
+                    message,
                     sampler_name=sampler_name,
                     n_captures=capture_count,
                 ),
@@ -208,7 +215,7 @@ class MiniMaxH3HarvestToConfig:
 
         video_stream = extract_video_stream(latent_tensor)
         if video_stream is None:
-            H_full, W_full = 64, 64
+            H_full = W_full = None
         else:
             H_full, W_full = map(int, video_stream.shape[-2:])
 
@@ -220,7 +227,7 @@ class MiniMaxH3HarvestToConfig:
 
         # Plug-and-play for SPEED's delta_custom: just feed A/beta into
         # noise_amplitude / noise_decay_exponent + delta. No per-preset
-        # transition_steps table — SPEED computes it via resolve_transition_steps.
+        # precomputed transition table — SPEED computes it via resolve_transition_steps.
         calibration = {
             "schema_version": 2,
             "noise_amplitude": A,
@@ -230,8 +237,7 @@ class MiniMaxH3HarvestToConfig:
             "health": health,
             "sampler_name": sampler_name,
             # Measurement basis: this fit comes from the residual (x - denoised),
-            # not the clean-data x0 spectrum. Kept alongside the original keys
-            # so existing consumers keep working unchanged.
+            # not the clean-data x0 spectrum.
             "measurement_basis": "residual_x_minus_denoised",
             "calibration_kind": "empirical_h3_residual_fit",
         }
@@ -243,29 +249,48 @@ class MiniMaxH3HarvestToConfig:
         if health in ("suspect", "weak", "invalid"):
             lines.append(
                 f"WARNING: fit is {health.upper()} — beta={beta:.4f} with "
-                f"r²={r2:.4f}. Not cleanly decaying. Rerun harvest or use manual preset."
+                f"r²={r2:.4f}. Not cleanly decaying. Rerun Harvest before trusting it."
             )
-        lines.append(f"Paste into SPEED Sampler: sampler_name={sampler_name}, Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)")
+
+        usable_fit = (
+            np.isfinite(A)
+            and np.isfinite(beta)
+            and np.isfinite(delta)
+            and A > 0.0
+            and beta > 0.0
+            and 0.0 < delta < 1.0
+            and health != "invalid"
+        )
+        if usable_fit:
+            lines.append(
+                f"Paste into SPEED Sampler: sampler_name={sampler_name}, "
+                f"Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, "
+                f"noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)"
+            )
+        else:
+            lines.append(
+                "Do not paste this calibration into Automatic: SPEED requires "
+                "positive finite noise_amplitude and noise_decay_exponent values."
+            )
         # Diagnostic only — not part of the JSON to paste. Shows where delta_custom
         # will place the two most common reference scales for this sigmas length.
         # Derived exactly as runtime does: omega = scale * min(H,W)/2 -> P(omega) -> thr -> first step <= thr.
-        try:
-            omega_max = min(H_full, W_full) / 2.0
-            # Local reporting helper mirrors planning._find_first_step_below.
-            def _first_step_below(thr: float) -> tuple[int, float]:
-                for idx, s in enumerate(sigmas_list[:-1]):
-                    if float(s) <= thr:
-                        return idx, float(s)
-                return len(sigmas_list) - 1, float(sigmas_list[-1]) if sigmas_list else 0.0
-            lines.append(f"Reference (current sigmas, {len(sigmas_list)} levels):")
-            for _scale in (0.50, 0.75):
-                _omega = _scale * omega_max
-                _p = power_at_frequency(_omega, A, beta)
-                _thr = activation_threshold(_p, float(delta))
-                _step, _sig = _first_step_below(_thr)
-                lines.append(f"  {_scale:.2f}x -> sigma~{_sig:.4f} (step {_step})  [thr {_thr:.4f}]")
-        except Exception:
-            pass
+        if H_full is not None and W_full is not None and sigmas_list:
+            try:
+                omega_max = min(H_full, W_full) / 2.0
+                lines.append(f"Reference (current sigmas, {len(sigmas_list)} levels):")
+                for _scale in (0.50, 0.75):
+                    _omega = _scale * omega_max
+                    _p = power_at_frequency(_omega, A, beta)
+                    _thr = activation_threshold(_p, float(delta))
+                    _step = find_first_step_below(sigmas_list, _thr)
+                    _sig = float(sigmas_list[_step])
+                    lines.append(
+                        f"  {_scale:.2f}x -> sigma~{_sig:.4f} "
+                        f"(step {_step})  [thr {_thr:.4f}]"
+                    )
+            except Exception:
+                pass
         report = "\n".join(lines)
         calibration["report"] = report
 
@@ -275,20 +300,11 @@ class MiniMaxH3HarvestToConfig:
         # {"samples": ...}. Wrap it so downstream VAE decode works (otherwise
         # VAEDecodeAudio does NestedTensor["samples"] -> IndexError).
         if result is not None:
-            if isinstance(latent_image, dict):
-                output_latent = latent_image.copy()
-                output_latent["samples"] = result
-            elif isinstance(result, dict) and "samples" in result:
-                output_latent = result
-            else:
-                output_latent = {"samples": result}
+            output_latent = latent_image.copy()
+            output_latent["samples"] = result
         else:
             output_latent = latent_image
         return (output_json, output_latent)
-
-    def compute_video_residual(self, x_tensor, denoised_tensor):
-        """Compatibility wrapper around the shared harvest helper."""
-        return compute_video_residual(x_tensor, denoised_tensor)
 
 NODE_CLASS_MAPPINGS = {"MiniMaxH3HarvestToConfig": MiniMaxH3HarvestToConfig}
 NODE_DISPLAY_NAME_MAPPINGS = {

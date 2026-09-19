@@ -29,7 +29,7 @@ from conftest import (
     SeededRandomNoise,
     make_latent,
 )
-from speed_scripts.automatic_config import STAGES_TO_SCALES
+from speed_scripts.planning import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.sampler_support import (
@@ -38,8 +38,6 @@ from speed_scripts.sampler_support import (
 )
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
-
-# FLOW-PRODUCED: native stateless sampler coverage.
 
 #: The three non-Euler stateless samplers added on top of the Euler anchor.
 NEW_SAMPLERS = ("heun", "dpm_2", "exp_heun_2_x0")
