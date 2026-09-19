@@ -20,7 +20,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 # restart ComfyUI
 ```
 
-1. Replace your `KSampler` / `SamplerCustomAdvanced` with **MiniMax H3 SPEED — Sampler (Automatic)**. Wire the same `noise`, `guider`, `sigmas`, `latent_image`.
+1. If your workflow already uses **SamplerCustomAdvanced**, replace it with **MiniMax H3 SPEED — Sampler** and wire the same `noise`, `guider`, `sigmas`, and `latent_image` inputs. If you use the basic all-in-one `KSampler`, first split it into ComfyUI's advanced sampling components so those inputs are available.
 2. Set **`stages = 2`** or **`3`** (default) and hit Queue. The shipped Automatic calibration is the conservative Euler-derived 0.5% delta fit.
 
 
@@ -37,12 +37,13 @@ Just `stages` (2, 3, or 4) that correspond to how many resolution stages there a
 RES Multistep uses reset-only history. It clears previous-step history at every SPEED resolution transition.
 
 **Manual — Sampler (Step-Through)**
-You set up to four `(goal, resolution)` pairs yourself. `goal` = step where that stage ends, `resolution` = scale like `0.25` = quarter. Set `goal` or `resolution` to `0` to skip a stage. Use only to copy a paper schedule or test a custom ladder.
+You set up to four `(goal, resolution)` pairs yourself. For every stage except the last active one, `goal` is where that stage ends and `resolution` is its scale, such as `0.25` for quarter resolution. The last active stage always runs to the end of the sigma schedule, so its goal value is ignored. Active resolutions must increase and the final active resolution must be `1.0`. Set either value to `0` to skip a stage. Use Manual when copying a known schedule or testing a custom ladder.
 
 
 **Sigma Harvest (Native Sampler)**
-Run **once** with your current workflow to measure your checkpoint with the selected native full-resolution sampler. It gives you sampler-specific `A / β` to paste into the matching Automatic run. Harvest is still a native full-resolution pass; it does not run the SPEED chain.
-If you are using LoRAs, or other models, addons, or optimisations that change how the model behaves, I recommend running it to ensure it is tuned to your specific workload.
+Run **once** with your current workflow to measure the selected native full-resolution sampler. Set Harvest to the same sampler, sigma schedule, step count, and `Tolerance (Delta)` you intend to use with SPEED. Then use the returned `sampler_name`, `delta`, `noise_amplitude` (A), and `noise_decay_exponent` (β) in the matching Automatic run. Harvest is still a native full-resolution pass; it does not run the SPEED chain.
+
+Re-run Harvest when you materially change the checkpoint, sampler, LoRA/addons, scheduler, or step count.
 
 You can instead use the following values for base H3:
 
@@ -57,8 +58,9 @@ SPEED supports exactly five samplers: **Euler**, **Heun**, **DPM2** (`dpm_2`),
 **Exp Heun 2 X0** (`exp_heun_2_x0`), and **RES Multistep** (`res_multistep`).
 The Automatic, Manual, and Sigma Harvest nodes expose the same list.
 
-- **Euler** is the reference sampler and the default. SPEED's baked evidence
-  and kappa boundary alignment were derived from Euler measurements.
+- **Euler** is the reference sampler and the default. The shipped calibration
+  and benchmark evidence are Euler-derived. The SPEED boundary/alignment math
+  itself is shared by all supported samplers.
 - **Heun**, **DPM2**, and **Exp Heun 2 X0** are native stateless samplers.
   They can use extra model evaluations per step, which can reduce SPEED's
   wall-clock gain.
@@ -95,25 +97,34 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 ## Troubleshooting
 
-- **"Sigma schedule too short"** → increase `BasicScheduler` steps. The last stage boundary must leave at least one denoising step: with the final boundary at step `g`, you need ≥ `g + 2` sigmas (e.g. a 4-stage run with boundaries 3/5/8 needs ≥10 sigmas = 9 steps).
-- **"H3 model required"** → this only works with a real MiniMax-H3 model (one that has `sigma_shift_video` / `sigma_shift_audio`). Not SD/Flux/WAN.
+- **A transition falls outside the sigma schedule** → increase your scheduler step count or move Manual transition goals earlier. Every transition must happen after the first sigma and before the final sigma.
+- **MiniMax-H3 sigma shifts are unavailable / the latent shape is rejected** → SPEED requires a real MiniMax-H3 video+audio latent and H3 sigma-shift metadata. It does not support SD, Flux, WAN, or other model families.
 - **Text looks blurry / wobbly** → lower `Tolerance (Delta)` from `0.005` (0.5%) toward `0.001`, or use fewer stages. Both choices are more conservative and usually slower.
 - **Prompt drifts / objects disappear on 4-stage** → too many hops. Drop to 2 or 3 stages.
+
+## Current limitations
+
+- Batch size is currently **1**.
+- `noise_mask` / masked denoising is not supported.
+- The main H3 `latent_image["samples"]` must start empty. I2V keyframe conditioning is supported through MiniMax-H3's conditioning data and is resized/restored separately by SPEED.
+- SPEED expects the MiniMax-H3 nested latent layout: one video stream plus one audio stream.
 
 ## Advanced — you don't need this to use it
 
 <details>
 <summary>How Automatic picks the steps (click to expand)</summary>
 
-It measures how noise power falls with frequency on a full-res run: `P(ω) = A·|ω|^-β` (β ~0.77 for MiniMax-H3's validated fits; see Defaults below). For each scale `s`, `ω = s·min(H,W)/2`, `P = A·ω^-β`, then `thr = 1/(1+√(δ/(P·(1+P-δ))))` (δ = Tolerance, 0.005 = 0.5% allowed error). The first `sigmas[i] ≤ thr` is where that stage ends. Continuous sigma, just quantized to your sigma schedule.
+Sigma Harvest measures how the radial DCT power of the full-resolution **residual** `x - denoised` falls with frequency and fits `P(ω) = A·|ω|^-β`. The shipped Euler fit has β around 0.77. For each stage scale `s`, Automatic uses `ω = s·min(H,W)/2`, evaluates `P = A·ω^-β`, then computes `thr = 1/(1+√(δ/(P·(1+P-δ))))`. The first `sigmas[i] ≤ thr` becomes that stage boundary. The threshold is continuous; the actual boundary is quantized to your sigma schedule.
 
-Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise/guider/sigmas/latent + Tolerance`, run the selected native sampler at full resolution with the same sigma scheduler and step count you intend to use in SPEED, then copy its `calibration` JSON into the matching Automatic run's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler.
+Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise/guider/sigmas/latent + Tolerance`, run the selected native sampler at full resolution with the same sigma scheduler and step count you intend to use in SPEED, then match its returned sampler and copy `delta`, `noise_amplitude`, and `noise_decay_exponent` into Automatic. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler.
 
 Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`.
 
 **Noise policies:** `direct_coarse` is the default and fills newly exposed frequency bands from deterministic transition-seeded Gaussian noise. `coupled_full_grid` instead derives those bands from one seeded full-resolution Gaussian field, so every stage is coupled to the same full-grid realization. V2 keeps this mode for deterministic parity/ablation work, but there is currently no evidence that it is generally sharper or higher quality than `direct_coarse`.
 
-`seed_offset` changes the per-stage high-frequency fill pattern — leave at 10000 unless you want a different fill pattern for the same seed. `ratio_mode steps` = goal is a step index, `ratio` = goal is a 0-1 fraction.
+With `direct_coarse`, `seed_offset` changes the deterministic high-frequency fill used at each resolution transition. It has no effect on `coupled_full_grid`, which takes those frequencies from the one full-resolution noise field. Leave it at 10000 unless you specifically want a different `direct_coarse` fill pattern for the same seed.
+
+For the Manual node, `ratio_mode = steps` treats each goal as a global step index; `ratio_mode = ratio` treats it as a 0–1 fraction of the full denoising schedule.
 
 </details>
 
