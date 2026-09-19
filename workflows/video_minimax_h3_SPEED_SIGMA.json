@@ -1298,10 +1298,10 @@
             },
             "widgets_values": [
               "euler",
-              0.01
+              0.005
             ],
             "widgets_values_named": {
-              "Tolerance (Delta)": 0.01,
+              "Tolerance (Delta)": 0.005,
               "sampler_name": "euler"
             }
           }
