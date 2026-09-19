@@ -209,8 +209,7 @@ class MiniMaxH3HarvestToConfig:
             "health": health,
             "sampler_name": sampler_name,
             # Measurement basis: this fit comes from the residual (x - denoised),
-            # not the clean-data x0 spectrum. Kept alongside the original keys
-            # so existing consumers keep working unchanged.
+            # not the clean-data x0 spectrum.
             "measurement_basis": "residual_x_minus_denoised",
             "calibration_kind": "empirical_h3_residual_fit",
         }
@@ -273,13 +272,8 @@ class MiniMaxH3HarvestToConfig:
         # {"samples": ...}. Wrap it so downstream VAE decode works (otherwise
         # VAEDecodeAudio does NestedTensor["samples"] -> IndexError).
         if result is not None:
-            if isinstance(latent_image, dict):
-                output_latent = latent_image.copy()
-                output_latent["samples"] = result
-            elif isinstance(result, dict) and "samples" in result:
-                output_latent = result
-            else:
-                output_latent = {"samples": result}
+            output_latent = latent_image.copy()
+            output_latent["samples"] = result
         else:
             output_latent = latent_image
         return (output_json, output_latent)
