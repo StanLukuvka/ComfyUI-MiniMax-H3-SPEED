@@ -21,12 +21,7 @@ from .flow import (
     to_internal_state,
 )
 from .latent_class import LatentWalker
-from .planning import (
-    activation_threshold,
-    power_at_frequency,
-    resolve_transition_steps,
-    stage_resolution,
-)
+from .planning import resolve_transition_steps, stage_resolution
 from .sampler_support import (
     SamplerCapability,
     SpeedSamplerHandle,
