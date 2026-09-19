@@ -16,7 +16,7 @@ The pack ships exactly three ComfyUI nodes:
 
 `MiniMaxH3HarvestToConfig` wraps the selected **native** Comfy sampler (`guider.sample()`), NOT `run_speed_pipeline`. It runs one full-resolution native pass with a fixed sigma schedule.
 
-**How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED, using the same sigma scheduler and step count you intend to run. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler. Read the sampler-specific `calibration` JSON and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. For `res_multistep`, Harvest uses native Comfy `res_multistep`; SPEED generation uses the repository's stateful RES adapter.
+**How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED, using the same sigma scheduler and step count you intend to run. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler. Read the sampler-specific `calibration` JSON and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. For `res_multistep`, Harvest uses native Comfy `res_multistep`; SPEED generation currently uses the repository's stateful RES adapter.
 
 ## Calibration
 
@@ -24,14 +24,16 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 
 ## Sampler architecture
 
-Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that clears all previous-step RES history at every SPEED stage boundary (reset behavior). There is no history-mode widget or switch. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
+Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that clears all previous-step RES history at every SPEED stage boundary. There is no history-mode widget or switch. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
 
 ## Development Conventions
 
 - SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
 - All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
-- Calibration happens offline; the baked defaults live in the node's widget defaults in `nodes/sampler_node.py` (`speed_scripts/config.py` holds the SpeedConfig dataclass defaults, which the node path always overrides explicitly). The stage ladder + config assembly is centralized in `speed_scripts/automatic_config.py` (`build_automatic_speed_config`).
-- Latent lifecycle: `speed_scripts/latent_class.py` (`LatentClass` / `LatentWalker`, plus `LatentStage`) — the walker snapshots pristine full-res cond/ref latents once per run, `apply_stage(h, w)` resizes keyframes from pristine for each coarse stage (even-round dims, never from degraded tensors), `apply_final()` restores full res. `minimax_refs` are never scaled (their row allocation is locked to full res by the model). The walker is stashed on the guider per run (`_LW_ATTR` in `h3_runtime.py`) and dropped at run end.
+- Automatic configs do not store placeholder transition indices. `delta_custom` boundaries are computed from the live sigma schedule at runtime; `transition_steps` is only meaningful in explicit/manual mode.
+- Stage geometry, transition-threshold math, Automatic config construction, and Manual schedule normalization live together in `speed_scripts/planning.py`. `speed_scripts/automatic_config.py` is only a compatibility re-export for older imports.
+- `speed_scripts/h3_runtime.py` owns execution rather than planning: H3 latent validation, preview timeline, spectral/audio boundary application, sampler hooks, stage calls, and output assembly.
+- I2V latent lifecycle lives in `speed_scripts/latent_class.py` as one `LatentWalker`. It snapshots only keyframe latents, always resizes from pristine full resolution, restores them before the final stage and on failure, and never wraps or resizes `minimax_refs`. The walker is local to one `run_speed_pipeline()` call; it is not stored on the guider.
 - No random configuration, no silent randomization in config paths.
 - Tests: `speed_scripts/tests/` — run with the repo venv (`.venv/bin/python -m pytest speed_scripts/tests/ -q`); the repo has no CI workflows for dev PRs, so the local suite is the gate.

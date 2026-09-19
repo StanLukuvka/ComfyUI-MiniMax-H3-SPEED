@@ -27,42 +27,45 @@ class SpeedConfig:
     noise_decay_exponent: float = 0.773
     full_latent_h: int = 45
     full_latent_w: int = 80
-    # Empty means full temporal resolution at every stage.
     temporal_scales: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
-        scales = tuple(float(s) for s in self.scales)
-        steps = tuple(int(s) for s in self.transition_steps)
-        if len(scales) < 1:
+        scales = tuple(float(scale) for scale in self.scales)
+        steps = tuple(int(step) for step in self.transition_steps)
+
+        if self.transition_mode not in ("explicit", "delta_custom"):
+            raise ValueError("transition_mode must be 'explicit' or 'delta_custom'")
+        if not scales:
             raise ValueError("at least one scale required")
+        if not all(0.0 < scale <= 1.0 for scale in scales):
+            raise ValueError("every scale must be in (0, 1]")
         if len(scales) == 1:
             if abs(scales[0] - 1.0) > 1e-6:
-                raise ValueError("a single scale must be 1.0 (full resolution)")
+                raise ValueError("single scale must be 1.0 (full resolution)")
+        elif abs(scales[-1] - 1.0) > 1e-6:
+            raise ValueError("final scale must be 1.0 (full resolution)")
+        if not all(left < right for left, right in zip(scales[:-1], scales[1:])):
+            raise ValueError("scales must be strictly increasing")
+
+        if len(scales) == 1:
             if steps:
                 raise ValueError("single-scale config takes no transition steps")
-        else:
-            if abs(scales[-1] - 1.0) > 1e-6:
-                raise ValueError("final scale must be 1.0 (full resolution)")
-            if not all(0.0 < s <= 1.0 for s in scales):
-                raise ValueError("every scale must be in (0, 1]")
-            if not all(left < right for left, right in zip(scales[:-1], scales[1:])):
-                raise ValueError("scales must be strictly increasing")
+        elif self.transition_mode == "explicit":
             if len(steps) != len(scales) - 1:
                 raise ValueError("need (n_scales - 1) transition steps")
-            if not all(s >= 1 for s in steps):
+            if not all(step >= 1 for step in steps):
                 raise ValueError("every transition step must be at least one")
-            # Explicit user schedules must be strictly increasing. delta_custom
-            # boundaries may later quantize onto the same sigma index.
-            if self.transition_mode == "explicit" and any(
-                a >= b for a, b in zip(steps[:-1], steps[1:])
-            ):
+            if any(left >= right for left, right in zip(steps[:-1], steps[1:])):
                 raise ValueError(
                     f"transition steps must be strictly increasing: got {list(steps)}"
                 )
+        else:
+            # delta_custom computes boundaries from the sigma schedule at runtime;
+            # there is no reason to carry placeholder transition indices.
+            steps = ()
+
         if not 0.0 < self.delta < 1.0:
             raise ValueError("delta must be in (0, 1)")
-        if self.transition_mode not in ("explicit", "delta_custom"):
-            raise ValueError("transition_mode must be 'explicit' or 'delta_custom'")
         if self.noise_amplitude <= 0.0 or self.noise_decay_exponent <= 0.0:
             raise ValueError("power spectrum A and beta must be positive")
         if self.full_latent_h < 1 or self.full_latent_w < 1:
@@ -75,18 +78,19 @@ class SpeedConfig:
             raise ValueError(f"unsupported sigma_policy: {self.sigma_policy}")
         if self.audio_policy == "untouched" and self.sigma_policy != "no_alignment":
             raise ValueError("untouched audio requires sigma_policy=no_alignment")
-        if self.temporal_scales:
-            if len(self.temporal_scales) != len(scales):
+
+        temporal_scales = tuple(float(scale) for scale in self.temporal_scales)
+        if temporal_scales:
+            if len(temporal_scales) != len(scales):
                 raise ValueError("temporal_scales must have the same length as scales")
-            if not all(0.0 < s <= 1.0 for s in self.temporal_scales):
+            if not all(0.0 < scale <= 1.0 for scale in temporal_scales):
                 raise ValueError("temporal scales must be in (0, 1]")
-            if not all(
-                left <= right
-                for left, right in zip(self.temporal_scales[:-1], self.temporal_scales[1:])
-            ):
+            if not all(left <= right for left, right in zip(temporal_scales[:-1], temporal_scales[1:])):
                 raise ValueError("temporal_scales must be non-decreasing")
+
         object.__setattr__(self, "scales", scales)
         object.__setattr__(self, "transition_steps", steps)
+        object.__setattr__(self, "temporal_scales", temporal_scales)
 
 
 __all__ = [
