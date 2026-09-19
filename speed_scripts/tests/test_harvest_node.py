@@ -96,7 +96,12 @@ def test_harvest_uses_selected_native_sampler_and_emits_identity(monkeypatch, sa
         native_sampler_object,
     )
     guider = Guider()
-    text, diagnostic = _harvest(cls, guider, sampler_name, delta=.01)
+    text, diagnostic = _harvest(
+        cls,
+        guider,
+        sampler_name,
+        **{"Tolerance (Delta)": .01},
+    )
     calibration = json.loads(text)
 
     assert native_calls == [sampler_name]
@@ -172,6 +177,12 @@ def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
     assert calibration["health"] == "suspect"
     assert "Do not paste this calibration into Automatic" in calibration["report"]
     assert "Paste into SPEED Sampler:" not in calibration["report"]
+
+
+def test_removed_harvest_tolerance_alias_fails_closed():
+    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
+    with pytest.raises(TypeError, match="Unexpected Harvest option"):
+        _harvest(cls, Guider(), "euler", delta=.01)
 
 
 def test_res_harvest_uses_native_sampler_stub_not_speed_adapter(monkeypatch):
