@@ -223,7 +223,7 @@ class MiniMaxH3HarvestToConfig:
 
         # Plug-and-play for SPEED's delta_custom: just feed A/beta into
         # noise_amplitude / noise_decay_exponent + delta. No per-preset
-        # transition_steps table — SPEED computes it via resolve_transition_steps.
+        # precomputed transition table — SPEED computes it via resolve_transition_steps.
         calibration = {
             "schema_version": 2,
             "noise_amplitude": A,
