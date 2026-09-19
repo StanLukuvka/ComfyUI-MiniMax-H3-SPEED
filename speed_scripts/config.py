@@ -26,6 +26,7 @@ class SpeedConfig:
     delta: float = 0.01
     noise_amplitude: float = 12.105
     noise_decay_exponent: float = 0.773
+    # Optional temporal ladder; when provided it must end at full temporal resolution.
     temporal_scales: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
