@@ -47,6 +47,8 @@ def test_automatic_node_public_surface_and_defaults():
     assert required["noise_amplitude"][1]["round"] == 0.0001
     assert required["noise_decay_exponent"][1]["step"] == 0.0001
     assert required["noise_decay_exponent"][1]["round"] == 0.0001
+    assert required["noise_amplitude"][1]["min"] > 0
+    assert required["noise_decay_exponent"][1]["min"] > 0
     assert required["Tolerance (Delta)"][1]["step"] == 0.001
 
 
