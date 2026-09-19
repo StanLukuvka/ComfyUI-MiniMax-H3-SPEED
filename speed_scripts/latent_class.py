@@ -31,6 +31,10 @@ class _ConditionLatent:
         return cls(holder=holder, pristine=latent.clone())
 
     def resize(self, height: int, width: int) -> None:
+        # MiniMax-H3 patchifies video on a 1x2x2 DiT grid. The main stage latent
+        # is padded to that grid inside ComfyUI, but conditioning keyframes are
+        # patchified directly without that padding. Round keyframe H/W up to the
+        # same even grid here so their packed rows match the padded stage latent.
         height += height % 2
         width += width % 2
         current = self.holder.get("latent")
