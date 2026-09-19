@@ -27,6 +27,10 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Fixed
 
+- Fixed Automatic silently coercing invalid stage counts; only 2, 3, or 4 are accepted.
+- Fixed non-finite calibration A/beta values passing `SpeedConfig` validation.
+- Fixed temporal schedules being able to finish below full temporal resolution.
+- Fixed Harvest silently discarding residual/profile reduction exceptions; the first failure is now surfaced.
 - Fixed committed Sigma Harvest workflow metadata to match the current two-output node contract.
 - Fixed preview callbacks continuing to run after the runtime had logged that preview updates were disabled.
 - Fixed unusable Harvest fits being presented as paste-ready Automatic calibration values.
