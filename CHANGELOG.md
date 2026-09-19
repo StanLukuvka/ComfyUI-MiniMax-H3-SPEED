@@ -26,6 +26,9 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Fixed
 
+- Fixed committed Sigma Harvest workflow metadata to match the current two-output node contract.
+- Fixed preview callbacks continuing to run after the runtime had logged that preview updates were disabled.
+- Fixed unusable Harvest fits being presented as paste-ready Automatic calibration values.
 - Fixed RES history being unsafe to carry across resolution changes by resetting it at every SPEED transition.
 - Fixed repeated I2V resizing accumulating interpolation loss.
 - Fixed I2V conditioning remaining modified after some failed runs.
