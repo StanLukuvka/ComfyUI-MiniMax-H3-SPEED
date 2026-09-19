@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comfyui-mini-max-h3-speed-sampler"
-version = "0.1.0"
-description = "MiniMax-H3 SPEED progressive-resolution sampler as three ComfyUI nodes (automatic, manual, harvest-to-config)."
+version = "2.0.0"
+description = "MiniMax-H3 SPEED V2 progressive-resolution sampler with Automatic, Manual, and sampler-aware Harvest nodes."
 readme = "README.md"
 license = {text = "PolyForm Noncommercial 1.0.0"}
 requires-python = ">=3.10"
