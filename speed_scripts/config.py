@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 
 NOISE_POLICIES = {"direct_coarse", "coupled_full_grid"}
@@ -58,8 +59,13 @@ class SpeedConfig:
 
         if not 0.0 < self.delta < 1.0:
             raise ValueError("delta must be in (0, 1)")
-        if self.noise_amplitude <= 0.0 or self.noise_decay_exponent <= 0.0:
-            raise ValueError("power spectrum A and beta must be positive")
+        if (
+            not math.isfinite(self.noise_amplitude)
+            or not math.isfinite(self.noise_decay_exponent)
+            or self.noise_amplitude <= 0.0
+            or self.noise_decay_exponent <= 0.0
+        ):
+            raise ValueError("power spectrum A and beta must be positive finite values")
         if self.noise_policy not in NOISE_POLICIES:
             raise ValueError(f"unsupported noise_policy: {self.noise_policy}")
         if self.audio_policy not in AUDIO_POLICIES:
@@ -77,6 +83,8 @@ class SpeedConfig:
                 raise ValueError("temporal scales must be in (0, 1]")
             if not all(left <= right for left, right in zip(temporal_scales[:-1], temporal_scales[1:])):
                 raise ValueError("temporal_scales must be non-decreasing")
+            if abs(temporal_scales[-1] - 1.0) > 1e-6:
+                raise ValueError("final temporal scale must be 1.0 (full temporal resolution)")
 
         object.__setattr__(self, "scales", scales)
         object.__setattr__(self, "transition_steps", steps)
