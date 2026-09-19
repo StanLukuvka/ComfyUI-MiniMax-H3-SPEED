@@ -127,43 +127,53 @@ def _build_preview_callback(guider, total_steps, x0_output):
     return latent_preview.prepare_callback(guider.model_patcher, total_steps, x0_output)
 
 
-def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total):
-    """Map stage progress onto the full SPEED run."""
-    if stock_cb is None:
-        try:
-            import comfy.utils as comfy_utils
+class _PreviewGuard:
+    """Run-wide preview-callback state shared by every stage callback.
 
-            pbar = comfy_utils.ProgressBar(global_total)
-        except Exception:
-            pbar = None
+    The SPEED runtime builds one callback per stage, so any disable state
+    kept inside a single stage's closure would reset at the next stage
+    boundary. Holding it here keeps a failing preview callback disabled
+    for the rest of the run, and the warning fires once on the
+    enabled -> disabled transition instead of once per stage.
+    """
+
+    def __init__(self):
+        self.disabled = False
+
+    def callback(self, stock_cb, capture_state, global_offset, global_total):
+        """Bind one stage-local callback onto the run-wide progress timeline."""
+        if stock_cb is None:
+            try:
+                import comfy.utils as comfy_utils
+
+                pbar = comfy_utils.ProgressBar(global_total)
+            except Exception:
+                pbar = None
+
+            def callback(step, x0, x, total_steps):
+                capture_state["x0"] = x0
+                if pbar is not None:
+                    try:
+                        pbar.update_absolute(global_offset + step + 1, global_total)
+                    except Exception:
+                        pass
+
+            return callback
 
         def callback(step, x0, x, total_steps):
             capture_state["x0"] = x0
-            if pbar is not None:
-                try:
-                    pbar.update_absolute(global_offset + step + 1, global_total)
-                except Exception:
-                    pass
+            if self.disabled:
+                return
+            try:
+                stock_cb(global_offset + step, x0, x, global_total)
+            except Exception as exc:
+                self.disabled = True
+                log.warning(
+                    "[SPEED-preview] preview callback failed (%r) — disabling updates for this run",
+                    exc,
+                )
 
         return callback
-
-    preview_disabled = False
-
-    def callback(step, x0, x, total_steps):
-        nonlocal preview_disabled
-        capture_state["x0"] = x0
-        if preview_disabled:
-            return
-        try:
-            stock_cb(global_offset + step, x0, x, global_total)
-        except Exception as exc:
-            preview_disabled = True
-            log.warning(
-                "[SPEED-preview] preview callback failed (%r) — disabling updates for this run",
-                exc,
-            )
-
-    return callback
 
 
 def _coupled_transition(
@@ -284,6 +294,7 @@ def run_speed_pipeline(
     stock_callback = preview_callback
     if stock_callback is None:
         stock_callback = _build_preview_callback(guider, global_total, x0_output)
+    preview_guard = _PreviewGuard()
 
     if sampler_override is not None:
         if sampler_name != "euler":
@@ -305,7 +316,7 @@ def run_speed_pipeline(
             walker.apply_stage(stage_h, stage_w)
 
             stage_sigmas = working_sigmas[global_start : global_end + 1]
-            callback = _wrap_preview_callback(
+            callback = preview_guard.callback(
                 stock_callback,
                 x0_output,
                 global_done,
@@ -405,7 +416,7 @@ def run_speed_pipeline(
 
         walker.apply_final()
         final_sigmas = working_sigmas[global_start:]
-        final_callback = _wrap_preview_callback(
+        final_callback = preview_guard.callback(
             stock_callback,
             x0_output,
             global_done,
