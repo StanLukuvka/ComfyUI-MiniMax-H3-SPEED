@@ -76,7 +76,7 @@ Automatic and Manual share the normal sampling inputs and return output and deno
 
 ## Speed Improvements
 
-Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, corrected scheduler (post-PR-#37). Native Euler baseline: 571s. These baked measurements use Euler evidence and per-resolution harvest calibrations. They do not establish parity for the other samplers. The benchmark evidence below is Euler unless explicitly stated otherwise.
+Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, corrected scheduler (post-PR-#37). Native Euler baseline: 571s. These measurements use Euler and the calibration values shown in the table. They do not establish parity for the other samplers.
 
 | Fit | Mode | Time | Speedup | Quality |
 |------|------|------|---------|---------|
@@ -91,7 +91,7 @@ Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, correcte
 | Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
 
 
-See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and the review rubric.
+See [evidence/README.md](evidence/README.md) for the full 10s GIFs (360p, 12fps).
 
 **Rule of thumb:** quality-first use `stages 3` at Δ0.005; balanced use `stages 2` at Δ0.01; fast drafts use `stages 4` at Δ0.05.
 
@@ -106,7 +106,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 - Batch size is currently **1**.
 - `noise_mask` / masked denoising is not supported.
-- The main H3 `latent_image["samples"]` must start empty. I2V keyframe conditioning is supported through MiniMax-H3's conditioning data and is resized/restored separately by SPEED.
+- The main H3 `latent_image["samples"]` video and audio streams must start empty. SPEED's I2V support comes through MiniMax-H3 keyframe conditioning, which is resized and restored separately.
 - SPEED expects the MiniMax-H3 nested latent layout: one video stream plus one audio stream.
 
 ## Advanced — you don't need this to use it
@@ -116,7 +116,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 Sigma Harvest measures how the radial DCT power of the full-resolution **residual** `x - denoised` falls with frequency and fits `P(ω) = A·|ω|^-β`. The shipped Euler fit has β around 0.77. For each stage scale `s`, Automatic uses `ω = s·min(H,W)/2`, evaluates `P = A·ω^-β`, then computes `thr = 1/(1+√(δ/(P·(1+P-δ))))`. The first `sigmas[i] ≤ thr` becomes that stage boundary. The threshold is continuous; the actual boundary is quantized to your sigma schedule.
 
-Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise/guider/sigmas/latent + Tolerance`, run the selected native sampler at full resolution with the same sigma scheduler and step count you intend to use in SPEED, then match its returned sampler and copy `delta`, `noise_amplitude`, and `noise_decay_exponent` into Automatic. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler.
+Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise`, `guider`, `sigmas`, `latent_image`, and `Tolerance (Delta)`; run the selected native sampler at full resolution with the same sigma scheduler and step count you intend to use in SPEED; then select the same sampler in Automatic and copy `delta`, `noise_amplitude`, and `noise_decay_exponent`. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler.
 
 Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`.
 
@@ -132,7 +132,7 @@ For the Manual node, `ratio_mode = steps` treats each goal as a global step inde
 
 V2 happened because the original version had grown past the point where small patches were enough.
 
-V1 proved the basic idea worked, but it was still built around **Euler**, carried some duplicated scheduling logic, and had a few places where state from one SPEED stage could leak into the next. Once I started adding more samplers, RES, I2V support, and better calibration, it made more sense to clean up the design properly instead of stacking more special cases on top.
+V1 proved the basic idea worked, but it was still built around **Euler**, carried duplicated scheduling logic, and did not clean up stage-specific I2V conditioning as safely as I wanted. Once I started adding more samplers, RES, stronger I2V handling, and better calibration, it made more sense to clean up the design properly instead of stacking more special cases on top.
 
 The biggest change is **sampler support**. SPEED is no longer tied to Euler: V2 supports Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep. The stateless samplers can use ComfyUI's normal sampler objects, but RES needs special handling because it remembers previous steps. That history is only valid while the latent grid stays the same, so V2 clears it whenever SPEED changes resolution instead of carrying stale state into a different-sized stage.
 
