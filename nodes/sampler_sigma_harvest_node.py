@@ -1,17 +1,8 @@
-"""Sigma harvester + calibration report emitter.
+"""Calibrate Automatic SPEED from one native full-resolution sampler run.
 
-Native full-res sampler pass over the full sigma schedule using
-`guider.sample()` (not the SPEED chain), snapshots `residual = x - denoised`
-on each step, immediately reduces it to a radial DCT power profile, then fits
-`P = A * |omega|^(-beta)`,
-and emits a flat `calibration` JSON (schema_version, sampler_name,
-noise_amplitude,
-noise_decay_exponent, delta, r2, health, measurement_basis,
-calibration_kind, report) to paste back into the Automatic node.
-
-The fit is an empirical H3 residual calibration (basis:
-`residual_x_minus_denoised`); its A/beta are not the clean-data power
-spectrum from the SPEED paper.
+Measure `x - denoised` at each step, fit `P = A * |omega|^(-beta)`, and
+return A, beta, and delta for the Automatic node. This measures H3's residual
+spectrum, not the clean-data spectrum from the SPEED paper.
 """
 
 from __future__ import annotations
@@ -47,17 +38,15 @@ def _error_json(error, message, **fields):
 
 
 class MiniMaxH3HarvestToConfig:
-    """Sigma harvester — native sampler pass with per-step residual capture."""
+    """Measure one native sampler run and return an Automatic calibration."""
 
     DESCRIPTION = (
-        "Sigma Harvest — run this on a full-res native sampler generation to "
-        "calibrate the Automatic sampler. Re-run it when the sampler, model, "
-        "scheduler, step count, or other denoising behavior changes. It is an empirical H3 residual "
-        "calibration: it measures how the residual (x - denoised) falls off with "
-        "frequency (P = A·|ω|^-beta) and gives you A/beta to paste into the "
-        "Automatic node. It does NOT measure the clean-data power spectrum from "
-        "the SPEED paper. Does NOT use SPEED — it must run at full res with a "
-        "fixed sigma schedule."
+        "Sigma Harvest calibrates Automatic from one native full-resolution "
+        "sampler run. Re-run it when the sampler, model, scheduler, step count, "
+        "or denoising behavior changes. It fits the residual spectrum "
+        "(x - denoised) to P = A·|ω|^-beta and returns A/beta for Automatic. "
+        "The calibration basis is the H3 residual spectrum, separate from the "
+        "clean-data spectrum in the SPEED paper."
     )
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")
@@ -102,7 +91,7 @@ class MiniMaxH3HarvestToConfig:
         first_profile_error = None
 
         def _capture(x_current, denoised_est):
-            """Reduce one residual to its CPU spectral profile immediately."""
+            """Turn one residual into a CPU frequency-power profile immediately."""
             nonlocal capture_count, first_residual_error, first_profile_error
             try:
                 residual = compute_video_residual(x_current, denoised_est)
@@ -130,8 +119,7 @@ class MiniMaxH3HarvestToConfig:
             freqs_all.append(freqs)
             profiles_all.append(profile)
 
-        # guider.sample exposes ComfyUI's packed callback contract:
-        # callback(step, denoised, x, total_steps).
+        # ComfyUI calls sampler callbacks as: (step, denoised, x, total_steps).
         def _capture_callback(step, denoised, x, total_steps):
             return _capture(x, denoised)
 
@@ -219,15 +207,14 @@ class MiniMaxH3HarvestToConfig:
         else:
             H_full, W_full = map(int, video_stream.shape[-2:])
 
-        # sigmas_list not needed for plug-and-play, but keep for debugging if needed
+        # Convert sigmas once for the transition report.
         try:
             sigmas_list = [float(s) for s in sigmas]
         except Exception:
             sigmas_list = [float(sigmas[i]) for i in range(len(sigmas))]
 
-        # Plug-and-play for SPEED's delta_custom: just feed A/beta into
-        # noise_amplitude / noise_decay_exponent + delta. No per-preset
-        # precomputed transition table — SPEED computes it via resolve_transition_steps.
+        # Automatic uses A, beta, and delta to calculate transition steps
+        # from the live sigma schedule.
         calibration = {
             "schema_version": 2,
             "noise_amplitude": A,
@@ -236,13 +223,11 @@ class MiniMaxH3HarvestToConfig:
             "r2": r2,
             "health": health,
             "sampler_name": sampler_name,
-            # Measurement basis: this fit comes from the residual (x - denoised),
-            # not the clean-data x0 spectrum.
+            # This fit measures x - denoised; x0 uses a different calibration basis.
             "measurement_basis": "residual_x_minus_denoised",
             "calibration_kind": "empirical_h3_residual_fit",
         }
 
-        # Human-readable report — just the plug-and-play values
         lines = [
             f"Empirical H3 residual calibration ({sampler_name}): noise_amplitude={A:.4f}  noise_decay_exponent={beta:.4f}  r²={r2:.4f}  health={health}",
         ]
@@ -272,9 +257,8 @@ class MiniMaxH3HarvestToConfig:
                 "Do not paste this calibration into Automatic: SPEED requires "
                 "positive finite noise_amplitude and noise_decay_exponent values."
             )
-        # Diagnostic only — not part of the JSON to paste. Shows where delta_custom
-        # will place the two most common reference scales for this sigmas length.
-        # Derived exactly as runtime does: omega = scale * min(H,W)/2 -> P(omega) -> thr -> first step <= thr.
+        # For reference, show where this sigma schedule would place the
+        # 0.5x and 0.75x transitions.
         if H_full is not None and W_full is not None and sigmas_list:
             try:
                 omega_max = min(H_full, W_full) / 2.0
@@ -296,9 +280,8 @@ class MiniMaxH3HarvestToConfig:
 
         output_json = json.dumps(calibration)
 
-        # guider.sample returns a NestedTensor/tensor, but ComfyUI LATENT is a dict
-        # {"samples": ...}. Wrap it so downstream VAE decode works (otherwise
-        # VAEDecodeAudio does NestedTensor["samples"] -> IndexError).
+        # ComfyUI expects a LATENT dict, so put the sampler result back under
+        # "samples" before returning it.
         if result is not None:
             output_latent = latent_image.copy()
             output_latent["samples"] = result

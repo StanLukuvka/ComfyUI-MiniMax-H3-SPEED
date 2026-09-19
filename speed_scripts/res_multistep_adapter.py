@@ -1,14 +1,10 @@
-"""Stateful deterministic RES Multistep adapter for the SPEED pipeline.
+"""Use deterministic RES Multistep across SPEED stages.
 
-The native ComfyUI sampler keeps previous-step history in function locals, so
-separate ``guider.sample()`` calls do not share it. This adapter makes that
-history explicit while preserving the host sampler-object contract. SPEED's
-shipping boundary policy is reset-only: the run-scoped handle clears history
-at every resolution transition, so the first real interval at the new
-resolution cold-starts before normal RES multistep history rebuilds.
+ComfyUI keeps RES history inside one sampler call. SPEED spans several calls,
+so this adapter stores that history explicitly. Each resolution change clears
+the history before RES starts again.
 
-Only deterministic, non-ancestral RES is supported here (``eta=0``, no SDE,
-no CFG++ path).
+This adapter supports deterministic RES: no ancestral sampling, SDE, or CFG++.
 """
 
 from __future__ import annotations
@@ -20,7 +16,7 @@ import torch
 
 
 def _host_ksampler_class():
-    """Resolve the host's real ``KSAMPLER`` lazily."""
+    """Load ComfyUI's ``KSAMPLER`` for the RES adapter."""
     try:
         from comfy.samplers import KSAMPLER
     except Exception:
@@ -30,21 +26,21 @@ def _host_ksampler_class():
 
 @dataclass
 class ResMultistepState:
-    """Previous-step history owned by one RES sampler run."""
+    """The previous-step values RES needs for its next update."""
 
     old_denoised: object | None = None
     old_sigma_down: float | None = None
     prev_sigma_in: float | None = None
 
     def clear(self) -> None:
-        """Release every previous-step history reference."""
+        """Clear RES history before starting at a new resolution."""
         self.old_denoised = None
         self.old_sigma_down = None
         self.prev_sigma_in = None
 
 
 def _res_first_order_update(x, denoised, sigma, sigma_down):
-    """Return the deterministic first-order RES update for one interval."""
+    """Run one first-order RES step."""
     d = (x - denoised) / sigma
     return x + d * (sigma_down - sigma)
 
@@ -58,7 +54,7 @@ def _res_second_order_update(
     old_sigma_down,
     prev_sigma_in,
 ):
-    """Return the deterministic second-order RES update for one interval."""
+    """Run one second-order RES step."""
     t_old = -math.log(old_sigma_down)
     t_next = -math.log(sigma_down_f)
     t_prev = -math.log(prev_sigma_in)
@@ -80,7 +76,7 @@ def res_multistep_sampler(
     callback=None,
     disable=None,
 ):
-    """Run deterministic RES Multistep over ``sigmas`` while carrying ``state``."""
+    """Run RES across the sigma schedule while keeping its step history."""
     extra_args = {} if extra_args is None else extra_args
     x = noise
     s_in = x.new_ones([x.shape[0]]) if torch.is_tensor(x) else 1.0
@@ -131,7 +127,7 @@ def res_multistep_sampler(
 
 
 class ResMultistepSampler:
-    """Host sampler object wrapping the stateful deterministic RES function."""
+    """ComfyUI sampler wrapper for the stateful RES function."""
 
     def __init__(self, state: ResMultistepState | None = None):
         self.state = state if state is not None else ResMultistepState()
