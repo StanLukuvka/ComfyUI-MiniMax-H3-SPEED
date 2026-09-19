@@ -1,4 +1,4 @@
-"""Pure-Torch orthonormal DCT helpers for H3 video latents."""
+"""DCT helpers used to resize H3 video latents in frequency space."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def spectral_expand_3d(
     sigma: float,
     seed: int,
 ) -> torch.Tensor:
-    """Grow temporal and spatial axes by padding the combined DCT domain with noise."""
+    """Grow time and space by filling new frequency bands with noise."""
     target_t, target_h, target_w = (
         int(target_thw[0]),
         int(target_thw[1]),
