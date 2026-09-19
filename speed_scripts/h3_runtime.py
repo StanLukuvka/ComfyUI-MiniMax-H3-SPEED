@@ -276,6 +276,7 @@ def run_speed_pipeline(
         )
         full_noise_coefficients = dct2(dct_temporal(full_noise_video))
         stage_start_pub = pack_latent(coarse_noise_video, full_noise_audio)
+        del full_noise, full_noise_video
     else:
         coarse_latent = latent.copy()
         coarse_latent["samples"] = stage_start_latent
