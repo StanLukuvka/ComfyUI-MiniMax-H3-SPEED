@@ -76,7 +76,7 @@ def test_input_contract_uses_shared_sampler_dropdown_and_signature():
     assert tuple(required["sampler_name"][0]) == SUPPORTED_SPEED_SAMPLERS
     assert required["sampler_name"][1]["default"] == "euler"
     assert list(required) == ["noise", "guider", "sigmas", "latent_image", "sampler_name"]
-    assert "Tolerance (Delta)" in optional
+    assert optional["Tolerance (Delta)"][1]["default"] == 0.005
     assert list(inspect.signature(cls.harvest).parameters)[5] == "sampler_name"
     assert inspect.signature(cls.harvest).parameters["sampler_name"].default == "euler"
 
