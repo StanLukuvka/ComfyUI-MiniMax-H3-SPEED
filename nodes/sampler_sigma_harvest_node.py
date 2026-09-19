@@ -86,12 +86,10 @@ class MiniMaxH3HarvestToConfig:
         **kwargs,
     ):
 
-        # Tolerance (Delta) is the UI label — accept delta alias for old workflows/tests
-        delta = kwargs.get("Tolerance (Delta)",
-                kwargs.get("Tolerance",
-                kwargs.get("tolerance",
-                kwargs.get("delta", kwargs.get("Delta", 0.005)))))
-        delta = float(delta)
+        delta = float(kwargs.pop("Tolerance (Delta)", 0.005))
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
 
         capture_count = 0
         freqs_all = []
@@ -129,20 +127,8 @@ class MiniMaxH3HarvestToConfig:
                 _step, denoised, x = args[0], args[1], args[2]
                 return _capture(x, denoised)
 
-        # ComfyUI LATENT is normally {"samples": <tensor>}; keep the raw-input
-        # fallback for older tests and compatibility callers.
-        latent_tensor = (
-            latent_image["samples"]
-            if isinstance(latent_image, dict) and "samples" in latent_image
-            else latent_image
-        )
-        try:
-            noise_tensor = noise.generate_noise(latent_image)
-        except Exception:
-            try:
-                noise_tensor = noise.generate_noise({"samples": latent_tensor})
-            except Exception:
-                noise_tensor = noise
+        latent_tensor = latent_image["samples"]
+        noise_tensor = noise.generate_noise(latent_image)
 
         try:
             sampler_obj = comfy.samplers.sampler_object(sampler_name)
@@ -307,10 +293,6 @@ class MiniMaxH3HarvestToConfig:
         else:
             output_latent = latent_image
         return (output_json, output_latent)
-
-    def compute_video_residual(self, x_tensor, denoised_tensor):
-        """Compatibility wrapper around the shared harvest helper."""
-        return compute_video_residual(x_tensor, denoised_tensor)
 
 NODE_CLASS_MAPPINGS = {"MiniMaxH3HarvestToConfig": MiniMaxH3HarvestToConfig}
 NODE_DISPLAY_NAME_MAPPINGS = {
