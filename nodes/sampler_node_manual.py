@@ -75,6 +75,7 @@ class MiniMaxH3SPEEDSamplerManual:
         guider,
         sigmas,
         latent_image,
+        sampler_name,
         noise_policy="direct_coarse",
         seed_offset=10000,
         ratio_mode="steps",
@@ -86,7 +87,6 @@ class MiniMaxH3SPEEDSamplerManual:
         transition_resolution_3=0.75,
         transition_goal_4=15,
         transition_resolution_4=1.0,
-        sampler_name="euler",
         **kwargs,
     ):
         config = build_manual_speed_config(
