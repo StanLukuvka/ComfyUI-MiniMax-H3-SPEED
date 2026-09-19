@@ -151,6 +151,23 @@ def test_harvest_reduces_each_residual_during_callback(monkeypatch):
     assert "error" not in json.loads(text)
     assert len(reduced) == 19
 
+def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
+    module = importlib.import_module("sampler_sigma_harvest_node")
+    cls = module.MiniMaxH3HarvestToConfig
+
+    monkeypatch.setattr(
+        module,
+        "fit_power_law",
+        lambda *args: {"A": 1.0, "beta": -0.5, "r_squared": 0.2, "n_bins": 8},
+    )
+    text, _ = _harvest(cls, Guider(), "euler")
+    calibration = json.loads(text)
+
+    assert calibration["health"] == "suspect"
+    assert "Do not paste this calibration into Automatic" in calibration["report"]
+    assert "Paste into SPEED Sampler:" not in calibration["report"]
+
+
 def test_res_harvest_uses_native_sampler_stub_not_speed_adapter(monkeypatch):
     cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
     native_calls = []
