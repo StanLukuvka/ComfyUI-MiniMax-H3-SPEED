@@ -103,6 +103,8 @@ def build_automatic_speed_config(
     seed_offset,
 ) -> SpeedConfig:
     """Build the runtime config used by the Automatic node."""
+    if isinstance(stages, bool) or not isinstance(stages, int) or stages not in STAGES_TO_SCALES:
+        raise ValueError(f"stages must be exactly 2, 3, or 4; got {stages!r}")
     return SpeedConfig(
         scales=STAGES_TO_SCALES[stages],
         transition_steps=(),
