@@ -29,6 +29,7 @@ from speed_scripts.harvest import (
     fit_power_law,
     classify_fit_quality,
 )
+from speed_scripts.planning import activation_threshold, power_at_frequency
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
@@ -290,9 +291,8 @@ class MiniMaxH3HarvestToConfig:
         # will place the two most common reference scales for this sigmas length.
         # Derived exactly as runtime does: omega = scale * min(H,W)/2 -> P(omega) -> thr -> first step <= thr.
         try:
-            from speed_scripts.h3_runtime import power_at_frequency, activation_threshold
             omega_max = min(H_full, W_full) / 2.0
-            # find helper mirrors h3_runtime._find_first_step_below
+            # Local reporting helper mirrors planning._find_first_step_below.
             def _first_step_below(thr: float) -> tuple[int, float]:
                 for idx, s in enumerate(sigmas_list[:-1]):
                     if float(s) <= thr:
