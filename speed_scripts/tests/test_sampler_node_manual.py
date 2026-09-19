@@ -11,6 +11,7 @@ from speed_scripts.flow import aligned_sigma
 
 def _run_manual(sigmas, **kwargs):
     mod = importlib.import_module("sampler_node_manual")
+    kwargs.setdefault("sampler_name", "euler")
     sigma_calls, shapes = [], []
     output = mod.MiniMaxH3SPEEDSamplerManual().sample(
         make_fake_noise(),
@@ -47,6 +48,7 @@ def test_manual_config_stays_explicit_with_inherited_noise_fit(monkeypatch):
         make_recording_guider(),
         torch.linspace(1.0, 0.0, 11),
         make_latent(h=8, w=8),
+        sampler_name="euler",
     )
     cfg = captured["config"]
     # The runtime reads A/beta only under delta_custom; Manual is explicit,
