@@ -32,9 +32,7 @@ Just `stages` (2, 3, or 4) that correspond to how many resolution stages there a
 `3 = 0.33→0.66→1.0`, 
 `4 = 0.25→0.5→0.75→1.0`. 
 
-`Tolerance (Delta)`, `noise_amplitude`, `noise_decay_exponent` determine at what steps each stage is triggered at, generally leave unless experimenting.
-
-RES Multistep uses reset-only history. It clears previous-step history at every SPEED resolution transition.
+`Tolerance (Delta)`, `noise_amplitude`, and `noise_decay_exponent` determine where the resolution transitions happen. Leave them at the defaults unless you are using a Harvest calibration or deliberately experimenting.
 
 **Manual — Sampler (Step-Through)**
 You set up to four `(goal, resolution)` pairs yourself. For every stage except the last active one, `goal` is where that stage ends and `resolution` is its scale, such as `0.25` for quarter resolution. The last active stage always runs to the end of the sigma schedule, so its goal value is ignored. Active resolutions must increase and the final active resolution must be `1.0`. Set either value to `0` to skip a stage. Use Manual when copying a known schedule or testing a custom ladder.
@@ -45,10 +43,10 @@ Run **once** with your current workflow to measure the selected native full-reso
 
 Re-run Harvest when you materially change the checkpoint, sampler, LoRA/addons, scheduler, or step count.
 
-You can instead use the following values for base H3:
+For base H3 with **Euler**, you can use the shipped reference values instead of running Harvest:
 
 - **Default (baked, 0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
-- **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — near parity, faster
+- **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — faster, with near-parity results in the reference clip
 
 See the [evidence section](evidence/README.md) for what changes in generation.
 
@@ -67,12 +65,6 @@ The Automatic, Manual, and Sigma Harvest nodes expose the same list.
 - **RES Multistep** is the only stateful sampler. Its adapter clears history at every resolution transition.
 
 Automatic and Manual share the normal sampling inputs and return output and denoised LATENTs. Harvest shares the same `noise`, `guider`, `sigmas`, and `latent_image` inputs, plus sampler selection, and returns calibration JSON plus a diagnostic LATENT. Sigma Harvest stays native.
-
-## Diagnostics
-
-- **Sigma Harvest (Native Sampler)** runs one native full-res pass with the
-  selected sampler and outputs a sampler-specific residual calibration (`A /
-  β`) to paste into the matching Automatic configuration.
 
 ## Speed Improvements
 
