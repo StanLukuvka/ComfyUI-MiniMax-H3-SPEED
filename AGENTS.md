@@ -13,14 +13,14 @@ Release-level invariants:
 - The three public node IDs remain stable.
 - Euler remains the reference path for baked calibration and benchmark evidence.
 - RES Multistep is deterministic, run-scoped, and reset-only at resolution boundaries. There is no history-mode widget.
-- `direct_coarse` remains the default noise policy. `coupled_full_grid` remains available as a deterministic full-grid coupling/ablation path, not as a claimed quality preset.
+- `direct_coarse` remains the default noise policy. `coupled_full_grid` remains available because its removal has not been shown to be safe; V2 makes no claim that it improves quality.
 - Internal `speed_scripts` APIs may break from V1 where required by the planner/runtime split; see `CHANGELOG.md` for migration details.
 
 ## Three Nodes
 
 The pack ships exactly three ComfyUI nodes:
 
-1. **`MiniMaxH3SPEEDSampler`** (Automatic) — the generator. Replaces KSampler + SamplerCustomAdvanced for MiniMax-H3 by running a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res). Picks `stages` (2-4), auto-computes the transition steps from `Tolerance (Delta)` + `noise_amplitude` + `noise_decay_exponent` via the power-spectrum threshold (`delta_custom` mode). Baked defaults: `Δ0.005 A12.105 β0.773` (conservative, 0.5%). Balanced `Δ0.01 A12.436 β0.786` runs faster at near parity.
+1. **`MiniMaxH3SPEEDSampler`** (Automatic) — the generator. It uses the same `noise` / `guider` / `sigmas` / `latent_image` interface as `SamplerCustomAdvanced` and runs a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res). A basic all-in-one KSampler workflow must first be split into the advanced sampling components. Picks `stages` (2-4), auto-computes the transition steps from `Tolerance (Delta)` + `noise_amplitude` + `noise_decay_exponent` via the power-spectrum threshold (`delta_custom` mode). Baked defaults: `Δ0.005 A12.105 β0.773` (conservative, 0.5%). Balanced `Δ0.01 A12.436 β0.786` runs faster at near parity.
 
 2. **`MiniMaxH3SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `resolution` is the stage scale in both modes. `ratio_mode steps` = goal is a step index (whole numbers only), `ratio` = goal is a 0-1 fraction of the schedule; the boundary is placed at `round(goal * total_steps)`. Used to copy paper schedules or test custom ladders.
 
@@ -43,7 +43,7 @@ Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-
 ## Noise policies
 
 - **`direct_coarse`** — default. Starts on coarse Gaussian noise and fills newly exposed frequency bands from deterministic transition-seeded Gaussian noise.
-- **`coupled_full_grid`** — builds one seeded full-resolution Gaussian field, transforms it once to spectral coefficients, and reuses the relevant coefficient bands at each resolution transition. Its purpose is deterministic coupling to one full-grid realization and parity/ablation work. V2 does not claim it is generally sharper or higher quality than `direct_coarse`.
+- **`coupled_full_grid`** — builds one seeded full-resolution Gaussian field, transforms it once to spectral coefficients, and reuses the relevant coefficient bands at each resolution transition. It remains available because there is not enough evidence to confidently remove it. V2 does not claim it improves quality over `direct_coarse`.
 
 ## Development Conventions
 
