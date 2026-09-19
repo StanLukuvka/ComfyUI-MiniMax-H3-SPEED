@@ -75,15 +75,14 @@ class MiniMaxH3SPEEDSampler:
         sampler_name="euler",
         **kwargs,
     ):
-        delta = kwargs.get(
-            "Tolerance (Delta)",
-            kwargs.get(
-                "Tolerance",
-                kwargs.get("tolerance", kwargs.get("delta", kwargs.get("Delta", 0.005))),
-            ),
-        )
-        if "preset" in kwargs:
-            raise TypeError("Automatic presets were removed in V2; use stages=2, 3, or 4")
+        delta = 0.005
+        for key in ("Tolerance (Delta)", "Tolerance", "tolerance", "delta", "Delta"):
+            if key in kwargs:
+                delta = kwargs.pop(key)
+                break
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"Unexpected Automatic option(s): {unexpected}")
         try:
             stages = int(stages)
         except Exception:
