@@ -1,7 +1,7 @@
 """Resize MiniMax-H3 I2V keyframes as SPEED changes resolution.
 
 Keyframes follow the current stage size. Reference latents stay at full
-resolution because H3 lays them out against the full-resolution grid.
+resolution; H3 lays them out against the full-resolution grid.
 """
 
 from __future__ import annotations
