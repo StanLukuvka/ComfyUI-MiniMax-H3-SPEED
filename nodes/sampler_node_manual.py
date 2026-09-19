@@ -14,10 +14,11 @@ class MiniMaxH3SPEEDSamplerManual:
     """Progressive-resolution SPEED sampling with user-defined stage boundaries."""
 
     DESCRIPTION = (
-        "Manual SPEED sampler — you set the stages by hand. Give up to four "
-        "(goal, resolution) pairs: goal = step where that stage ends, resolution = "
-        "scale (0.25 = quarter). Set goal or resolution to 0 to skip that stage. "
-        "Use this to copy exact paper schedules or to test custom ladders."
+        "Manual SPEED sampler — set up to four (goal, resolution) pairs by hand. "
+        "For every stage except the last active one, goal marks where that stage "
+        "ends and resolution is its scale (0.25 = quarter). The final active stage "
+        "always runs to the end of the sigma schedule. Set goal or resolution to 0 "
+        "to skip a stage. Use this to copy known schedules or test custom ladders."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
