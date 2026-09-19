@@ -37,7 +37,7 @@ def test_automatic_node_public_surface_and_defaults():
     assert {"noise", "guider", "sigmas", "latent_image", "stages",
             "noise_policy", "Tolerance (Delta)", "noise_amplitude",
             "noise_decay_exponent", "seed_offset"} <= set(required)
-    assert "preset" not in required and "transition_mode" not in required
+    assert "transition_mode" not in required
     assert required["stages"] == ("INT", {"default": 3, "min": 2, "max": 4})
     assert required["Tolerance (Delta)"][1]["default"] == 0.005
     assert required["noise_amplitude"][1]["default"] == 12.105
@@ -91,9 +91,9 @@ def test_node_forwards_generation_configuration_to_shared_builder(monkeypatch):
     assert four_digit.noise_decay_exponent == 0.7732
 
 
-def test_removed_preset_argument_fails_clearly(monkeypatch):
-    with pytest.raises(TypeError, match="presets were removed"):
-        _capture_node_config(monkeypatch, preset="quarter_half_3q_full")
+def test_unknown_automatic_options_fail_closed(monkeypatch):
+    with pytest.raises(TypeError, match="Unexpected Automatic option"):
+        _capture_node_config(monkeypatch, removed_option="old")
 
 
 def test_tolerance_aliases_still_resolve(monkeypatch):
