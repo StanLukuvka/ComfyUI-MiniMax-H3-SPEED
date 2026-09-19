@@ -1,7 +1,6 @@
-"""Behavioral contracts for the focused correctness pass.
+"""Behavioral contracts for core MiniMax-H3 SPEED runtime invariants.
 
-Covers the four runtime invariants that must hold before the scheduler
-rework, without touching scheduling logic itself:
+Covers four execution properties independently of transition-planning tests:
 
 1. Coupled noise follows the configured stage ladder — each transition
    expands only to the NEXT stage's grid (spatial and 3D coupled paths).
