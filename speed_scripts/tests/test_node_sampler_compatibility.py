@@ -1,9 +1,8 @@
-"""Public-input compatibility for the sampler selectors.
+"""Public-input compatibility for the V2 sampler selector.
 
-The sampler selector already existed before RES history modes. V2 appends one
-new required widget after ``sampler_name``; direct/programmatic calls that omit
-it must retain the current V1 behavior through the ``"reset"`` signature
-default. Every pre-existing input keeps its position.
+V2 appends ``sampler_name`` after the pre-existing Automatic/Manual inputs.
+Direct/programmatic calls that omit it retain V1 behavior by defaulting to
+Euler. Every pre-existing input keeps its position.
 """
 
 import inspect
@@ -158,8 +157,8 @@ def test_manual_without_sampler_name_executes_euler():
 
 
 # ---------------------------------------------------------------------------
-# Widget/input ordering: existing inputs are untouched, then sampler_name,
-# then the newly appended RES history mode.
+# Widget/input ordering: existing inputs are untouched, then sampler_name.
+# RES uses one reset-only boundary policy and exposes no history-mode widget.
 # ---------------------------------------------------------------------------
 
 
