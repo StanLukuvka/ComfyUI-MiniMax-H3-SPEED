@@ -64,12 +64,14 @@ def _find_first_step_below(sigmas, threshold: float) -> int:
 def resolve_transition_steps(
     config: SpeedConfig,
     sigmas,
-    H_full: int,
-    W_full: int,
+    H_full: int | None = None,
+    W_full: int | None = None,
 ) -> tuple[int, ...]:
     """Resolve global sigma indices for every resolution transition."""
     if config.transition_mode == "explicit":
         return config.transition_steps
+    if H_full is None or W_full is None:
+        raise ValueError("delta_custom planning requires live full latent dimensions")
 
     omega_max = min(H_full, W_full) / 2.0
     steps = []
