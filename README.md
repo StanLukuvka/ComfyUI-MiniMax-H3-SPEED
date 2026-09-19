@@ -117,30 +117,37 @@ Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5
 
 </details>
 
-## V2 major release — what this PR changes
+## V2 major release
 
-V2 is a major rewrite, not a tuning-only update. The three public ComfyUI node IDs stay the same, but the sampler/runtime architecture, calibration path, I2V lifecycle, and supported sampler surface have changed substantially.
+V2 happened because the original version had grown past the point where small patches were enough.
 
-This PR:
+V1 proved the basic idea worked, but it was still built around **Euler**, carried some duplicated scheduling logic, and had a few places where state from one SPEED stage could leak into the next. Once I started adding more samplers, RES, I2V support, and better calibration, it made more sense to clean up the design properly instead of stacking more special cases on top.
 
-- expands generation from **Euler-only to five supported samplers**: Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep;
-- adds a **run-scoped deterministic RES Multistep adapter** that resets history at every SPEED resolution transition;
-- makes **Sigma Harvest sampler-aware** while keeping it a native full-resolution calibration pass;
-- rewrites Automatic planning to use the **live sigma schedule and live H3 latent geometry**, rather than cached dimensions or placeholder boundaries;
-- consolidates Automatic and Manual schedule construction into one planner and keeps the runtime focused on execution;
-- makes the **I2V keyframe lifecycle generation-local**, always resizing from pristine full-resolution conditioning and restoring it on completion or failure;
-- keeps progress/preview on **one continuous run-wide timeline** across all SPEED stages;
-- reduces Harvest residuals to CPU spectral profiles during the callback instead of retaining a full run of large residual tensors;
-- precomputes `coupled_full_grid` spectral noise once per generation and reuses it across transitions;
-- removes a large amount of legacy/configuration plumbing and adds broad regression coverage for the five-sampler matrix, RES state, I2V, global boundaries, spectral coupling, Harvest, and workflow compatibility.
+The biggest change is **sampler support**. SPEED is no longer tied to Euler: V2 supports Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep. The stateless samplers can use ComfyUI's normal sampler objects, but RES needs special handling because it remembers previous steps. That history is only valid while the latent grid stays the same, so V2 clears it whenever SPEED changes resolution instead of carrying stale state into a different-sized stage.
 
-### V1 → V2 compatibility
+**Sigma Harvest is sampler-aware now** for the same reason. The calibration is measuring how a real generation behaves, so an Euler calibration should not silently be treated as a Heun or RES calibration. Harvest now runs the native sampler you actually selected, and you should re-run it when you materially change the sampler, checkpoint, LoRA/addons, scheduler, or step count.
 
-For normal ComfyUI use, migration should be small. Automatic and Manual still default to **Euler** when no sampler is specified, the existing inputs keep their order, and the same three node IDs remain registered. The main visible addition is the `sampler_name` selector.
+I also rewrote the **Automatic planning path** because configuration was carrying copies of the latent width and height even though the runtime already had the real latent in front of it. That was unnecessary state that could become stale. V2 calculates transition points from the live sigma schedule and the actual H3 latent dimensions at generation time.
 
-If you import `speed_scripts` from Python directly, V2 does have internal API changes: cached `full_latent_h/full_latent_w` were removed from `SpeedConfig`, configs now require at least two stages, and the planner builders no longer take a latent just to cache its dimensions.
+Automatic and Manual now share the same planning code. In V1, pieces of the same scheduling rules existed in different places, which made it easy for one path to behave slightly differently from the other. V2 keeps stage sizing, transition math, and schedule validation together, while the runtime is responsible only for actually running the stages.
 
-See **[CHANGELOG.md](CHANGELOG.md)** for the full release/migration notes.
+The **I2V handling** was also tightened up. Keyframe latents are always resized from their original full-resolution copy instead of repeatedly resizing an already-resized tensor. This avoids slowly accumulating interpolation damage across stages. They are also restored before the final stage and restored again if a generation fails, so one failed run should not poison the next one.
+
+Progress and previews now behave like **one generation**, not several unrelated sampler calls. SPEED still runs several resolution stages internally, but the user-facing progress bar moves across the whole denoise once instead of restarting at each stage.
+
+**Sigma Harvest uses much less memory.** V1 kept every full-resolution residual tensor until the native pass was finished and only then analysed them. V2 converts each residual into its small radial power profile as soon as the callback receives it, then discards the large tensor.
+
+I kept both noise policies. `direct_coarse` is still the default. `coupled_full_grid` still has a useful, well-defined job: it makes every stage come from one seeded full-resolution noise realization, which is useful for parity tests and ablations. I do not currently have a good enough reason to remove it, but I also do not have evidence that it is generally better quality. V2 simply avoids recomputing the same full-grid DCT at every transition.
+
+Finally, the test suite became much larger because these bugs are easy to miss by looking at a successful video. V2 adds coverage for all five samplers, RES state resets, I2V cleanup, coincident transition boundaries, continuous progress, spectral coupling, Harvest behaviour, and the committed workflows.
+
+### Upgrading from V1
+
+Normal ComfyUI workflows should need very little work. The same three node IDs still exist, Euler is still the default, and the old Automatic and Manual inputs keep their order. The main visible change is the new sampler selector.
+
+The internal Python API changed more substantially because a lot of V1 plumbing was removed. In particular, `SpeedConfig` no longer stores cached latent dimensions, configs now represent actual multi-stage SPEED runs, and the config builders no longer need a latent just to copy its size.
+
+See **[CHANGELOG.md](CHANGELOG.md)** for the detailed API-level release notes.
 
 ## License
 
