@@ -61,6 +61,24 @@ def test_explicit_four_stage_schedule_uses_global_boundaries(noise_policy):
     assert sum(len(call) - 1 for call in calls) == len(SIGMAS) - 1
 
 
+def test_delta_custom_planning_requires_live_geometry():
+    cfg = SpeedConfig(
+        scales=(.5, 1.0),
+        transition_steps=(),
+        transition_mode="delta_custom",
+    )
+    with pytest.raises(ValueError, match="live full latent dimensions"):
+        resolve_transition_steps(cfg, SIGMAS)
+
+
+def test_explicit_planning_does_not_require_geometry():
+    cfg = SpeedConfig(
+        scales=(.5, 1.0),
+        transition_steps=(5,),
+        transition_mode="explicit",
+    )
+    assert resolve_transition_steps(cfg, SIGMAS) == (5,)
+
 def test_delta_custom_execution_matches_its_resolved_global_boundaries():
     sigmas = torch.linspace(1.0, 0.0, 21)
     scales = (.25, .5, 1.0)
