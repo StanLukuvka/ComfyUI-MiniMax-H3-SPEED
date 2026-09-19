@@ -40,10 +40,6 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
-# Compatibility marker for older tests/callers. The walker is now purely local
-# to one run and is never attached to the guider.
-_LW_ATTR = "_speed_latent_walker"
-
 
 class _OverrideSamplerHandle(SpeedSamplerHandle):
     """Test seam for injecting a sampler object without ComfyUI lookup."""
