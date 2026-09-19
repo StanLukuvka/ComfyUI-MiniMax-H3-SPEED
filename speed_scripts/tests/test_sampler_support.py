@@ -30,10 +30,10 @@ from conftest import (
     make_recording_guider,
 )
 from speed_scripts import h3_runtime
-from speed_scripts.automatic_config import STAGES_TO_SCALES
+from speed_scripts.planning import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
 from speed_scripts.flow import aligned_sigma
-from speed_scripts.h3_runtime import _LW_ATTR, run_speed_pipeline
+from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.sampler_support import (
     STATELESS_SPEED_SAMPLERS,
     SUPPORTED_SPEED_SAMPLERS,
@@ -407,7 +407,6 @@ def test_hook_failure_aborts_the_run_before_the_next_stage_samples(monkeypatch):
             disable_pbar=True,
         )
     assert guider.events.count("sample") == 1
-    assert not hasattr(guider, _LW_ATTR)
 
 
 def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
@@ -474,7 +473,6 @@ def test_cleanup_closes_sampler_and_restores_on_success(monkeypatch):
     # apply_final also runs once before the final stage (pre-final restore);
     # run-level cleanup then closes the sampler handle and restores again.
     assert order == ["apply_final", "close", "apply_final"]
-    assert not hasattr(guider, _LW_ATTR)
 
 
 def test_cleanup_still_restores_when_sampler_close_fails(monkeypatch):
@@ -502,7 +500,6 @@ def test_cleanup_still_restores_when_sampler_close_fails(monkeypatch):
     # The failing close did not stop the final keyframe restore, which also
     # runs once earlier before the final stage.
     assert order == ["apply_final", "close", "apply_final"]
-    assert not hasattr(guider, _LW_ATTR)
 
 
 def test_cleanup_still_closes_sampler_when_restore_fails(monkeypatch):
@@ -532,7 +529,6 @@ def test_cleanup_still_closes_sampler_when_restore_fails(monkeypatch):
             disable_pbar=True,
         )
     assert order == ["apply_final", "close", "apply_final"]
-    assert not hasattr(guider, _LW_ATTR)
 
 
 # ---------------------------------------------------------------------------
@@ -720,7 +716,6 @@ def test_i2v_smoke_and_pristine_restore_on_success(sampler):
     cond = original_conds["positive"][0]
     assert cond["minimax_keyframes"] is keyframes
     assert cond["minimax_refs"] is refs
-    assert not hasattr(guider, _LW_ATTR)
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
@@ -748,7 +743,6 @@ def test_i2v_failure_restores_pristine_conditioning(sampler):
     for ref in refs:
         assert tuple(ref["latent"].shape[-2:]) == (8, 8)
     assert guider.original_conds is original_conds
-    assert not hasattr(guider, _LW_ATTR)
 
 
 # ---------------------------------------------------------------------------
@@ -757,11 +751,12 @@ def test_i2v_failure_restores_pristine_conditioning(sampler):
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
-def test_stage_failure_closes_handle_restores_and_drops_walker(sampler):
-    """Force a mid-run failure inside the second stage's guider.sample call:
-    the run-scoped handle is closed and the walker attribute is removed from
-    the guider (with no I2V conds attached, the walker's own restore is a
-    no-op — the pristine-restore path is pinned by the I2V tests above)."""
+def test_stage_failure_closes_handle(sampler):
+    """Force a mid-run failure inside the second stage's guider.sample call.
+
+    The run-scoped sampler handle must still close; pristine I2V restoration
+    is covered separately by the I2V failure test above.
+    """
     closed = []
     events = []
 
@@ -795,15 +790,16 @@ def test_stage_failure_closes_handle_restores_and_drops_walker(sampler):
 
     assert closed == [True]
     assert events == ["sample", "sample"]  # stage 2 never ran
-    assert not hasattr(guider, _LW_ATTR)
 
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_second_generation_after_failure_starts_clean(sampler):
-    """After a failed run, the same guider can run a full generation: the
-    walker is recreated, the handle is rebuilt, and the output is identical
-    to a run that never saw the failure."""
+    """After a failed run, the same guider can run a full generation.
+
+    The sampler handle and generation-local I2V state are rebuilt, and the
+    output matches a control run that never failed.
+    """
     class ExplodingStageGuider(RecordingEchoGuider):
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
@@ -824,7 +820,6 @@ def test_second_generation_after_failure_starts_clean(sampler):
     guider_a.remaining_stage_failures = 1
     with pytest.raises(RuntimeError, match="first generation exploded"):
         _run(sampler, cfg, guider_a)
-    assert not hasattr(guider_a, _LW_ATTR)
 
     # Generation 2: same guider object, no special handling — must complete
     # and match a control run that never failed.
@@ -838,4 +833,3 @@ def test_second_generation_after_failure_starts_clean(sampler):
     assert torch.equal(video_second, video_control)
     assert torch.equal(audio_second, audio_control)
     _assert_full_res_nested(out_second)
-    assert not hasattr(guider_a, _LW_ATTR)
