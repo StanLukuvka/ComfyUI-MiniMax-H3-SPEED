@@ -248,9 +248,6 @@ def run_speed_pipeline(
 
     video_shift, audio_shift, audio_scale = resolve_sigma_shifts(guider)
     scales = config.scales
-    if len(scales) < 2:
-        raise ValueError("need at least two stages (scales ending at 1.0)")
-
     full_t, full_h, full_w = full_video.shape[-3:]
     stage_shapes = [
         stage_resolution(config, index, full_h, full_w, full_t)
