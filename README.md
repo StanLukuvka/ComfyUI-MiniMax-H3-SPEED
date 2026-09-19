@@ -1,4 +1,4 @@
-# ComfyUI MiniMax-H3 SPEED Sampler
+# ComfyUI MiniMax-H3 SPEED Sampler — V2
 
 
 ⚠️ **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0) 
@@ -12,6 +12,31 @@ Make MiniMax-H3 video faster without re-training.
 Starts the denoise at low resolution, then upsamples to full resolution when finetuned detail starts appearing within noise. Allowing us to save on generations.
 
 > **MiniMax-H3 only.** Audio is always full-resolution.
+
+## V2 major release — what this PR changes
+
+V2 is a major rewrite, not a tuning-only update. The three public ComfyUI node IDs stay the same, but the sampler/runtime architecture, calibration path, I2V lifecycle, and supported sampler surface have changed substantially.
+
+This PR:
+
+- expands generation from **Euler-only to five supported samplers**: Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep;
+- adds a **run-scoped deterministic RES Multistep adapter** that resets history at every SPEED resolution transition;
+- makes **Sigma Harvest sampler-aware** while keeping it a native full-resolution calibration pass;
+- rewrites Automatic planning to use the **live sigma schedule and live H3 latent geometry**, rather than cached dimensions or placeholder boundaries;
+- consolidates Automatic and Manual schedule construction into one planner and keeps the runtime focused on execution;
+- makes the **I2V keyframe lifecycle generation-local**, always resizing from pristine full-resolution conditioning and restoring it on completion or failure;
+- keeps progress/preview on **one continuous run-wide timeline** across all SPEED stages;
+- reduces Harvest residuals to CPU spectral profiles during the callback instead of retaining a full run of large residual tensors;
+- precomputes `coupled_full_grid` spectral noise once per generation and reuses it across transitions;
+- removes a large amount of legacy/configuration plumbing and adds broad regression coverage for the five-sampler matrix, RES state, I2V, global boundaries, spectral coupling, Harvest, and workflow compatibility.
+
+### V1 → V2 compatibility
+
+For normal ComfyUI use, migration should be small. Automatic and Manual still default to **Euler** when no sampler is specified, the existing inputs keep their order, and the same three node IDs remain registered. The main visible addition is the `sampler_name` selector.
+
+If you import `speed_scripts` from Python directly, V2 does have internal API changes: cached `full_latent_h/full_latent_w` were removed from `SpeedConfig`, configs now require at least two stages, and the planner builders no longer take a latent just to cache its dimensions.
+
+See **[CHANGELOG.md](CHANGELOG.md)** for the full release/migration notes.
 
 ## Installation
 
@@ -42,7 +67,7 @@ You set up to four `(goal, resolution)` pairs yourself. `goal` = step where that
 
 
 **Sigma Harvest (Native Sampler)**
-Run **once** with your current workflow to measure your checkpoint with the selected native full-resolution sampler. It gives you sampler-specific `A / β` to paste into the matching Automatic run.
+Run **once** with your current workflow to measure your checkpoint with the selected native full-resolution sampler. It gives you sampler-specific `A / β` to paste into the matching Automatic run. Harvest is still a native full-resolution pass; it does not run the SPEED chain.
 If you are using LoRAs, or other models, addons, or optimisations that change how the model behaves, I recommend running it to ensure it is tuned to your specific workload.
 
 You can instead use the following values for base H3:
@@ -98,7 +123,7 @@ See [evidence/README.md](evidence/README.md) for full 10s GIFs (360p 12fps) and 
 
 - **"Sigma schedule too short"** → increase `BasicScheduler` steps. The last stage boundary must leave at least one denoising step: with the final boundary at step `g`, you need ≥ `g + 2` sigmas (e.g. a 4-stage run with boundaries 3/5/8 needs ≥10 sigmas = 9 steps).
 - **"H3 model required"** → this only works with a real MiniMax-H3 model (one that has `sigma_shift_video` / `sigma_shift_audio`). Not SD/Flux/WAN.
-- **Text looks blurry / wobbly** → try `noise_policy = coupled_full_grid`, or lower `Tolerance (Delta)` from `0.005` (0.5%) to `0.001` — more conservative, slower but sharper.
+- **Text looks blurry / wobbly** → lower `Tolerance (Delta)` from `0.005` (0.5%) toward `0.001`, or use fewer stages. Both choices are more conservative and usually slower.
 - **Prompt drifts / objects disappear on 4-stage** → too many hops. Drop to 2 or 3 stages.
 
 ## Advanced — you don't need this to use it
@@ -111,6 +136,8 @@ It measures how noise power falls with frequency on a full-res run: `P(ω) = A·
 Re-calibrate with the Harvest node if you change checkpoint, sampler, or an addon that changes model behavior: wire `noise/guider/sigmas/latent + Tolerance`, run the selected native sampler at full resolution with the same sigma scheduler and step count you intend to use in SPEED, then copy its `calibration` JSON into the matching Automatic run's `noise_amplitude` / `noise_decay_exponent` / `Tolerance`. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler.
 
 Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5→0.75→1.0`.
+
+**Noise policies:** `direct_coarse` is the default and fills newly exposed frequency bands from deterministic transition-seeded Gaussian noise. `coupled_full_grid` instead derives those bands from one seeded full-resolution Gaussian field, so every stage is coupled to the same full-grid realization. V2 keeps this mode for deterministic parity/ablation work, but there is currently no evidence that it is generally sharper or higher quality than `direct_coarse`.
 
 `seed_offset` changes the per-stage high-frequency fill pattern — leave at 10000 unless you want a different fill pattern for the same seed. `ratio_mode steps` = goal is a step index, `ratio` = goal is a 0-1 fraction.
 
