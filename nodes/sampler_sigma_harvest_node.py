@@ -82,7 +82,7 @@ class MiniMaxH3HarvestToConfig:
         guider,
         sigmas,
         latent_image,
-        sampler_name="euler",
+        sampler_name,
         **kwargs,
     ):
 
