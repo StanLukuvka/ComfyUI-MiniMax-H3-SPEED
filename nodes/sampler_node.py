@@ -67,12 +67,12 @@ class MiniMaxH3SPEEDSampler:
         guider,
         sigmas,
         latent_image,
+        sampler_name,
         stages=3,
         noise_policy="direct_coarse",
         noise_amplitude=12.105,
         noise_decay_exponent=0.773,
         seed_offset=10000,
-        sampler_name="euler",
         **kwargs,
     ):
         delta = kwargs.pop("Tolerance (Delta)", 0.005)
