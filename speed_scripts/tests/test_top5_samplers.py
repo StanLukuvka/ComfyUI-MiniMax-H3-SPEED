@@ -76,8 +76,6 @@ def _automatic_calibrated_cfg(stages):
         delta=.005,
         noise_amplitude=12.105,
         noise_decay_exponent=.773,
-        full_latent_h=8,
-        full_latent_w=8,
     )
 
 
