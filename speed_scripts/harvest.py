@@ -1,8 +1,8 @@
 """Radial DCT power-spectrum analysis for MiniMax-H3 SPEED calibration.
 
 Fits ``P = A * |omega|^(-beta)`` from a residual noise field (``x - x0``).
-Residual capture itself happens on a native single-resolution sampler pass;
-this module only owns the pure spectral analysis and fit-quality helpers.
+Residual capture happens on a native single-resolution sampler pass. This
+module owns H3 video extraction plus the pure spectral analysis helpers.
 """
 
 from __future__ import annotations
@@ -14,6 +14,26 @@ import torch
 
 from .spectral import dct2
 
+
+def extract_video_stream(value) -> torch.Tensor | None:
+    """Return the video stream from an H3 nested latent or 5D video tensor."""
+    if getattr(value, "is_nested", False):
+        return next(
+            (stream for stream in value.unbind() if getattr(stream, "ndim", 0) == 5),
+            None,
+        )
+    if isinstance(value, torch.Tensor) and value.ndim == 5:
+        return value
+    return None
+
+
+def compute_video_residual(x_value, denoised_value) -> torch.Tensor | None:
+    """Return x - denoised for the H3 video stream when both are available."""
+    x_video = extract_video_stream(x_value)
+    denoised_video = extract_video_stream(denoised_value)
+    if x_video is None or denoised_video is None:
+        return None
+    return x_video - denoised_video
 
 def radial_dct_power(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     """Mean 2D-DCT power of a video latent [B, C, T, H, W], binned radially."""
@@ -72,4 +92,10 @@ def classify_fit_quality(fit: dict) -> str:
     return "suspect"
 
 
-__all__ = ["radial_dct_power", "fit_power_law", "classify_fit_quality"]
+__all__ = [
+    "extract_video_stream",
+    "compute_video_residual",
+    "radial_dct_power",
+    "fit_power_law",
+    "classify_fit_quality",
+]
