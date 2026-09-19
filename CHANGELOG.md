@@ -14,6 +14,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Changed
 
+- Sigma Harvest now defaults to the same 0.005 tolerance as Automatic.
 - Sigma Harvest now calibrates the selected native sampler instead of assuming Euler.
 - Sigma Harvest now reports that its calibration is based on the empirical `x - denoised` residual spectrum.
 - Automatic transition planning now uses the live sigma schedule and current latent dimensions.
