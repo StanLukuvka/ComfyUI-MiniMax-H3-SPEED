@@ -1,8 +1,4 @@
-"""Flow-coordinate helpers for MiniMax-H3 SPEED transitions.
-
-Functions are dependency-free and intentionally accept tensor-like values where
-ordinary multiplication and division are defined.
-"""
+"""Math for carrying video and audio state between SPEED stages."""
 
 from __future__ import annotations
 
