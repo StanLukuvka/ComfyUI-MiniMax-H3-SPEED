@@ -436,8 +436,6 @@ def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
         delta=.01,
         noise_amplitude=219.48,
         noise_decay_exponent=2.42,
-        full_latent_h=8,
-        full_latent_w=8,
     )
     guider = HookGuider()
     guider.test_events = events
