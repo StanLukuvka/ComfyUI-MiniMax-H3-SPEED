@@ -18,8 +18,6 @@ exercise the same run-scoped handle path production uses; the override seam
 is covered separately.
 """
 
-# FLOW-PRODUCED: public sampler selector assertions.
-
 import pytest
 import torch
 
@@ -163,7 +161,7 @@ class HookGuider(EchoGuider):
 
 
 # ---------------------------------------------------------------------------
-# Public selector (source §9 "Public selector")
+# Public sampler selector
 # ---------------------------------------------------------------------------
 
 def test_public_selector_is_exactly_the_five_supported_names():
@@ -215,7 +213,7 @@ def test_base_handle_is_an_inert_noop():
 
 
 # ---------------------------------------------------------------------------
-# Euler regression (source §9 "Euler regression")
+# Euler regression coverage
 # ---------------------------------------------------------------------------
 
 def test_default_and_explicit_paths_select_euler_exactly_once_per_run(monkeypatch):
@@ -338,7 +336,7 @@ def test_euler_callback_count_equals_global_denoising_intervals():
 
 
 # ---------------------------------------------------------------------------
-# Hook position (source §7) — once per configured transition
+# Transition hook position — once per configured transition
 # ---------------------------------------------------------------------------
 
 def test_transition_hook_fires_once_per_transition_at_the_documented_position(monkeypatch):
