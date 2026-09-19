@@ -69,7 +69,7 @@ def test_node_forwards_generation_configuration_to_shared_builder(monkeypatch):
         monkeypatch,
         stages=3,
         noise_policy="coupled_full_grid",
-        delta=0.007,
+        **{"Tolerance (Delta)": 0.007},
         noise_amplitude=13.5,
         noise_decay_exponent=0.9,
         seed_offset=777,
