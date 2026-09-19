@@ -12,31 +12,6 @@ Make MiniMax-H3 video generation faster without retraining. SPEED starts denoisi
 
 > **MiniMax-H3 only.** Audio is always full-resolution.
 
-## V2 major release — what this PR changes
-
-V2 is a major rewrite, not a tuning-only update. The three public ComfyUI node IDs stay the same, but the sampler/runtime architecture, calibration path, I2V lifecycle, and supported sampler surface have changed substantially.
-
-This PR:
-
-- expands generation from **Euler-only to five supported samplers**: Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep;
-- adds a **run-scoped deterministic RES Multistep adapter** that resets history at every SPEED resolution transition;
-- makes **Sigma Harvest sampler-aware** while keeping it a native full-resolution calibration pass;
-- rewrites Automatic planning to use the **live sigma schedule and live H3 latent geometry**, rather than cached dimensions or placeholder boundaries;
-- consolidates Automatic and Manual schedule construction into one planner and keeps the runtime focused on execution;
-- makes the **I2V keyframe lifecycle generation-local**, always resizing from pristine full-resolution conditioning and restoring it on completion or failure;
-- keeps progress/preview on **one continuous run-wide timeline** across all SPEED stages;
-- reduces Harvest residuals to CPU spectral profiles during the callback instead of retaining a full run of large residual tensors;
-- precomputes `coupled_full_grid` spectral noise once per generation and reuses it across transitions;
-- removes a large amount of legacy/configuration plumbing and adds broad regression coverage for the five-sampler matrix, RES state, I2V, global boundaries, spectral coupling, Harvest, and workflow compatibility.
-
-### V1 → V2 compatibility
-
-For normal ComfyUI use, migration should be small. Automatic and Manual still default to **Euler** when no sampler is specified, the existing inputs keep their order, and the same three node IDs remain registered. The main visible addition is the `sampler_name` selector.
-
-If you import `speed_scripts` from Python directly, V2 does have internal API changes: cached `full_latent_h/full_latent_w` were removed from `SpeedConfig`, configs now require at least two stages, and the planner builders no longer take a latent just to cache its dimensions.
-
-See **[CHANGELOG.md](CHANGELOG.md)** for the full release/migration notes.
-
 ## Installation
 
 ```bash
@@ -141,6 +116,31 @@ Stages are evenly spaced: `2: 0.5→1.0`, `3: 0.33→0.66→1.0`, `4: 0.25→0.5
 `seed_offset` changes the per-stage high-frequency fill pattern — leave at 10000 unless you want a different fill pattern for the same seed. `ratio_mode steps` = goal is a step index, `ratio` = goal is a 0-1 fraction.
 
 </details>
+
+## V2 major release — what this PR changes
+
+V2 is a major rewrite, not a tuning-only update. The three public ComfyUI node IDs stay the same, but the sampler/runtime architecture, calibration path, I2V lifecycle, and supported sampler surface have changed substantially.
+
+This PR:
+
+- expands generation from **Euler-only to five supported samplers**: Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep;
+- adds a **run-scoped deterministic RES Multistep adapter** that resets history at every SPEED resolution transition;
+- makes **Sigma Harvest sampler-aware** while keeping it a native full-resolution calibration pass;
+- rewrites Automatic planning to use the **live sigma schedule and live H3 latent geometry**, rather than cached dimensions or placeholder boundaries;
+- consolidates Automatic and Manual schedule construction into one planner and keeps the runtime focused on execution;
+- makes the **I2V keyframe lifecycle generation-local**, always resizing from pristine full-resolution conditioning and restoring it on completion or failure;
+- keeps progress/preview on **one continuous run-wide timeline** across all SPEED stages;
+- reduces Harvest residuals to CPU spectral profiles during the callback instead of retaining a full run of large residual tensors;
+- precomputes `coupled_full_grid` spectral noise once per generation and reuses it across transitions;
+- removes a large amount of legacy/configuration plumbing and adds broad regression coverage for the five-sampler matrix, RES state, I2V, global boundaries, spectral coupling, Harvest, and workflow compatibility.
+
+### V1 → V2 compatibility
+
+For normal ComfyUI use, migration should be small. Automatic and Manual still default to **Euler** when no sampler is specified, the existing inputs keep their order, and the same three node IDs remain registered. The main visible addition is the `sampler_name` selector.
+
+If you import `speed_scripts` from Python directly, V2 does have internal API changes: cached `full_latent_h/full_latent_w` were removed from `SpeedConfig`, configs now require at least two stages, and the planner builders no longer take a latent just to cache its dimensions.
+
+See **[CHANGELOG.md](CHANGELOG.md)** for the full release/migration notes.
 
 ## License
 
