@@ -5,10 +5,7 @@ import importlib
 import pytest
 
 from conftest import make_latent
-from speed_scripts.automatic_config import (
-    STAGES_TO_SCALES,
-    build_automatic_speed_config,
-)
+from speed_scripts.planning import STAGES_TO_SCALES, build_automatic_speed_config
 
 
 def _capture_node_config(monkeypatch, **overrides):
