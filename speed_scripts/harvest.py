@@ -1,8 +1,7 @@
-"""Radial DCT power-spectrum analysis for MiniMax-H3 SPEED calibration.
+"""Measure the residual spectrum used to calibrate Automatic SPEED.
 
-Fits ``P = A * |omega|^(-beta)`` from a residual noise field (``x - x0``).
-Residual capture happens on a native single-resolution sampler pass. This
-module owns H3 video extraction plus the pure spectral analysis helpers.
+Fit ``P = A * |omega|^(-beta)`` from ``x - denoised`` on a native
+full-resolution sampler run.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ def extract_video_stream(value) -> torch.Tensor | None:
 
 
 def compute_video_residual(x_value, denoised_value) -> torch.Tensor | None:
-    """Return x - denoised for the H3 video stream when both are available."""
+    """Return the H3 video residual ``x - denoised`` when both inputs are valid."""
     x_video = extract_video_stream(x_value)
     denoised_video = extract_video_stream(denoised_value)
     if x_video is None or denoised_video is None:
@@ -36,7 +35,7 @@ def compute_video_residual(x_value, denoised_value) -> torch.Tensor | None:
     return x_video - denoised_video
 
 def radial_dct_power(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-    """Mean 2D-DCT power of a video latent [B, C, T, H, W], binned radially."""
+    """Measure average DCT power by distance from zero frequency."""
     H, W = video.shape[-2], video.shape[-1]
     coeffs = dct2(video.float())
     power = coeffs.abs() ** 2
@@ -62,7 +61,7 @@ def fit_power_law(
     profile: np.ndarray,
     omega_min: float = 0.5,
 ) -> dict:
-    """Fit ``P = A * omega^(-beta)`` on log-log coordinates."""
+    """Fit A and beta to the measured frequency-power curve."""
     mask = (freqs >= omega_min) & (profile > 0)
     x = np.log(freqs[mask])
     y = np.log(profile[mask])
@@ -79,7 +78,7 @@ def fit_power_law(
 
 
 def classify_fit_quality(fit: dict) -> str:
-    """Classify a spectral fit so downstream consumers can warn on bad ones."""
+    """Rate how well the power-law fit matches the measured data."""
     a, beta, r2 = fit["A"], fit["beta"], fit["r_squared"]
     if a != a or beta != beta or r2 != r2:
         return "invalid"
