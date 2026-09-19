@@ -166,7 +166,6 @@ def build_manual_speed_config(
         )
 
     validate_transition_steps(transition_steps, len(sigmas))
-    full_h, full_w = full_res_dims(latent_image)
     return SpeedConfig(
         scales=scales,
         transition_steps=transition_steps,
@@ -174,8 +173,6 @@ def build_manual_speed_config(
         noise_policy=noise_policy,
         delta=0.01,
         transition_seed_offset=int(seed_offset),
-        full_latent_h=full_h,
-        full_latent_w=full_w,
     )
 
 
