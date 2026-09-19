@@ -53,7 +53,6 @@ def test_automatic_node_public_surface_and_defaults():
 @pytest.mark.parametrize("stages", [2, 3, 4])
 def test_builder_maps_stage_count_to_exact_scale_ladder(stages):
     cfg = build_automatic_speed_config(
-        make_latent(h=24, w=40),
         stages=stages,
         noise_policy="direct_coarse",
         delta=0.005,
@@ -64,7 +63,6 @@ def test_builder_maps_stage_count_to_exact_scale_ladder(stages):
     assert cfg.scales == STAGES_TO_SCALES[stages]
     assert cfg.transition_steps == ()
     assert cfg.transition_mode == "delta_custom"
-    assert (cfg.full_latent_h, cfg.full_latent_w) == (24, 40)
 
 
 def test_node_forwards_generation_configuration_to_shared_builder(monkeypatch):
@@ -82,7 +80,6 @@ def test_node_forwards_generation_configuration_to_shared_builder(monkeypatch):
     assert cfg.noise_policy == "coupled_full_grid"
     assert (cfg.delta, cfg.noise_amplitude, cfg.noise_decay_exponent) == (0.007, 13.5, 0.9)
     assert cfg.transition_seed_offset == 777
-    assert (cfg.full_latent_h, cfg.full_latent_w) == (45, 80)
 
     four_digit = _capture_node_config(
         monkeypatch,
