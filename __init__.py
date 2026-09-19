@@ -5,16 +5,15 @@ which does NOT put this directory on ``sys.path``. We add it explicitly so the
 node-class modules are importable by name — the exact same pattern ComfyUI
 itself uses for its built-in nodes.
 
-Layout (after the reorganise-folder-structure commit):
+Layout:
 
 - ``nodes/`` — one file per ComfyUI node (flat, imported by name).
 - ``speed_scripts/`` — the core SPEED library package (config, flow, spectral,
-  harvest, h3_runtime). Installed editable into this repo's venv so the
-  ``from speed_scripts... import ...`` sites inside the node files resolve.
+  harvest, h3_runtime). The repository root is added to ``sys.path`` so the
+  ``from speed_scripts... import ...`` imports inside the node files resolve.
 """
 
 import importlib
-import logging
 import os
 import sys
 import traceback
@@ -44,7 +43,7 @@ def _register(_mod, _name):
 # All nodes — flat files under nodes/.
 # sampler_node = automatic (delta_custom, baked conservative fit)
 # sampler_node_manual = manual (explicit step-through, 4 goal/res pairs)
-# sampler_sigma_harvest_node = native-Euler power-law calibration
+# sampler_sigma_harvest_node = native selected-sampler power-law calibration
 _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",
