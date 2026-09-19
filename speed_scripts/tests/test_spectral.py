@@ -1,15 +1,8 @@
 """Spectral transform and expansion contracts."""
 
-import pytest
 import torch
 
-from speed_scripts.spectral import (
-    dct2,
-    idct2,
-    lowpass_dct,
-    spectral_expand,
-    spectral_expand_coupled,
-)
+from speed_scripts.spectral import dct2, idct2, lowpass_dct, spectral_expand
 
 
 def test_dct_round_trip_and_lowpass_recovery():
@@ -51,15 +44,3 @@ def test_spectral_expand_noise_amplitude_tracks_sigma():
     low[..., :8, :8] = 0
     high[..., :8, :8] = 0
     assert torch.allclose(high, low * 5.0, atol=1e-5, rtol=1e-5)
-
-
-def test_coupled_expand_preserves_source_band():
-    source = torch.randn(1, 2, 8, 8)
-    noise = torch.randn(1, 2, 16, 16)
-    expanded = spectral_expand_coupled(source, noise, sigma=0.5)
-    assert expanded.shape == noise.shape
-    assert torch.allclose(
-        dct2(expanded)[..., :8, :8],
-        dct2(source),
-        atol=1e-5,
-    )

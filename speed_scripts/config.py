@@ -1,30 +1,9 @@
-"""Validated configurations for the MiniMax-H3 SPEED sampler node.
-
-Contains the SpeedConfig dataclass, scale presets, and default transition
-steps. Ported from the Lab's speed_lab/config.py — minimal subset that
-the MVP needs.
-"""
+"""Validated runtime configuration for the MiniMax-H3 SPEED sampler."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
-
-SCALE_PRESETS: dict[str, tuple[float, ...]] = {
-    "half_then_full": (0.5, 1.0),
-    "quarter_half_full": (0.25, 0.5, 1.0),
-    "quarter_half_3q_full": (0.25, 0.5, 0.75, 1.0),
-    "aggressive": (0.25, 0.75, 1.0),
-    "three_quarter_then_full": (0.75, 1.0),
-}
-
-DEFAULT_TRANSITION_STEPS: dict[str, tuple[int, ...]] = {
-    "half_then_full": (5,),
-    "quarter_half_full": (3, 5),
-    "quarter_half_3q_full": (3, 5, 8),
-    "aggressive": (3, 8),
-    "three_quarter_then_full": (10,),
-}
 
 NOISE_POLICIES = {"direct_coarse", "coupled_full_grid"}
 AUDIO_POLICIES = {"clock_reindex", "carry_preserve", "untouched"}
@@ -42,18 +21,13 @@ class SpeedConfig:
     audio_policy: str = "clock_reindex"
     sigma_policy: str = "canonical"
     transition_seed_offset: int = 10_000
-    transition_mode: str = "explicit"  # "explicit" uses transition_steps; "delta_custom" computes from power spectrum
+    transition_mode: str = "explicit"
     delta: float = 0.01
-    # Conservative bake from the H3 Sigma-Harvest calibration (Delta 0.005,
-    # A 12.105, beta 0.773, full-res native Euler). The Automatic node always
-    # overrides these explicitly; the defaults exist so a bare SpeedConfig
-    # matches the pack's shipped calibration.
     noise_amplitude: float = 12.105
     noise_decay_exponent: float = 0.773
     full_latent_h: int = 45
     full_latent_w: int = 80
-    certification: str = "requires_h3_gpu_validation"
-    # Temporal scale per stage (empty = no temporal scaling, run full T at every stage).
+    # Empty means full temporal resolution at every stage.
     temporal_scales: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
@@ -77,12 +51,8 @@ class SpeedConfig:
                 raise ValueError("need (n_scales - 1) transition steps")
             if not all(s >= 1 for s in steps):
                 raise ValueError("every transition step must be at least one")
-            # Duplicates/decreasing are rejected only for explicit steps, the
-            # H3-facing API where they are user error. Resolved steps
-            # ("delta_custom") follow upstream SPEED, where multiple
-            # transitions may quantize onto the same sigma index; each
-            # occurrence still runs its spectral expand + alignment, and the
-            # intermediate stage denoises zero steps.
+            # Explicit user schedules must be strictly increasing. delta_custom
+            # boundaries may later quantize onto the same sigma index.
             if self.transition_mode == "explicit" and any(
                 a >= b for a, b in zip(steps[:-1], steps[1:])
             ):
@@ -110,67 +80,19 @@ class SpeedConfig:
                 raise ValueError("temporal_scales must have the same length as scales")
             if not all(0.0 < s <= 1.0 for s in self.temporal_scales):
                 raise ValueError("temporal scales must be in (0, 1]")
-            if not all(left <= right for left, right in zip(self.temporal_scales[:-1], self.temporal_scales[1:])):
+            if not all(
+                left <= right
+                for left, right in zip(self.temporal_scales[:-1], self.temporal_scales[1:])
+            ):
                 raise ValueError("temporal_scales must be non-decreasing")
         object.__setattr__(self, "scales", scales)
         object.__setattr__(self, "transition_steps", steps)
 
-    @property
-    def is_ablation(self) -> bool:
-        return not (
-            self.noise_policy == "direct_coarse"
-            and self.audio_policy == "clock_reindex"
-            and self.sigma_policy == "canonical"
-        )
 
-    @property
-    def is_canonical(self) -> bool:
-        return not self.is_ablation
-
-    @property
-    def n_stages(self) -> int:
-        return len(self.scales)
-
-    def with_overrides(self, **values) -> "SpeedConfig":
-        return replace(self, **values)
-
-
-def config_from_preset(preset: str, *, noise="direct_coarse", audio="clock_reindex",
-                  sigma="canonical", seed_offset=10_000, delta=0.01,
-                  mode="explicit") -> SpeedConfig:
-    """Build a SpeedConfig from a named scale preset."""
-    if preset not in SCALE_PRESETS:
-        raise ValueError(f"unknown preset: {preset} (available: {sorted(SCALE_PRESETS)})")
-    scales = SCALE_PRESETS[preset]
-    steps = DEFAULT_TRANSITION_STEPS[preset]
-    return SpeedConfig(
-        scales=scales,
-        transition_steps=steps,
-        noise_policy=noise,
-        audio_policy=audio,
-        sigma_policy=sigma,
-        transition_seed_offset=seed_offset,
-        delta=delta,
-        transition_mode=mode,
-    )
-
-
-def default_config() -> SpeedConfig:
-    return config_from_preset("half_then_full")
-
-
-def coupled_noise_config() -> SpeedConfig:
-    return config_from_preset("half_then_full", noise="coupled_full_grid")
-
-
-def carry_preserve_config() -> SpeedConfig:
-    return config_from_preset("half_then_full", audio="carry_preserve")
-
-
-def no_alignment_config() -> SpeedConfig:
-    return config_from_preset("half_then_full", audio="untouched", sigma="no_alignment")
-
-
-__all__ = ["SCALE_PRESETS", "DEFAULT_TRANSITION_STEPS", "SpeedConfig",
-           "config_from_preset", "default_config", "coupled_noise_config",
-           "carry_preserve_config", "no_alignment_config"]
+__all__ = [
+    "NOISE_POLICIES",
+    "AUDIO_POLICIES",
+    "SIGMA_POLICIES",
+    "RATIO_MODES",
+    "SpeedConfig",
+]
