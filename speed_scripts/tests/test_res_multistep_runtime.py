@@ -1,17 +1,7 @@
-"""RES Multistep through the real SPEED runtime (plan S7 §20-§24, §31 steps 42-46).
+"""RES Multistep contracts through the full SPEED runtime.
 
-B1/B2 pinned the adapter and the transition hook in isolation; this module
-runs ``res_multistep`` through ``run_speed_pipeline`` — the real stage loop,
-the real transition call site, and the real cleanup chain — through the
-public ``res_multistep`` selector and the runtime's handle factory.
-
-The conftest ``NestedTensor`` stub that ``h3_runtime.pack_latent`` builds has
-no tensor operations, so the guider below unwraps stage tensors into an
-arithmetic-capable nested pair before the sampler runs and wraps the result
-back — mirroring the real host nested-tensor contract the adapter is written
-against. The guider executes the sampler object the runtime hands it, so
-every interval runs the real stateful RES adapter and the carried
-``ResMultistepState`` can be inspected at each stage entry.
+The tests run the public RES sampler through real stage transitions and record
+its state at each stage boundary.
 """
 
 
@@ -39,12 +29,7 @@ SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
 
 
 class ComputedNested:
-    """Arithmetic-capable nested H3 stand-in (video [B,C,T,H,W] + audio).
-
-    Same unbind/is_nested contract as the host nested tensor, plus the
-    tensor operations the RES solver applies to the working state
-    (add/sub/mul/div against floats and 0-dim schedule tensors).
-    """
+    """Nested H3 test value with the arithmetic RES uses."""
 
     is_nested = True
 
@@ -84,7 +69,7 @@ class ComputedNested:
 
 
 class _Snapshot:
-    """What the run-scoped RES state held when one stage began."""
+    """RES history present when a stage begins."""
 
     def __init__(self, state):
         video, audio = state.old_denoised.unbind()
@@ -95,16 +80,7 @@ class _Snapshot:
 
 
 class ResExecGuider(RecordingEchoGuider):
-    """Echo guider that actually executes the sampler object it receives.
-
-    ``RecordingEchoGuider`` never calls the sampler, so a stateful RES run
-    would look like a no-op. This guider hands the received sampler object
-    (the runtime handle's real ``ResMultistepSampler``) the stage noise and
-    zero latent as arithmetic nested pairs, records one state snapshot per
-    stage entry, counts model evaluations, keeps every denoised estimate the
-    model produced, and wraps the sampler output back into the stub nested
-    container the runtime unpacks.
-    """
+    """Execute the received sampler and record RES state at each stage."""
 
     def __init__(self):
         super().__init__()
@@ -155,7 +131,7 @@ class ResExecGuider(RecordingEchoGuider):
 
 
 def _capture_public_factory(monkeypatch):
-    """Wrap the public factory without replacing its production behavior."""
+    """Record the handle created by the public factory."""
     captured = []
 
     def factory(name, **kwargs):
