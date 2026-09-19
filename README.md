@@ -8,8 +8,7 @@
 
 > *"Why make big noise when little noise do trick?"*
 
-Make MiniMax-H3 video faster without re-training. 
-Starts the denoise at low resolution, then upsamples to full resolution when finetuned detail starts appearing within noise. Allowing us to save on generations.
+Make MiniMax-H3 video generation faster without retraining. SPEED starts denoising on a cheaper low-resolution grid, then increases resolution as finer detail becomes useful, avoiding full-resolution compute during the noisiest early steps.
 
 > **MiniMax-H3 only.** Audio is always full-resolution.
 
@@ -47,7 +46,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 ```
 
 1. Replace your `KSampler` / `SamplerCustomAdvanced` with **MiniMax H3 SPEED — Sampler (Automatic)**. Wire the same `noise`, `guider`, `sigmas`, `latent_image`.
-2. Set **`stages = 2`** or **`3`** (balanced, default) and hit Queue. Current default settings are the conservative sigma harvest at 0.5% delta.
+2. Set **`stages = 2`** or **`3`** (default) and hit Queue. The shipped Automatic calibration is the conservative Euler-derived 0.5% delta fit.
 
 
 ## Which node do I need?
@@ -104,14 +103,14 @@ Same 10s 0.5MP "world's most mediocre boss" office mug clip, same seed, correcte
 
 | Fit | Mode | Time | Speedup | Quality |
 |------|------|------|---------|---------|
-| Δ0.005 `A12.105 β0.773` | 2-stage | 463s | 1.23× | native equivalent|
-| Δ0.005 | 3-stage | 439s | 1.30× | native equivalent |
-| Δ0.005 | 4-stage | 435s | 1.31× | native equivalent, mildest melt artifact |
+| Δ0.005 `A12.105 β0.773` | 2-stage | 463s | 1.23× | visually near-native in this clip |
+| Δ0.005 | 3-stage | 439s | 1.30× | visually near-native in this clip |
+| Δ0.005 | 4-stage | 435s | 1.31× | near-native; mild melt artifact |
 | Δ0.01 `A12.436 β0.786` | 2-stage | 450s | 1.27× | near parity |
 | Δ0.01 | 3-stage | 410s | 1.39× | cleanest mug-landing beat |
 | Δ0.01 | 4-stage | 384s | 1.49× | inconsistencies start appearing |
-| Δ0.05 `A6.920 β0.766` | 2-stage | 278s | 2.05× | noticable artifacting |
-| Δ0.05 | 3-stage | 262s | 2.18× | very noticable artifacting but still usable |
+| Δ0.05 `A6.920 β0.766` | 2-stage | 278s | 2.05× | noticeable artifacting |
+| Δ0.05 | 3-stage | 262s | 2.18× | very noticeable artifacting but still usable |
 | Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
 
 
