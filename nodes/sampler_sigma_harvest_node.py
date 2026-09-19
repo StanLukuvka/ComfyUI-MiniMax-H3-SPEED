@@ -16,8 +16,6 @@ spectrum from the SPEED paper.
 
 from __future__ import annotations
 
-# FLOW-PRODUCED: sampler-aware native Sigma Harvest.
-
 import json
 
 import comfy.samplers
@@ -31,7 +29,7 @@ from speed_scripts.harvest import (
     fit_power_law,
     radial_dct_power,
 )
-from speed_scripts.planning import activation_threshold, power_at_frequency
+from speed_scripts.planning import activation_threshold, find_first_step_below, power_at_frequency
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
@@ -44,8 +42,9 @@ class MiniMaxH3HarvestToConfig:
     """Sigma harvester — native sampler pass with per-step residual capture."""
 
     DESCRIPTION = (
-        "Sigma Harvest — run this ONCE on a full-res native sampler generation to "
-        "calibrate the Automatic sampler. It is an empirical H3 residual "
+        "Sigma Harvest — run this on a full-res native sampler generation to "
+        "calibrate the Automatic sampler. Re-run it when the sampler, model, "
+        "scheduler, step count, or other denoising behavior changes. It is an empirical H3 residual "
         "calibration: it measures how the residual (x - denoised) falls off with "
         "frequency (P = A·|ω|^-beta) and gives you A/beta to paste into the "
         "Automatic node. It does NOT measure the clean-data power spectrum from "
@@ -126,8 +125,8 @@ class MiniMaxH3HarvestToConfig:
                 _step, denoised, x = args[0], args[1], args[2]
                 return _capture(x, denoised)
 
-        # ComfyUI LATENT is always {"samples": <tensor>}; the fallback to the
-        # raw input is paranoia for old test fakes that pass a tensor directly.
+        # ComfyUI LATENT is normally {"samples": <tensor>}; keep the raw-input
+        # fallback for older tests and compatibility callers.
         latent_tensor = (
             latent_image["samples"]
             if isinstance(latent_image, dict) and "samples" in latent_image
@@ -208,7 +207,7 @@ class MiniMaxH3HarvestToConfig:
 
         video_stream = extract_video_stream(latent_tensor)
         if video_stream is None:
-            H_full, W_full = 64, 64
+            H_full = W_full = None
         else:
             H_full, W_full = map(int, video_stream.shape[-2:])
 
@@ -243,29 +242,45 @@ class MiniMaxH3HarvestToConfig:
         if health in ("suspect", "weak", "invalid"):
             lines.append(
                 f"WARNING: fit is {health.upper()} — beta={beta:.4f} with "
-                f"r²={r2:.4f}. Not cleanly decaying. Rerun harvest or use manual preset."
+                f"r²={r2:.4f}. Not cleanly decaying. Rerun Harvest before trusting it."
             )
-        lines.append(f"Paste into SPEED Sampler: sampler_name={sampler_name}, Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)")
+
+        usable_fit = (
+            np.isfinite(A)
+            and np.isfinite(beta)
+            and A > 0.0
+            and beta > 0.0
+        )
+        if usable_fit:
+            lines.append(
+                f"Paste into SPEED Sampler: sampler_name={sampler_name}, "
+                f"Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, "
+                f"noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)"
+            )
+        else:
+            lines.append(
+                "Do not paste this calibration into Automatic: SPEED requires "
+                "positive finite noise_amplitude and noise_decay_exponent values."
+            )
         # Diagnostic only — not part of the JSON to paste. Shows where delta_custom
         # will place the two most common reference scales for this sigmas length.
         # Derived exactly as runtime does: omega = scale * min(H,W)/2 -> P(omega) -> thr -> first step <= thr.
-        try:
-            omega_max = min(H_full, W_full) / 2.0
-            # Local reporting helper mirrors planning._find_first_step_below.
-            def _first_step_below(thr: float) -> tuple[int, float]:
-                for idx, s in enumerate(sigmas_list[:-1]):
-                    if float(s) <= thr:
-                        return idx, float(s)
-                return len(sigmas_list) - 1, float(sigmas_list[-1]) if sigmas_list else 0.0
-            lines.append(f"Reference (current sigmas, {len(sigmas_list)} levels):")
-            for _scale in (0.50, 0.75):
-                _omega = _scale * omega_max
-                _p = power_at_frequency(_omega, A, beta)
-                _thr = activation_threshold(_p, float(delta))
-                _step, _sig = _first_step_below(_thr)
-                lines.append(f"  {_scale:.2f}x -> sigma~{_sig:.4f} (step {_step})  [thr {_thr:.4f}]")
-        except Exception:
-            pass
+        if H_full is not None and W_full is not None and sigmas_list:
+            try:
+                omega_max = min(H_full, W_full) / 2.0
+                lines.append(f"Reference (current sigmas, {len(sigmas_list)} levels):")
+                for _scale in (0.50, 0.75):
+                    _omega = _scale * omega_max
+                    _p = power_at_frequency(_omega, A, beta)
+                    _thr = activation_threshold(_p, float(delta))
+                    _step = find_first_step_below(sigmas_list, _thr)
+                    _sig = float(sigmas_list[_step])
+                    lines.append(
+                        f"  {_scale:.2f}x -> sigma~{_sig:.4f} "
+                        f"(step {_step})  [thr {_thr:.4f}]"
+                    )
+            except Exception:
+                pass
         report = "\n".join(lines)
         calibration["report"] = report
 
