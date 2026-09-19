@@ -122,35 +122,25 @@ For the Manual node, `ratio_mode = steps` treats each goal as a global step inde
 
 ## V2 major release
 
-V2 happened because the original version had grown past the point where small patches were enough.
-
-V1 proved the basic idea worked, but it was still built around **Euler**, carried duplicated scheduling logic, and did not clean up stage-specific I2V conditioning as safely as I wanted. Once I started adding more samplers, RES, stronger I2V handling, and better calibration, it made more sense to clean up the design properly instead of stacking more special cases on top.
+Updated the SPEED node and reworked many features.
 
 The biggest change is **sampler support**. SPEED is no longer tied to Euler: V2 supports Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep. The stateless samplers can use ComfyUI's normal sampler objects, but RES needs special handling because it remembers previous steps. That history is only valid while the latent grid stays the same, so V2 clears it whenever SPEED changes resolution instead of carrying stale state into a different-sized stage.
 
-**Sigma Harvest is sampler-aware now** for the same reason. The calibration is measuring how a real generation behaves, so an Euler calibration should not silently be treated as a Heun or RES calibration. Harvest now runs the native sampler you actually selected, and you should re-run it when you materially change the sampler, checkpoint, LoRA/addons, scheduler, or step count.
+**Sigma Harvest is sampler-aware now** 
 
-I also rewrote the **Automatic planning path** because configuration was carrying copies of the latent width and height even though the runtime already had the real latent in front of it. That was unnecessary state that could become stale. V2 calculates transition points from the live sigma schedule and the actual H3 latent dimensions at generation time.
+rewrote the **Automatic planning path** removing stale code and other issues within it.
 
-Automatic and Manual now share the same planning code. In V1, pieces of the same scheduling rules existed in different places, which made it easy for one path to behave slightly differently from the other. V2 keeps stage sizing, transition math, and schedule validation together, while the runtime is responsible only for actually running the stages.
+Automatic and Manual now share the same planning code.
 
-The **I2V handling** was also tightened up. Keyframe latents are always resized from their original full-resolution copy instead of repeatedly resizing an already-resized tensor. This avoids slowly accumulating interpolation damage across stages. They are also restored before the final stage and restored again if a generation fails, so one failed run should not poison the next one.
+The **I2V handling** was also tightened up. Keyframe latents are always resized from their original full-resolution copy instead of repeatedly resizing an already-resized tensor. TLDR: I2V probably no longer gets progressively blurrier every time SPEED changes resolution.
 
-Progress and previews now behave like **one generation**, not several unrelated sampler calls. SPEED still runs several resolution stages internally, but the user-facing progress bar moves across the whole denoise once instead of restarting at each stage.
+Progress and previews now behave like **one generation**, not several unrelated sampler calls. 
 
 **Sigma Harvest uses much less memory.** V1 kept every full-resolution residual tensor until the native pass was finished and only then analysed them. V2 converts each residual into its small radial power profile as soon as the callback receives it, then discards the large tensor.
 
-I kept both noise policies. `direct_coarse` is still the default. `coupled_full_grid` still has a useful, well-defined job: it makes every stage come from one seeded full-resolution noise realization, which is useful for parity tests and ablations. I do not currently have a good enough reason to remove it, but I also do not have evidence that it is generally better quality. V2 simply avoids recomputing the same full-grid DCT at every transition.
+I kept both noise policies for now. direct_coarse is still the default. I am not convinced coupled_full_grid is doing anything useful anymore, Kept it in but i dont know if it will improve anything. V2 at least avoids recomputing the same full-grid DCT at every transition.
 
-Finally, the test suite became much larger because these bugs are easy to miss by looking at a successful video. V2 adds coverage for all five samplers, RES state resets, I2V cleanup, coincident transition boundaries, continuous progress, spectral coupling, Harvest behaviour, and the committed workflows.
-
-### Upgrading from V1
-
-Normal ComfyUI workflows should need very little work. The same three node IDs still exist, Euler is still the default, and the old Automatic and Manual inputs keep their order. The main visible change is the new sampler selector.
-
-The internal Python API changed more substantially because a lot of V1 plumbing was removed. In particular, `SpeedConfig` no longer stores cached latent dimensions, configs now represent actual multi-stage SPEED runs, and the config builders no longer need a latent just to copy its size.
-
-See **[CHANGELOG.md](CHANGELOG.md)** for the detailed API-level release notes.
+See **[CHANGELOG.md](CHANGELOG.md)** for the detailed API-level release notes starting from when i started keeping track.
 
 ## License
 
