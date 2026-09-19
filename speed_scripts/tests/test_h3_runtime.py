@@ -49,7 +49,7 @@ def test_power_spectrum_activation_math_matches_reference_equations():
 @pytest.mark.parametrize(
     "kwargs,error",
     [
-        ({"scales": (.5,), "transition_steps": ()}, "single scale must be 1.0"),
+        ({"scales": (1.0,), "transition_steps": ()}, "at least two scales"),
         ({"scales": (.5, .75), "transition_steps": (3,)}, "final scale must be 1.0"),
         ({"scales": (.5, .75, 1.0), "transition_steps": (5,)}, "transition steps"),
         ({"scales": (.5, 1.0), "transition_steps": (5,), "transition_mode": "bad"}, "transition_mode"),

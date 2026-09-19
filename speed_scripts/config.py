@@ -25,8 +25,6 @@ class SpeedConfig:
     delta: float = 0.01
     noise_amplitude: float = 12.105
     noise_decay_exponent: float = 0.773
-    full_latent_h: int = 45
-    full_latent_w: int = 80
     temporal_scales: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
@@ -35,22 +33,16 @@ class SpeedConfig:
 
         if self.transition_mode not in ("explicit", "delta_custom"):
             raise ValueError("transition_mode must be 'explicit' or 'delta_custom'")
-        if not scales:
-            raise ValueError("at least one scale required")
+        if len(scales) < 2:
+            raise ValueError("at least two scales required")
         if not all(0.0 < scale <= 1.0 for scale in scales):
             raise ValueError("every scale must be in (0, 1]")
-        if len(scales) == 1:
-            if abs(scales[0] - 1.0) > 1e-6:
-                raise ValueError("single scale must be 1.0 (full resolution)")
-        elif abs(scales[-1] - 1.0) > 1e-6:
+        if abs(scales[-1] - 1.0) > 1e-6:
             raise ValueError("final scale must be 1.0 (full resolution)")
         if not all(left < right for left, right in zip(scales[:-1], scales[1:])):
             raise ValueError("scales must be strictly increasing")
 
-        if len(scales) == 1:
-            if steps:
-                raise ValueError("single-scale config takes no transition steps")
-        elif self.transition_mode == "explicit":
+        if self.transition_mode == "explicit":
             if len(steps) != len(scales) - 1:
                 raise ValueError("need (n_scales - 1) transition steps")
             if not all(step >= 1 for step in steps):
@@ -68,8 +60,6 @@ class SpeedConfig:
             raise ValueError("delta must be in (0, 1)")
         if self.noise_amplitude <= 0.0 or self.noise_decay_exponent <= 0.0:
             raise ValueError("power spectrum A and beta must be positive")
-        if self.full_latent_h < 1 or self.full_latent_w < 1:
-            raise ValueError("full latent dims must be positive")
         if self.noise_policy not in NOISE_POLICIES:
             raise ValueError(f"unsupported noise_policy: {self.noise_policy}")
         if self.audio_policy not in AUDIO_POLICIES:

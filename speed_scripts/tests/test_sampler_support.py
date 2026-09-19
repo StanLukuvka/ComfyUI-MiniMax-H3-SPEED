@@ -79,8 +79,6 @@ def _automatic_calibrated_cfg(stages):
         delta=.005,
         noise_amplitude=12.105,
         noise_decay_exponent=.773,
-        full_latent_h=8,
-        full_latent_w=8,
     )
 
 
@@ -438,8 +436,6 @@ def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
         delta=.01,
         noise_amplitude=219.48,
         noise_decay_exponent=2.42,
-        full_latent_h=8,
-        full_latent_w=8,
     )
     guider = HookGuider()
     guider.test_events = events
@@ -586,6 +582,20 @@ def test_noise_policy_direct_coarse_smoke_per_sampler(sampler):
     _assert_full_res_nested(denoised)
 
 
+
+def test_coupled_full_grid_transforms_full_noise_once(monkeypatch):
+    original = h3_runtime.dct_temporal
+    full_grid_calls = []
+
+    def recording_dct_temporal(value):
+        if tuple(value.shape[-2:]) == (8, 8):
+            full_grid_calls.append(tuple(value.shape))
+        return original(value)
+
+    monkeypatch.setattr(h3_runtime, "dct_temporal", recording_dct_temporal)
+    cfg = _cfg(noise_policy="coupled_full_grid")
+    _run("euler", cfg, RecordingEchoGuider(video_offset=.5))
+    assert len(full_grid_calls) == 1
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_noise_policy_coupled_full_grid_smoke_per_sampler(sampler):

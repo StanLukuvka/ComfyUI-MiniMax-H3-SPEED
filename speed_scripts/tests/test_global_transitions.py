@@ -6,7 +6,8 @@ import torch
 from conftest import make_fake_noise, make_latent, make_recording_guider
 from speed_scripts.config import SpeedConfig
 from speed_scripts.flow import aligned_sigma
-from speed_scripts.h3_runtime import resolve_transition_steps, run_speed_pipeline
+from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.planning import resolve_transition_steps
 
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
@@ -60,6 +61,24 @@ def test_explicit_four_stage_schedule_uses_global_boundaries(noise_policy):
     assert sum(len(call) - 1 for call in calls) == len(SIGMAS) - 1
 
 
+def test_delta_custom_planning_requires_live_geometry():
+    cfg = SpeedConfig(
+        scales=(.5, 1.0),
+        transition_steps=(),
+        transition_mode="delta_custom",
+    )
+    with pytest.raises(ValueError, match="live full latent dimensions"):
+        resolve_transition_steps(cfg, SIGMAS)
+
+
+def test_explicit_planning_does_not_require_geometry():
+    cfg = SpeedConfig(
+        scales=(.5, 1.0),
+        transition_steps=(5,),
+        transition_mode="explicit",
+    )
+    assert resolve_transition_steps(cfg, SIGMAS) == (5,)
+
 def test_delta_custom_execution_matches_its_resolved_global_boundaries():
     sigmas = torch.linspace(1.0, 0.0, 21)
     scales = (.25, .5, 1.0)
@@ -70,8 +89,6 @@ def test_delta_custom_execution_matches_its_resolved_global_boundaries():
         delta=.01,
         noise_amplitude=219.48,
         noise_decay_exponent=2.42,
-        full_latent_h=44,
-        full_latent_w=80,
     )
     boundaries = resolve_transition_steps(cfg, sigmas, H_full=44, W_full=80)
     calls, _ = _run(cfg, sigmas, make_latent(h=44, w=80))
@@ -93,8 +110,6 @@ def test_coincident_delta_boundaries_align_the_same_coordinate_twice():
         delta=.01,
         noise_amplitude=219.48,
         noise_decay_exponent=2.42,
-        full_latent_h=8,
-        full_latent_w=8,
     )
     boundaries = resolve_transition_steps(cfg, sigmas, H_full=8, W_full=8)
     assert boundaries == (1, 1)

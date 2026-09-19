@@ -31,9 +31,10 @@ Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-
 - SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
 - All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
-- Automatic configs do not store placeholder transition indices. `delta_custom` boundaries are computed from the live sigma schedule at runtime; `transition_steps` is only meaningful in explicit/manual mode.
+- Automatic configs do not store placeholder transition indices or latent dimensions. `delta_custom` boundaries are computed from the live sigma schedule and live H3 latent geometry at runtime; `transition_steps` is only meaningful in explicit/manual mode.
 - Stage geometry, transition-threshold math, Automatic config construction, and Manual schedule normalization live together in `speed_scripts/planning.py`. `speed_scripts/automatic_config.py` is only a compatibility re-export for older imports.
-- `speed_scripts/h3_runtime.py` owns execution rather than planning: H3 latent validation, preview timeline, spectral/audio boundary application, sampler hooks, stage calls, and output assembly.
+- `speed_scripts/h3_runtime.py` owns execution rather than planning: H3 latent validation, preview timeline, spectral/audio boundary application, sampler hooks, stage calls, and output assembly. Coupled full-grid noise is transformed to spectral coefficients once per generation and reused at every transition.
 - I2V latent lifecycle lives in `speed_scripts/latent_class.py` as one `LatentWalker`. It snapshots only keyframe latents, always resizes from pristine full resolution, restores them before the final stage and on failure, and never wraps or resizes `minimax_refs`. The walker is local to one `run_speed_pipeline()` call; it is not stored on the guider.
+- Sigma Harvest reduces each captured full-resolution residual to its CPU radial power profile inside the sampler callback; it does not retain a run's full residual tensors.
 - No random configuration, no silent randomization in config paths.
 - Tests: `speed_scripts/tests/` — run with the repo venv (`.venv/bin/python -m pytest speed_scripts/tests/ -q`); the repo has no CI workflows for dev PRs, so the local suite is the gate.

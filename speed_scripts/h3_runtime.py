@@ -172,20 +172,17 @@ def _wrap_preview_callback(stock_cb, capture_state, global_offset, global_total)
 
 def _coupled_transition(
     internal_video,
-    full_noise_video,
+    full_noise_coefficients,
     target_thw,
     sigma: float,
 ):
-    """Expand with one fixed full-grid spectral noise field."""
+    """Expand from one precomputed full-grid spectral noise field."""
     target_t, target_h, target_w = target_thw
     source_t, source_h, source_w = internal_video.shape[-3:]
-    full_noise_video = full_noise_video.to(
-        device=internal_video.device,
-        dtype=internal_video.dtype,
-    )
-    full_coefficients = dct2(dct_temporal(full_noise_video))
+    full_noise_coefficients = full_noise_coefficients.to(device=internal_video.device)
     target_coefficients = (
-        full_coefficients[..., :target_t, :target_h, :target_w].clone() * float(sigma)
+        full_noise_coefficients[..., :target_t, :target_h, :target_w].clone()
+        * float(sigma)
     )
     target_coefficients[..., :source_t, :source_h, :source_w] = dct2(
         dct_temporal(internal_video)
@@ -199,14 +196,14 @@ def _expand_video(
     target_thw,
     sigma: float,
     seed: int,
-    full_noise_video=None,
+    full_noise_coefficients=None,
 ):
     """Expand the carried video state to the next stage geometry."""
     target_t, target_h, target_w = target_thw
-    if full_noise_video is not None:
+    if full_noise_coefficients is not None:
         return _coupled_transition(
             internal_video,
-            full_noise_video,
+            full_noise_coefficients,
             target_thw,
             sigma,
         )
@@ -251,9 +248,6 @@ def run_speed_pipeline(
 
     video_shift, audio_shift, audio_scale = resolve_sigma_shifts(guider)
     scales = config.scales
-    if len(scales) < 2:
-        raise ValueError("need at least two stages (scales ending at 1.0)")
-
     full_t, full_h, full_w = full_video.shape[-3:]
     stage_shapes = [
         stage_resolution(config, index, full_h, full_w, full_t)
@@ -272,7 +266,7 @@ def run_speed_pipeline(
     )
     stage_start_latent = pack_latent(coarse_video, torch.zeros_like(full_audio))
 
-    full_noise_video = None
+    full_noise_coefficients = None
     if config.noise_policy == "coupled_full_grid":
         full_noise = noise.generate_noise(latent)
         full_noise_video, full_noise_audio = unpack_latent(full_noise)
@@ -280,7 +274,9 @@ def run_speed_pipeline(
             full_noise_video[..., :stage_t, :, :],
             (stage_h, stage_w),
         )
+        full_noise_coefficients = dct2(dct_temporal(full_noise_video))
         stage_start_pub = pack_latent(coarse_noise_video, full_noise_audio)
+        del full_noise, full_noise_video
     else:
         coarse_latent = latent.copy()
         coarse_latent["samples"] = stage_start_latent
@@ -354,7 +350,7 @@ def run_speed_pipeline(
                 target_thw=(next_t, next_h, next_w),
                 sigma=boundary_sigma,
                 seed=int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
-                full_noise_video=full_noise_video,
+                full_noise_coefficients=full_noise_coefficients,
             )
             transitioned_video = expanded_video * kappa
 

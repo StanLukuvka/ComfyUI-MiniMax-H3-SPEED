@@ -120,6 +120,37 @@ def test_harvest_uses_selected_native_sampler_and_emits_identity(monkeypatch, sa
     assert "Tolerance (Delta)=" + format(calibration["delta"], ".3f") in paste_line
 
 
+def test_harvest_reduces_each_residual_during_callback(monkeypatch):
+    module = importlib.import_module("sampler_sigma_harvest_node")
+    cls = module.MiniMaxH3HarvestToConfig
+    original = module.radial_dct_power
+    reduced = []
+
+    def recording_radial_dct_power(residual):
+        reduced.append(tuple(residual.shape))
+        return original(residual)
+
+    monkeypatch.setattr(module, "radial_dct_power", recording_radial_dct_power)
+
+    class StreamingGuider(Guider):
+        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+            self.samplers.append(sampler)
+            video = next(part for part in latent_image.unbind() if part.ndim == 5)
+            state = video.float()
+            total = len(sigmas) - 1
+            for step in range(total):
+                sigma = float(sigmas[step])
+                denoised = state * .5
+                derivative = (state - denoised) / sigma if sigma else (state - denoised)
+                state = state + derivative * (float(sigmas[step + 1]) - sigma)
+                callback(step, denoised, state, total)
+                assert len(reduced) == step + 1
+            return state
+
+    text, _ = _harvest(cls, StreamingGuider(), "euler")
+    assert "error" not in json.loads(text)
+    assert len(reduced) == 19
+
 def test_res_harvest_uses_native_sampler_stub_not_speed_adapter(monkeypatch):
     cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
     native_calls = []

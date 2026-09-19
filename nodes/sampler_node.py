@@ -91,7 +91,6 @@ class MiniMaxH3SPEEDSampler:
         stages = max(2, min(4, stages))
 
         config = build_automatic_speed_config(
-            latent_image,
             stages=stages,
             noise_policy=noise_policy,
             delta=delta,
