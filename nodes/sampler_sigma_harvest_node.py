@@ -29,7 +29,11 @@ from speed_scripts.harvest import (
     fit_power_law,
     radial_dct_power,
 )
-from speed_scripts.planning import activation_threshold, find_first_step_below, power_at_frequency
+from speed_scripts.planning import (
+    activation_threshold,
+    find_first_step_below,
+    power_at_frequency,
+)
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
@@ -248,8 +252,11 @@ class MiniMaxH3HarvestToConfig:
         usable_fit = (
             np.isfinite(A)
             and np.isfinite(beta)
+            and np.isfinite(delta)
             and A > 0.0
             and beta > 0.0
+            and 0.0 < delta < 1.0
+            and health != "invalid"
         )
         if usable_fit:
             lines.append(
