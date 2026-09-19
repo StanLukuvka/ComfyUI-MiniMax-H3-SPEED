@@ -29,7 +29,7 @@ from conftest import (
     SeededRandomNoise,
     make_latent,
 )
-from speed_scripts.automatic_config import STAGES_TO_SCALES
+from speed_scripts.planning import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.sampler_support import (
