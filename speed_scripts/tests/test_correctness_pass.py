@@ -228,7 +228,7 @@ def test_forced_failure_restores_pristine_conditioning():
 
     calls = {"n": 0}
 
-    # Patch the runtime name because spectral_expand is imported directly.
+    # Patch h3_runtime.spectral_expand, the binding used by run_speed_pipeline.
     import speed_scripts.h3_runtime as rt
 
     expanded = rt.spectral_expand
