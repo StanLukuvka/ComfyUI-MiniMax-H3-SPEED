@@ -1274,27 +1274,21 @@
             ],
             "outputs": [
               {
-                "localized_name": "calibration_result",
-                "name": "calibration_result",
+                "localized_name": "calibration",
+                "name": "calibration",
                 "type": "STRING",
                 "links": [
                   260
                 ]
               },
               {
-                "localized_name": "output_latent",
-                "name": "output_latent",
+                "localized_name": "diagnostic_latent",
+                "name": "diagnostic_latent",
                 "type": "LATENT",
                 "links": [
                   258,
                   259
                 ]
-              },
-              {
-                "localized_name": "denoised_latent",
-                "name": "denoised_latent",
-                "type": "LATENT",
-                "links": null
               }
             ],
             "properties": {
