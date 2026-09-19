@@ -5,7 +5,7 @@ from __future__ import annotations
 import comfy.utils
 
 from speed_scripts.h3_runtime import run_speed_pipeline
-from speed_scripts.planning import PRESET_TO_STAGES, build_automatic_speed_config
+from speed_scripts.planning import build_automatic_speed_config
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
@@ -83,7 +83,7 @@ class MiniMaxH3SPEEDSampler:
             ),
         )
         if "preset" in kwargs:
-            stages = PRESET_TO_STAGES.get(kwargs.pop("preset"), stages)
+            raise TypeError("Automatic presets were removed in V2; use stages=2, 3, or 4")
         try:
             stages = int(stages)
         except Exception:
