@@ -93,6 +93,13 @@ def test_unknown_automatic_options_fail_closed(monkeypatch):
         _capture_node_config(monkeypatch, removed_option="old")
 
 
-def test_tolerance_aliases_still_resolve(monkeypatch):
-    assert _capture_node_config(monkeypatch, delta=0.03).delta == pytest.approx(0.03)
-    assert _capture_node_config(monkeypatch, **{"Tolerance (Delta)": 0.02}).delta == pytest.approx(0.02)
+def test_tolerance_widget_value_is_forwarded(monkeypatch):
+    assert _capture_node_config(
+        monkeypatch,
+        **{"Tolerance (Delta)": 0.02},
+    ).delta == pytest.approx(0.02)
+
+
+def test_removed_tolerance_alias_fails_closed(monkeypatch):
+    with pytest.raises(TypeError, match="Unexpected Automatic option"):
+        _capture_node_config(monkeypatch, delta=0.03)
