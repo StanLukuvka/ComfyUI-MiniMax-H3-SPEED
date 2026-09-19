@@ -1,22 +1,4 @@
-"""Sampler-support contracts: public selector, run-scoped handle lifecycle,
-Euler regression through the new handle layer, and the S6 suite-level gates
-that are not tied to one sampler: both noise policies on every public
-stateless sampler, the global progress/preview timeline, the coincident-boundary
-Turbo torture ladder, the I2V conditioning matrix, and failure cleanup with
-a clean second generation.
-
-The selector tests pin the fail-closed public surface. The Euler regression
-tests replay the same fake-model run the pre-handle suite used and assert the
-sigma slices, transition boundaries, aligned-sigma patching, stage geometry,
-deterministic output, and callback count are unchanged. The lifecycle tests
-pin the hook position (once per configured transition, never per denoising
-step, never after the final stage) and the nested run-level cleanup order.
-
-Instrumented handles for the hook and cleanup tests enter through a patched
-``create_speed_sampler_handle`` in the runtime module namespace, so they
-exercise the same run-scoped handle path production uses; the override seam
-is covered separately.
-"""
+"""Sampler selection, lifecycle, transition, progress, and I2V contracts."""
 
 import pytest
 import torch
@@ -63,13 +45,7 @@ def _explicit_ladder_cfg(stages):
 
 
 def _automatic_calibrated_cfg(stages):
-    """The Automatic node's delta_custom config for ``stages`` stages.
-
-    With the baked calibration constants on the 10-interval schedule every
-    transition quantizes onto schedule index 1, so the middle stages get a
-    single-sigma schedule (zero denoising steps) — the legal
-    coincident-boundary case the runtime must support.
-    """
+    """Automatic config that produces coincident boundaries on this test schedule."""
     return SpeedConfig(
         scales=STAGES_TO_SCALES[stages],
         transition_steps=tuple(range(1, len(STAGES_TO_SCALES[stages]))),
@@ -88,7 +64,7 @@ def _run(sampler, cfg, guider, **kwargs):
 
 
 def _assert_full_res_nested(latent):
-    """Both H3 streams survived: 5-dim video + 4-dim audio at full 8x8."""
+    """Assert full-resolution nested video and audio output."""
     video, audio = latent["samples"].unbind()
     assert video.ndim == 5 and audio.ndim == 4
     assert tuple(video.shape[-2:]) == (8, 8)
@@ -108,14 +84,7 @@ def _nested(video, audio):
 
 
 class EchoGuider:
-    """Additive-echo guider (public = noise video + offset) with an event log.
-
-    Mirrors the pre-handle additive test guider: the public output is the
-    stage's public noise plus a fixed video offset. Records an ordered event
-    log, every sampler object it receives, and the video geometry of each
-    noise argument (the coarse/re-entry noise the stage consumes), so tests
-    can order the runtime's hook calls against the stage sampling calls.
-    """
+    """Add a fixed video offset and record stage order, sampler, and input size."""
 
     class Model:
         sigma_shift_video = 12.0
@@ -213,7 +182,7 @@ def test_base_handle_is_an_inert_noop():
 
 
 # ---------------------------------------------------------------------------
-# Euler regression coverage
+# Euler stage behavior
 # ---------------------------------------------------------------------------
 
 def test_default_and_explicit_paths_select_euler_exactly_once_per_run(monkeypatch):
@@ -235,8 +204,7 @@ def test_default_and_explicit_paths_select_euler_exactly_once_per_run(monkeypatc
 
 
 def test_euler_sigma_slices_and_boundaries_are_unchanged():
-    """Stage slices use GLOBAL boundaries and the boundary coordinate is
-    patched in place with the kappa-aligned sigma."""
+    """Stage slices use global boundaries and aligned boundary sigmas."""
     calls = []
     guider = make_recording_guider(sigma_calls=calls)
     run_speed_pipeline(
@@ -275,8 +243,7 @@ def test_euler_routes_the_handle_sampler_into_every_guider_call(monkeypatch):
         make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
         disable_pbar=True,
     )
-    # The coarse stages and the final stage all sampled through the handle's
-    # sampler object — the old hardcoded euler construction is gone.
+    # Every stage uses the sampler object owned by the handle.
     assert len(guider.samplers) == 3
     assert all(sampler is marker for sampler in guider.samplers)
 
@@ -330,8 +297,7 @@ def test_euler_callback_count_equals_global_denoising_intervals():
         disable_pbar=True,
         preview_callback=lambda step, x0, x, total: seen.append((step, total)),
     )
-    # A (3, 5) ladder over a 10-interval schedule forwards exactly 10
-    # callbacks on one continuous global timeline — the pre-handle count.
+    # Ten denoising intervals produce ten global callbacks.
     assert seen == [(i, 10) for i in range(10)]
 
 
@@ -361,9 +327,7 @@ def test_transition_hook_fires_once_per_transition_at_the_documented_position(mo
     )
 
     scales = (.33, .66, 1.0)
-    # Exactly the two configured transitions: not per denoising step (10
-    # intervals) and not after the final stage (no third hook). Each hook
-    # sits between its stage's guider.sample and the next stage's sample.
+    # One hook runs between each pair of stages.
     assert events == ["sample", "hook", "sample", "hook", "sample"]
     assert [t.stage_idx for t in transitions_seen] == [0, 1]
     assert [t.ratio for t in transitions_seen] == [
@@ -378,8 +342,7 @@ def test_transition_hook_fires_once_per_transition_at_the_documented_position(mo
     assert transitions_seen[0].new_sigma == pytest.approx(new0)
     assert transitions_seen[1].old_sigma == pytest.approx(.5)
     assert transitions_seen[1].new_sigma == pytest.approx(new1)
-    # Spectral transition ran before the hook: source geometry is this
-    # stage's grid, target geometry is the next stage's grid.
+    # The hook sees the completed source and target stage sizes.
     assert transitions_seen[0].source_thw == (2, 3, 3)
     assert transitions_seen[0].target_thw == (2, 5, 5)
     assert transitions_seen[1].source_thw == (2, 5, 5)
@@ -387,8 +350,7 @@ def test_transition_hook_fires_once_per_transition_at_the_documented_position(mo
 
 
 def test_hook_failure_aborts_the_run_before_the_next_stage_samples(monkeypatch):
-    """The hook belongs to the gap between two stages: when it raises, the
-    next stage never samples — and run-level cleanup still runs."""
+    """A transition-hook failure stops the next stage and still runs cleanup."""
 
     class ExplodingHandle(SpeedSamplerHandle):
         def __init__(self):
@@ -423,9 +385,7 @@ def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
             transitions_seen.append(transition.stage_idx)
 
     monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: HookHandle())
-    # delta_custom quantizes both transitions onto the same schedule index
-    # (the existing suite pins boundaries == (1, 1) for these parameters) —
-    # the legal coincident-boundary case.
+    # Both transitions resolve to the same schedule index.
     cfg = SpeedConfig(
         scales=(.25, .5, 1.0),
         transition_steps=(3, 5),
@@ -447,7 +407,7 @@ def test_coincident_boundaries_still_call_the_hook_once_each(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Run-scoped sampler and I2V lifecycle
+# Sampler and I2V lifecycle
 # ---------------------------------------------------------------------------
 
 def test_cleanup_closes_sampler_and_restores_on_success(monkeypatch):
@@ -470,8 +430,7 @@ def test_cleanup_closes_sampler_and_restores_on_success(monkeypatch):
         make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
         disable_pbar=True,
     )
-    # apply_final also runs once before the final stage (pre-final restore);
-    # run-level cleanup then closes the sampler handle and restores again.
+    # Restore before the final stage, then restore again during cleanup.
     assert order == ["apply_final", "close", "apply_final"]
 
 
@@ -497,13 +456,12 @@ def test_cleanup_still_restores_when_sampler_close_fails(monkeypatch):
             make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
             disable_pbar=True,
         )
-    # The failing close did not stop the final keyframe restore, which also
-    # runs once earlier before the final stage.
+    # Keyframes are restored even when sampler cleanup fails.
     assert order == ["apply_final", "close", "apply_final"]
 
 
 def test_cleanup_still_closes_sampler_when_restore_fails(monkeypatch):
-    """If the pre-final keyframe restore fails, sampler cleanup still runs."""
+    """Sampler cleanup runs even when keyframe restore fails."""
     order = []
 
     class CleanupHandle(SpeedSamplerHandle):
@@ -521,8 +479,7 @@ def test_cleanup_still_closes_sampler_when_restore_fails(monkeypatch):
     monkeypatch.setattr(h3_runtime, "create_speed_sampler_handle", lambda name, **kwargs: CleanupHandle())
     monkeypatch.setattr(h3_runtime.LatentWalker, "apply_final", exploding_final)
     guider = make_recording_guider()
-    # The first restore fails before the final stage and aborts the run.
-    # The sampler handle is still closed, then cleanup attempts restoration again.
+    # Cleanup closes the sampler and retries keyframe restore.
     with pytest.raises(RuntimeError, match="restore exploded"):
         run_speed_pipeline(
             make_fake_noise(), guider, SIGMAS, make_latent(), _cfg(),
@@ -532,7 +489,7 @@ def test_cleanup_still_closes_sampler_when_restore_fails(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Override seam and fail-closed runtime validation
+# Runtime validation
 # ---------------------------------------------------------------------------
 
 
@@ -558,7 +515,7 @@ def test_run_rejects_unsupported_sampler_name_fail_closed():
 
 
 # ---------------------------------------------------------------------------
-# Noise policies — both policies smoke on every public stateless sampler
+# Noise policies
 # ---------------------------------------------------------------------------
 
 
@@ -597,14 +554,13 @@ def test_noise_policy_coupled_full_grid_smoke_per_sampler(sampler):
 
 
 # ---------------------------------------------------------------------------
-# Progress / preview — the public timeline is one continuous denoising pass
+# Progress and preview
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_public_progress_is_monotonic_across_stages(sampler):
-    """Callback indices rise on one global timeline: no per-stage restart,
-    and each stage's local steps continue where the previous stage stopped."""
+    """Callback indices use one continuous global timeline."""
     seen = []
     guider = RecordingEchoGuider(video_offset=.5)
     _run(
@@ -630,18 +586,13 @@ def test_shared_x0_output_and_final_denoised_are_valid_nested_h3(sampler):
 
 
 # ---------------------------------------------------------------------------
-# Coincident-boundary short-schedule coverage — every configured transition
-# and alignment still runs, and progress stays monotonic
+# Coincident boundaries
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_turbo_coincident_ladder_runs_every_transition_and_alignment(sampler):
-    """Short-schedule torture case (the plan's Turbo torture block): with
-    the baked calibration every transition quantizes onto one boundary, each
-    middle stage gets a single-sigma slice (zero denoising steps), and the
-    spectral expand + kappa alignment still patched the schedule (re-entry
-    sigma is the aligned coordinate, not the raw schedule value)."""
+    """Coincident boundaries still run every transition and sigma alignment."""
     cfg = _automatic_calibrated_cfg(3)
     guider = RecordingEchoGuider()
     seen = []
@@ -653,26 +604,20 @@ def test_turbo_coincident_ladder_runs_every_transition_and_alignment(sampler):
     assert len(guider.sigma_calls) == 3
     for call in guider.sigma_calls[1:-1]:
         assert len(call) == 1  # single-sigma slice: no crash, zero steps
-    # Every configured spectral transition executed: all three stages ran
-    # through the selected native sampler object.
+    # All three stages use the selected sampler.
     assert guider.samplers == [("sampler", sampler)] * 3
-    # Every configured sigma alignment executed: both transitions quantized
-    # onto the same boundary coordinate, and each re-aligned it with its own
-    # stage ratio (0.333→0.667 is ratio 2.0, 0.667→1.0 is ratio 1.5) — the
-    # documented coincident-boundary model.
+    # Each transition aligns the shared boundary for its own stage ratio.
     first_kappa, first_aligned = aligned_sigma(float(SIGMAS[1]), 2.0)
     second_kappa, second_aligned = aligned_sigma(first_aligned, 1.5)
     assert guider.sigma_calls[1][0] == pytest.approx(first_aligned)
     assert guider.sigma_calls[2][0] == pytest.approx(second_aligned)
-    # Progress stayed monotonic across the whole coincident ladder.
+    # Progress remains monotonic.
     assert seen == list(range(10))
     _assert_full_res_nested(out)
 
 
 # ---------------------------------------------------------------------------
-# I2V matrix — keyframe/ref latents follow the LatentWalker lifecycle,
-# pristine conditioning is restored on success and failure, and sampler
-# code does not structurally replace guider.original_conds
+# I2V keyframe lifecycle
 # ---------------------------------------------------------------------------
 
 def _i2v_guider():
@@ -702,16 +647,13 @@ def test_i2v_smoke_and_pristine_restore_on_success(sampler):
 
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
-    # Keyframe latents followed the LatentWalker: staged to the first coarse
-    # grid, restored to pristine at the end.
+    # Keyframes return to their original full resolution.
     for kf in keyframes:
         assert tuple(kf["latent"].shape[-2:]) == (8, 8)
-    # Ref latents kept their existing behavior: never resized.
+    # Reference latents stay at full resolution.
     for ref in refs:
         assert tuple(ref["latent"].shape[-2:]) == (8, 8)
-    # Pristine conditioning restored: same container object, same per-holder
-    # dicts, full-res tensors. No sampler code replaced or rebuilt
-    # guider.original_conds.
+    # Restore the same conditioning containers and holder objects.
     assert guider.original_conds is original_conds
     cond = original_conds["positive"][0]
     assert cond["minimax_keyframes"] is keyframes
@@ -736,8 +678,7 @@ def test_i2v_failure_restores_pristine_conditioning(sampler):
     finally:
         rt.spectral_expand = original_expand
 
-    # The failure happened after stage 0 had already downscaled the
-    # keyframe latents; pristine conditioning is restored anyway.
+    # Failure after downscaling still restores the original keyframes.
     for kf in keyframes:
         assert tuple(kf["latent"].shape[-2:]) == (8, 8)
     for ref in refs:
@@ -746,17 +687,13 @@ def test_i2v_failure_restores_pristine_conditioning(sampler):
 
 
 # ---------------------------------------------------------------------------
-# Failure cleanup — force a sampler-stage failure, then run a clean second generation
+# Failure cleanup
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_stage_failure_closes_handle(sampler):
-    """Force a mid-run failure inside the second stage's guider.sample call.
-
-    The run-scoped sampler handle must still close; pristine I2V restoration
-    is covered separately by the I2V failure test above.
-    """
+    """A second-stage failure still closes the sampler handle."""
     closed = []
     events = []
 
@@ -768,8 +705,7 @@ def test_stage_failure_closes_handle(sampler):
         def close(self):
             closed.append(True)
 
-    # Instrument the guider AFTER the factory patch: the failure must come
-    # from the stage call, not the handle.
+    # Raise from the second stage call.
     class ExplodingStageGuider(RecordingEchoGuider):
         def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
             events.append("sample")
@@ -795,11 +731,7 @@ def test_stage_failure_closes_handle(sampler):
 
 @pytest.mark.parametrize("sampler", STATELESS_SPEED_SAMPLERS)
 def test_second_generation_after_failure_starts_clean(sampler):
-    """After a failed run, the same guider can run a full generation.
-
-    The sampler handle and generation-local I2V state are rebuilt, and the
-    output matches a control run that never failed.
-    """
+    """The same guider starts the next generation with clean state."""
     class ExplodingStageGuider(RecordingEchoGuider):
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
@@ -821,8 +753,7 @@ def test_second_generation_after_failure_starts_clean(sampler):
     with pytest.raises(RuntimeError, match="first generation exploded"):
         _run(sampler, cfg, guider_a)
 
-    # Generation 2: same guider object, no special handling — must complete
-    # and match a control run that never failed.
+    # The next generation matches a fresh control run.
     out_second, _ = _run(sampler, cfg, guider_a)
 
     guider_control = ExplodingStageGuider()
