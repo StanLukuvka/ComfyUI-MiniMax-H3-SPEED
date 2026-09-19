@@ -79,11 +79,8 @@ class MiniMaxH3SPEEDSampler:
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Automatic option(s): {unexpected}")
-        try:
-            stages = int(stages)
-        except Exception:
-            stages = 3
-        stages = max(2, min(4, stages))
+        if isinstance(stages, bool) or not isinstance(stages, int) or stages not in (2, 3, 4):
+            raise ValueError(f"stages must be exactly 2, 3, or 4; got {stages!r}")
 
         config = build_automatic_speed_config(
             stages=stages,
