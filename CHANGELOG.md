@@ -38,7 +38,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Removed
 
-- Removed the legacy `speed_scripts/automatic_config.py` compatibility module and guider walker marker.
+- Removed the legacy `speed_scripts/automatic_config.py` compatibility module, guider walker marker, alternate Tolerance aliases, and Harvest compatibility wrapper.
 - Removed V1 Automatic preset names; Automatic now uses only the explicit `stages` selector.
 - Removed the old `nodes_common.py` helper layer.
 - Removed cached full latent width and height from `SpeedConfig`.
@@ -49,7 +49,7 @@ All notable changes to this project are documented here. New releases should be 
 - Public node IDs remain unchanged.
 - Automatic and Manual still default to Euler when no sampler is specified.
 - Existing Automatic and Manual input ordering is preserved, with `sampler_name` appended.
-- Old Tolerance aliases remain accepted; V1 Automatic preset names were removed in V2.
+- V1 Automatic preset names and alternate Tolerance argument aliases were removed in V2.
 - Internal `speed_scripts` APIs changed and should not be treated as V1-compatible.
 
 ## [1.x] - Previous releases
