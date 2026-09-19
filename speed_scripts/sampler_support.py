@@ -1,23 +1,7 @@
-"""Sampler-support layer for the SPEED multi-stage pipeline.
+"""Create the sampler used by SPEED.
 
-The SPEED stage loop in ``h3_runtime`` runs one sampler through several
-progressive-resolution stages. This module owns everything sampler-related
-for that loop:
-
-* the public, curated list of sampler names SPEED supports,
-* a capability classification per sampler,
-* a run-scoped ``SpeedSamplerHandle`` that wraps the sampler object plus any
-  run-scoped state, with a transition hook called once per configured SPEED
-  transition and a ``close()`` for end-of-run cleanup.
-
-The stage loop and scheduler logic never branch on the sampler name; they
-only talk to the handle. Stateless samplers use ComfyUI's native sampler
-objects. RES uses this repository's deterministic stateful adapter because
-its run-scoped state and boundary policy belong to the sampler handle. The
-SPEED scheduler itself remains sampler-agnostic.
-
-RES uses reset-only boundary behavior. It clears its previous-step history
-at every SPEED stage boundary.
+Most samplers use ComfyUI directly. RES needs extra per-generation state, so
+its wrapper also clears RES history whenever SPEED changes resolution.
 """
 
 from dataclasses import dataclass
@@ -35,7 +19,7 @@ SUPPORTED_SPEED_SAMPLERS = STATELESS_SPEED_SAMPLERS + ("res_multistep",)
 
 
 class SamplerCapability(Enum):
-    """What a sampler needs from the SPEED stage loop."""
+    """How much state a sampler keeps between steps."""
 
     STATELESS_STEP_LOCAL = "stateless_step_local"
     SINGLE_HISTORY = "single_history"
@@ -43,7 +27,7 @@ class SamplerCapability(Enum):
 
 @dataclass(frozen=True)
 class SpeedTransition:
-    """One configured SPEED transition boundary."""
+    """Details about one SPEED resolution change."""
 
     stage_idx: int
     ratio: float
@@ -54,7 +38,7 @@ class SpeedTransition:
 
 
 class SpeedSamplerHandle:
-    """Run-scoped wrapper around one SPEED sampler choice."""
+    """Sampler object plus any state needed for one generation."""
 
     sampler: object
     capability: SamplerCapability
@@ -75,7 +59,7 @@ class _StatelessSamplerHandle(SpeedSamplerHandle):
 
 
 class _ResMultistepSamplerHandle(SpeedSamplerHandle):
-    """Run-scoped deterministic RES sampler with reset-only boundaries."""
+    """RES sampler that clears its history at each resolution change."""
 
     def __init__(self):
         from .res_multistep_adapter import ResMultistepSampler, ResMultistepState
@@ -92,7 +76,7 @@ class _ResMultistepSamplerHandle(SpeedSamplerHandle):
 
 
 def create_speed_sampler_handle(sampler_name: str) -> SpeedSamplerHandle:
-    """Build the run-scoped handle for ``sampler_name`` and fail closed."""
+    """Create the sampler for this generation and reject unsupported names."""
     if sampler_name not in SUPPORTED_SPEED_SAMPLERS:
         supported = ", ".join(repr(name) for name in SUPPORTED_SPEED_SAMPLERS)
         raise ValueError(
