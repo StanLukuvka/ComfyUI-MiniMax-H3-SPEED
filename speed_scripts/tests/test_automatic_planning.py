@@ -104,3 +104,22 @@ def test_tolerance_widget_value_is_forwarded(monkeypatch):
 def test_removed_tolerance_alias_fails_closed(monkeypatch):
     with pytest.raises(TypeError, match="Unexpected Automatic option"):
         _capture_node_config(monkeypatch, delta=0.03)
+
+
+@pytest.mark.parametrize("stages", [1, 5, 0, True, 3.0, "3"])
+def test_automatic_rejects_invalid_stage_counts(monkeypatch, stages):
+    with pytest.raises(ValueError, match="stages must be exactly 2, 3, or 4"):
+        _capture_node_config(monkeypatch, stages=stages)
+
+
+@pytest.mark.parametrize("stages", [1, 5, True, 3.0, "3"])
+def test_builder_rejects_invalid_stage_counts(stages):
+    with pytest.raises(ValueError, match="stages must be exactly 2, 3, or 4"):
+        build_automatic_speed_config(
+            stages=stages,
+            noise_policy="direct_coarse",
+            delta=0.005,
+            noise_amplitude=12.105,
+            noise_decay_exponent=0.773,
+            seed_offset=10000,
+        )
