@@ -72,7 +72,7 @@ class MiniMaxH3HarvestToConfig:
                 "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
             },
             "optional": {
-                "Tolerance (Delta)": ("FLOAT", {"default": 0.01, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
             },
         }
 
@@ -90,7 +90,7 @@ class MiniMaxH3HarvestToConfig:
         delta = kwargs.get("Tolerance (Delta)",
                 kwargs.get("Tolerance",
                 kwargs.get("tolerance",
-                kwargs.get("delta", kwargs.get("Delta", 0.01)))))
+                kwargs.get("delta", kwargs.get("Delta", 0.005)))))
         delta = float(delta)
 
         capture_count = 0
