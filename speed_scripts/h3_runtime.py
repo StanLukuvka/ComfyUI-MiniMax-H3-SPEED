@@ -118,7 +118,7 @@ def resolve_sigma_shifts(guider):
 
 
 def _build_preview_callback(guider, total_steps, x0_output):
-    """Use ComfyUI's normal preview callback when available."""
+    """Build ComfyUI's preview callback."""
     try:
         import latent_preview
     except Exception as exc:
