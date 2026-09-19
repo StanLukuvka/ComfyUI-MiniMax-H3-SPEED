@@ -75,11 +75,7 @@ class MiniMaxH3SPEEDSampler:
         sampler_name="euler",
         **kwargs,
     ):
-        delta = 0.005
-        for key in ("Tolerance (Delta)", "Tolerance", "tolerance", "delta", "Delta"):
-            if key in kwargs:
-                delta = kwargs.pop(key)
-                break
+        delta = kwargs.pop("Tolerance (Delta)", 0.005)
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Automatic option(s): {unexpected}")
