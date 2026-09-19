@@ -44,11 +44,11 @@ class MiniMaxH3SPEEDSampler:
                 ),
                 "noise_amplitude": (
                     "FLOAT",
-                    {"default": 12.105, "min": 0.0, "max": 1e6, "step": 0.0001, "round": 0.0001},
+                    {"default": 12.105, "min": 0.0001, "max": 1e6, "step": 0.0001, "round": 0.0001},
                 ),
                 "noise_decay_exponent": (
                     "FLOAT",
-                    {"default": 0.773, "min": 0.0, "max": 10.0, "step": 0.0001, "round": 0.0001},
+                    {"default": 0.773, "min": 0.0001, "max": 10.0, "step": 0.0001, "round": 0.0001},
                 ),
                 "seed_offset": (
                     "INT",
