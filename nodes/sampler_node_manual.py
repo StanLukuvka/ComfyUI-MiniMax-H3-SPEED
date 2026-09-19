@@ -89,7 +89,6 @@ class MiniMaxH3SPEEDSamplerManual:
         **kwargs,
     ):
         config = build_manual_speed_config(
-            latent_image,
             sigmas,
             transitions=(
                 (transition_goal_1, transition_resolution_1),
