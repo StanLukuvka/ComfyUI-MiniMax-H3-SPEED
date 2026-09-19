@@ -1,24 +1,7 @@
-"""Host-seam tests for the RES Multistep adapter (plan S7 §13).
+"""RES host-interface contracts.
 
-These tests exercise the two seams the real ComfyUI host builds and the
-earlier runtime tests bypassed:
-
-1. The sampler-OBJECT contract. The host ``CFGGuider.inner_sample`` wraps
-   ``sampler.sample`` in its wrapper executor and calls
-   ``executor.execute(self, sigmas, extra_args, callback, noise,
-   latent_image, denoise_mask, disable_pbar)`` — the object must expose
-   ``.sample`` with that shape. A guider here invokes the sampler object
-   exactly that way.
-
-2. The flat packed tensor at the sampler boundary. On a real nested-latent
-   H3 run, ``CFGGuider.sample`` packs video+audio FLAT with
-   ``comfy.utils.pack_latents`` (each stream reshaped ``[B, 1, -1]``,
-   concatenated on the last axis) before any sampler code runs, and unpacks
-   the sampler output back into a nested tensor afterwards. Reset mode clears
-   uses the runtime-recorded stream shapes when it needs to split the pack.
-
-The conftest ``KSAMPLER`` stub models the host shape; these tests use it the
-way ``CFGGuider`` uses the real one.
+These tests cover the two ComfyUI boundaries RES depends on: the sampler
+object's ``.sample()`` method and the packed video/audio tensor passed into it.
 """
 
 
