@@ -38,7 +38,7 @@ def power_at_frequency(omega: float, amplitude: float, beta: float) -> float:
 
 
 def activation_threshold(power: float, delta: float) -> float:
-    """Return the sigma threshold where this frequency should become active."""
+    """Return the sigma threshold where this frequency becomes active."""
     if delta >= 1.0:
         raise ValueError("delta must be < 1.0")
     return 1.0 / (1.0 + math.sqrt(delta / (power * (1.0 + power - delta))))
