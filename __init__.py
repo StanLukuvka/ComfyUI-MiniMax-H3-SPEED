@@ -1,7 +1,7 @@
 """Register the MiniMax-H3 SPEED nodes with ComfyUI.
 
-ComfyUI does not add this package or ``nodes/`` to ``sys.path``, so add
-both before importing the node modules by name.
+Add this package and ``nodes/`` to ``sys.path`` before importing the node
+modules by name.
 """
 
 import importlib
@@ -9,7 +9,7 @@ import os
 import sys
 import traceback
 
-# ComfyUI imports the node files by name, so both folders must be importable.
+# Node modules are imported by name, so both folders must be on sys.path.
 _NODE_DIR = os.path.dirname(os.path.abspath(__file__))
 _NODES_DIR = os.path.join(_NODE_DIR, "nodes")
 for _p in (_NODE_DIR, _NODES_DIR):
