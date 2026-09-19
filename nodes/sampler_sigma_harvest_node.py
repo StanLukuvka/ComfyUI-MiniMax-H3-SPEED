@@ -112,20 +112,10 @@ class MiniMaxH3HarvestToConfig:
             freqs_all.append(freqs)
             profiles_all.append(profile)
 
-        # ComfyUI callback signatures across versions:
-        #  - dict-arg: callback({"x", "i"/"step", "sigma", "denoised"})     (newer)
-        #  - kwargs:   callback(x=..., denoised=..., i=..., sigma=...)      (mid)
-        #  - legacy:   callback(step, denoised, x, total_steps)              (old)
-        def _compat_callback(*args, **kwargs):
-            if len(args) == 1 and isinstance(args[0], dict):
-                info = args[0]
-                return _capture(info.get("x"), info.get("denoised"))
-            if "sigma" in kwargs and "denoised" in kwargs:
-                return _capture(kwargs.get("x"), kwargs.get("denoised"))
-            # Legacy positional: (step, denoised, x, total_steps)
-            if len(args) >= 3:
-                _step, denoised, x = args[0], args[1], args[2]
-                return _capture(x, denoised)
+        # guider.sample exposes ComfyUI's packed callback contract:
+        # callback(step, denoised, x, total_steps).
+        def _capture_callback(step, denoised, x, total_steps):
+            return _capture(x, denoised)
 
         latent_tensor = latent_image["samples"]
         noise_tensor = noise.generate_noise(latent_image)
@@ -137,7 +127,7 @@ class MiniMaxH3HarvestToConfig:
                 latent_tensor,
                 sampler_obj,
                 sigmas,
-                callback=_compat_callback,
+                callback=_capture_callback,
                 disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
                 seed=getattr(noise, "seed", 42),
             )
