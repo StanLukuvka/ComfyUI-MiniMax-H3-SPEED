@@ -53,6 +53,7 @@ def activation_threshold(power: float, delta: float) -> float:
 
 
 def find_first_step_below(sigmas, threshold: float) -> int:
+    """Return the first non-final sigma index at or below `threshold`."""
     values = [float(sigma) for sigma in sigmas]
     last = len(values) - 1
     for index in range(last):
