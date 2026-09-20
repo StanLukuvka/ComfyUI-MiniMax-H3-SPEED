@@ -4,6 +4,8 @@ Same seed, same prompt ("World's Most Mediocre Boss" office mockumentary) — 1�
 
 Native is full-res Euler (no SPEED): **571.49s**.
 
+> **V2 evidence scope:** this directory is the existing Euler reference set. V2 adds four more supported samplers, but these GIFs/timings do **not** establish speed or quality parity for Heun, DPM2, Exp Heun 2 X0, or RES Multistep. Re-harvest and benchmark the sampler/model/scheduler combination you actually use. Unless a run is explicitly labelled otherwise, this evidence should also not be read as proving a quality advantage for one noise policy over another.
+
 ## Δ=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773
 
 | Mode | Time | Speedup | GIF |

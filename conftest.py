@@ -35,7 +35,46 @@ def install_comfy_stubs():
             return list(self._tensors)
 
     nested_tensor.NestedTensor = NestedTensor
+    class KSAMPLER:
+        """Test double for ComfyUI's ``KSAMPLER`` contract.
+
+        Matches the host sample signature, forwards the denoise mask through
+        the wrapper, runs the sampler function, and adapts callbacks. Stage
+        tensors enter this stub already prepared.
+        """
+
+        def __init__(self, sampler_function, extra_options=None):
+            self.sampler_function = sampler_function
+            self.extra_options = extra_options or {}
+
+        def sample(self, model_wrap, sigmas, extra_args, callback, noise,
+                   latent_image=None, denoise_mask=None, disable_pbar=False):
+            extra_args = dict(extra_args)
+            extra_args["denoise_mask"] = denoise_mask
+            model = _InpaintModel(model_wrap)
+            total_steps = len(sigmas) - 1
+
+            def k_callback(entry):
+                if callback is not None:
+                    callback(entry["i"], entry["denoised"], entry["x"], total_steps)
+
+            return self.sampler_function(
+                model, noise, sigmas, extra_args=extra_args,
+                callback=k_callback, disable=disable_pbar,
+                **self.extra_options,
+            )
+
+    class _InpaintModel:
+        """Test double for ``KSamplerX0Inpaint``; the wrapper owns the mask."""
+
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __call__(self, x, sigma, denoise_mask=None, model_options={}, seed=None):
+            return self.inner(x, sigma, model_options=model_options, seed=seed)
+
     samplers.sampler_object = lambda name: ("sampler", name)
+    samplers.KSAMPLER = KSAMPLER
     utils.PROGRESS_BAR_ENABLED = True
 
     class ProgressBar:
@@ -170,6 +209,65 @@ def make_recording_guider(*, sigma_calls=None, callback_every_step=True, stage_s
             return latent_image
 
     return Guider()
+
+
+class RecordingEchoGuider:
+    """Echo guider that records what every stage call received.
+
+    The public output is the stage's noise video plus a fixed offset, so a
+    finished run carries non-trivial signal. Records the sampler object, the
+    sigma schedule, and the noise geometry of each ``sample`` call.
+    """
+
+    class Model:
+        sigma_shift_video = 12.0
+        sigma_shift_audio = 3.0
+
+        def process_latent_out(self, x):
+            return x
+
+    def __init__(self, video_offset=0.0):
+        self.model_patcher = type("P", (), {"model": self.Model()})()
+        self.video_offset = video_offset
+        self.samplers = []
+        self.sigma_calls = []
+        self.noise_shapes = []
+        # Real ComfyUI guiders carry the conditioning dict here; I2V tests
+        # attach a shaped fake (minimax_keyframes / minimax_refs).
+        self.original_conds = None
+
+    def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+        self.samplers.append(sampler)
+        self.sigma_calls.append([float(s) for s in sigmas])
+        pub_video, pub_audio = list(noise.unbind())
+        self.noise_shapes.append(tuple(pub_video.shape))
+        out = make_nested(pub_video + self.video_offset, pub_audio)
+        count = len(sigmas) - 1
+        if callback is not None:
+            for i in range(count):
+                callback(i, out, out, count)
+        return out
+
+
+class SeededRandomNoise:
+    """Seeded random noise for deterministic non-zero test runs."""
+
+    def __init__(self, seed=42):
+        self.seed = seed
+
+    def generate_noise(self, latent):
+        video, audio = list(latent["samples"].unbind())
+        generator = torch.Generator().manual_seed(self.seed)
+        return make_nested(
+            torch.randn(video.shape, generator=generator),
+            torch.randn(audio.shape, generator=generator),
+        )
+
+
+#: Explicit stage ladders for the 2/3/4-stage completion tests: production
+#: Automatic scale ladders with unique, strictly increasing global boundaries
+#: that tile the 10-interval schedule (5 + 5, 3 + 2 + 5, 2 + 2 + 3 + 3).
+LADDER_BOUNDARIES = {2: (5,), 3: (3, 5), 4: (2, 4, 7)}
 
 
 @pytest.fixture(scope="session", autouse=True)

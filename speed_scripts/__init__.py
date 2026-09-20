@@ -1,8 +1,13 @@
-"""speed_scripts — core SPEED library for MiniMax-H3.
+"""Core SPEED runtime support for MiniMax-H3.
 
 Package layout:
-- config.py     — SpeedConfig, SCALE_PRESETS
-- flow.py       — transition math (scale_ratio alignment)
-- spectral.py   — DCT primitives
-- h3_runtime.py — run_speed_pipeline (core loop)
+- config.py — validated SPEED runtime configuration
+- planning.py — stage geometry, boundary scheduling, and node config builders
+- flow.py — transition-coordinate and audio-state math
+- spectral.py — DCT primitives and spectral expansion
+- sampler_support.py — public sampler names and run-scoped handles
+- res_multistep_adapter.py — stateful RES implementation for SPEED stages
+- latent_class.py — generation-local I2V keyframe lifecycle
+- h3_runtime.py — multi-stage SPEED execution
+- harvest.py — native-sampler calibration math
 """

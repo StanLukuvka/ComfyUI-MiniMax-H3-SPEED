@@ -6,7 +6,6 @@ __pycache__/
 dist/
 build/
 .hermes/
-AGENTS.md
 uv.lock
 .finisher/
 
