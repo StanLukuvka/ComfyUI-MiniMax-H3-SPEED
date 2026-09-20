@@ -1,8 +1,7 @@
-"""MiniMax-H3 SPEED multi-stage runtime.
+"""Run MiniMax-H3 SPEED across several resolution stages.
 
-Each resolution stage is one ``guider.sample()`` call. Between calls the
-runtime converts the H3 video/audio state, expands video frequencies, aligns
-the boundary sigma, resizes I2V keyframes, and re-enters at the next grid.
+Each stage is one ``guider.sample()`` call. Between stages, carry the current
+video/audio state into the next size and continue from the aligned sigma.
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ log = logging.getLogger(__name__)
 
 
 class _OverrideSamplerHandle(SpeedSamplerHandle):
-    """Test seam for injecting a sampler object without ComfyUI lookup."""
+    """Test hook for passing a sampler object directly."""
 
     def __init__(self, sampler):
         self.sampler = sampler
@@ -74,7 +73,7 @@ def pack_latent(video, audio):
 
 
 def resolve_sigma_shifts(guider):
-    """Return ``(video_shift, audio_shift, audio_scale)`` for the active H3 model."""
+    """Read the H3 video/audio sigma shifts from the active model."""
     patcher = getattr(guider, "model_patcher", None)
     model = getattr(patcher, "model", None)
     if model is None:
@@ -119,7 +118,7 @@ def resolve_sigma_shifts(guider):
 
 
 def _build_preview_callback(guider, total_steps, x0_output):
-    """Build ComfyUI's normal latent-preview callback when available."""
+    """Build ComfyUI's preview callback."""
     try:
         import latent_preview
     except Exception as exc:
@@ -183,7 +182,7 @@ def _coupled_transition(
     target_thw,
     sigma: float,
 ):
-    """Expand from one precomputed full-grid spectral noise field."""
+    """Grow the stage from the shared full-resolution noise field."""
     target_t, target_h, target_w = target_thw
     source_t, source_h, source_w = internal_video.shape[-3:]
     full_noise_coefficients = full_noise_coefficients.to(device=internal_video.device)
@@ -205,7 +204,7 @@ def _expand_video(
     seed: int,
     full_noise_coefficients=None,
 ):
-    """Expand the carried video state to the next stage geometry."""
+    """Grow the carried video state to the next stage size."""
     target_t, target_h, target_w = target_thw
     if full_noise_coefficients is not None:
         return _coupled_transition(
@@ -243,7 +242,7 @@ def run_speed_pipeline(
     preview_callback=None,
     x0_output=None,
 ):
-    """Run the configured progressive-resolution SPEED chain."""
+    """Run the configured SPEED stages."""
     if "noise_mask" in latent:
         raise ValueError("MiniMax-H3 SPEED does not support noise masks")
 

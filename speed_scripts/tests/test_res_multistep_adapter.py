@@ -1,25 +1,8 @@
-"""RES Multistep adapter: state model, deterministic pipeline, the
-same-resolution split oracle (plan S7 §11-§15), and the transition slice
-(clean history projection, sigma rebase, ``on_transition`` — plan S7 §16-§19).
+"""RES Multistep state and transition contracts.
 
-The oracle is the gate for this slice: one uninterrupted deterministic RES
-trajectory over a fixed sigma schedule must land exactly where the same
-schedule does when it is split at a valid interior boundary and the
-``ResMultistepState`` is carried across the split. Splitting must change
-nothing numerically. Three targeted mutations of the carried history
-(discarding ``old_denoised``, ``old_sigma_down``, or ``prev_sigma_in`` at
-the split) must each break the match — that is what makes the test sensitive
-to the state the SPEED stage loop has to preserve. The negative control
-pins the other side: clearing the state at the split must produce a
-different trajectory.
-
-The transition oracles pin the V1 diagnostic: every SPEED boundary clears all
-RES history and sigma metadata, while coincident boundaries remain empty until
-a later real RES interval rebuilds the state. Projection and sigma-rebase
-primitives remain covered independently above.
-
-Everything here runs against a deterministic fake model on plain float
-schedules — no ComfyUI import is needed below the handle seam.
+A split schedule with carried history matches one uninterrupted run. Dropping
+or clearing required history changes the result. SPEED resolution changes
+clear RES history before sampling continues.
 """
 
 
@@ -47,15 +30,13 @@ from speed_scripts.sampler_support import (
 )
 
 
-#: Fixed strictly decreasing schedule; the trailing zero is the clean point.
+#: Fixed decreasing schedule ending at the clean point.
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
 
-#: Plan S7 §15: "tight numeric tolerance". The split changes nothing, so the
-#: two runs must agree to float-epsilon level on these small tensors.
+#: A carried split matches the uninterrupted run to float precision.
 TOLERANCE = 1e-6
 
-#: Interior boundary used by the split oracle: both segments carry real
-#: RES intervals, so the carried history is exercised at the seam.
+#: Interior split with real RES intervals on both sides.
 SPLIT_INDEX = 4
 
 
@@ -109,13 +90,7 @@ def test_second_order_candidate_preserves_existing_algebra():
 
 
 class DeterministicModel:
-    """Smooth, deterministic stand-in for the diffusion model.
-
-    A fixed linear map of ``x`` blended with a sigma-dependent direction:
-    cheap, deterministic, and nonlinear enough that first-order and
-    second-order RES steps disagree numerically (the oracle's mutation
-    sensitivity depends on that disagreement).
-    """
+    """Deterministic model with distinct first- and second-order RES results."""
 
     def __init__(self, channels=3, seed=7):
         g = torch.Generator().manual_seed(seed)
@@ -164,7 +139,7 @@ def _split_segment(sigmas, start, end):
 
 
 # ---------------------------------------------------------------------------
-# State object (plan S7 §12)
+# State object
 # ---------------------------------------------------------------------------
 
 
@@ -226,7 +201,7 @@ def test_sampler_object_shares_one_state_across_calls():
 
 
 # ---------------------------------------------------------------------------
-# Same-resolution split oracle (plan S7 §15)
+# Same-resolution split
 # ---------------------------------------------------------------------------
 
 def test_split_with_carried_state_matches_uninterrupted_run():
@@ -262,11 +237,11 @@ def test_split_with_carried_state_matches_uninterrupted_run():
 
 
 # ---------------------------------------------------------------------------
-# Mutation sensitivity: each discarded field must break the match
+# Dropping required history changes the result
 # ---------------------------------------------------------------------------
 
 def _split_discarding(discard):
-    """Run the split oracle but drop one history field at the split."""
+    """Run the split after dropping one history field."""
     state = ResMultistepState()
     _run([(_split_segment(SIGMAS, 0, SPLIT_INDEX + 1), state, False)])
     if discard == "old_denoised":
@@ -287,7 +262,7 @@ def test_oracle_fails_when_a_history_field_is_discarded(field):
 
 
 # ---------------------------------------------------------------------------
-# Negative control (plan S7 §15)
+# Clearing history changes the result
 # ---------------------------------------------------------------------------
 
 def test_clearing_state_at_the_split_produces_a_different_result():
@@ -301,7 +276,7 @@ def test_clearing_state_at_the_split_produces_a_different_result():
 
 
 # ---------------------------------------------------------------------------
-# Handle seam (plan S7 §5/§13; public selector uses the stateful adapter)
+# Public RES handle
 # ---------------------------------------------------------------------------
 
 def test_res_handle_keeps_single_history_and_clears_on_close():
@@ -334,7 +309,7 @@ def test_public_factory_routes_res_to_stateful_handle():
 
 
 # ---------------------------------------------------------------------------
-# Clean projection primitive (plan S7 §16, §31 step 35)
+# Transition-state cleanup
 # ---------------------------------------------------------------------------
 
 class _Nested:
@@ -427,9 +402,7 @@ def test_first_real_interval_after_transition_rebuilds_history():
 
 
 def test_on_transition_never_touches_reentry_or_conditioning_tensors():
-    """The hook owns history only. The noisy re-entry and conditioning tensors
-    are aliased into the history itself: any write-through on the stored
-    history would surface in the aliases and fail the byte-identical check."""
+    """The transition hook clears RES history without changing re-entry or conditioning tensors."""
     reentry = torch.randn(1, 1, 2, 4, 4)
     conditioning = torch.randn(1, 1, 2, 4, 4)
     reentry_snapshot = reentry.clone()

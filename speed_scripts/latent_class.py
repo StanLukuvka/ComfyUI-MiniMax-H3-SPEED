@@ -1,9 +1,7 @@
-"""I2V conditioning-latent resizing for multi-stage SPEED runs.
+"""Resize MiniMax-H3 I2V keyframes as SPEED changes resolution.
 
-MiniMax-H3 stores keyframe and reference latents inside ``guider.original_conds``.
-SPEED changes the video grid between stages, so keyframe latents must follow the
-active spatial resolution. Reference latents intentionally remain untouched:
-their packed-row layout is tied to the full-resolution model path.
+Keyframes follow the current stage size. Reference latents stay at full
+resolution; H3 lays them out against the full-resolution grid.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class _ConditionLatent:
-    """One mutable keyframe holder plus its pristine full-resolution tensor."""
+    """One keyframe plus its original full-resolution tensor."""
 
     holder: dict
     pristine: torch.Tensor
@@ -31,10 +29,8 @@ class _ConditionLatent:
         return cls(holder=holder, pristine=latent.clone())
 
     def resize(self, height: int, width: int) -> None:
-        # MiniMax-H3 patchifies video on a 1x2x2 DiT grid. The main stage latent
-        # is padded to that grid inside ComfyUI, but conditioning keyframes are
-        # patchified directly without that padding. Round keyframe H/W up to the
-        # same even grid here so their packed rows match the padded stage latent.
+        # H3 uses 2x2 latent patches. Round keyframes to the same even grid
+        # ComfyUI uses for the main video latent.
         height += height % 2
         width += width % 2
         current = self.holder.get("latent")
@@ -49,7 +45,7 @@ class _ConditionLatent:
 
 
 def _resize_condition(latent: torch.Tensor, height: int, width: int) -> torch.Tensor:
-    """Resize a 4D/5D conditioning latent spatially, frame by frame."""
+    """Resize a conditioning latent without mixing video frames."""
     if latent.ndim == 4:
         if tuple(latent.shape[-2:]) == (height, width):
             return latent
@@ -77,12 +73,10 @@ def _resize_condition(latent: torch.Tensor, height: int, width: int) -> torch.Te
 
 
 class LatentWalker:
-    """Own the keyframe snapshots for one generation.
+    """Keep the original keyframes for one generation.
 
-    ``apply_stage()`` always resizes from pristine full-resolution tensors, so
-    repeated stage changes never accumulate interpolation loss. ``apply_final()``
-    restores the original keyframes and drops the snapshots. Reference latents
-    are never wrapped or resized.
+    Every resize starts from the original tensor, preventing interpolation
+    loss across stage changes. Reference latents stay at full resolution.
     """
 
     def __init__(self, guider):
@@ -127,7 +121,7 @@ class LatentWalker:
                 )
 
     def apply_final(self) -> None:
-        """Restore pristine keyframes and release the generation snapshots."""
+        """Restore the original keyframes and release the saved copies."""
         for wrapped in self._keyframes.values():
             before = getattr(wrapped.holder.get("latent"), "shape", None)
             wrapped.restore()

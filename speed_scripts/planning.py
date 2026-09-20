@@ -1,4 +1,4 @@
-"""Stage planning and node-config construction for MiniMax-H3 SPEED."""
+"""Build SPEED stage sizes, transition points, and node configs."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def stage_resolution(
     full_w: int,
     full_t: int,
 ) -> tuple[int, int, int]:
-    """Return ``(h, w, t)`` for one configured stage."""
+    """Return the video size for one stage as ``(h, w, t)``."""
     scale = config.scales[stage_idx]
     height = max(1, round(full_h * scale))
     width = max(1, round(full_w * scale))
@@ -38,7 +38,7 @@ def power_at_frequency(omega: float, amplitude: float, beta: float) -> float:
 
 
 def activation_threshold(power: float, delta: float) -> float:
-    """Return the SPEED activation threshold for one radial frequency."""
+    """Return the sigma threshold where this frequency becomes active."""
     if delta >= 1.0:
         raise ValueError("delta must be < 1.0")
     return 1.0 / (1.0 + math.sqrt(delta / (power * (1.0 + power - delta))))
@@ -60,7 +60,7 @@ def resolve_transition_steps(
     H_full: int | None = None,
     W_full: int | None = None,
 ) -> tuple[int, ...]:
-    """Resolve global sigma indices for every resolution transition."""
+    """Find the sigma-schedule index for each resolution change."""
     if config.transition_mode == "explicit":
         return config.transition_steps
     if H_full is None or W_full is None:
@@ -80,7 +80,7 @@ def resolve_transition_steps(
 
 
 def validate_transition_steps(transition_steps, n_sigmas: int) -> None:
-    """Validate explicit global boundaries for shared-boundary stage slicing."""
+    """Validate the transition steps for a Manual schedule."""
     total_steps = n_sigmas - 1
     if any(not (0 < step < total_steps) for step in transition_steps):
         raise ValueError(
@@ -102,7 +102,7 @@ def build_automatic_speed_config(
     noise_decay_exponent,
     seed_offset,
 ) -> SpeedConfig:
-    """Build the runtime config used by the Automatic node."""
+    """Build the config used by the Automatic node."""
     if isinstance(stages, bool) or not isinstance(stages, int) or stages not in STAGES_TO_SCALES:
         raise ValueError(f"stages must be exactly 2, 3, or 4; got {stages!r}")
     return SpeedConfig(
@@ -125,7 +125,7 @@ def build_manual_speed_config(
     noise_policy: str,
     seed_offset: int,
 ) -> SpeedConfig:
-    """Normalize Manual-node stage pairs into one explicit ``SpeedConfig``."""
+    """Turn the Manual node stage settings into a ``SpeedConfig``."""
     if ratio_mode not in RATIO_MODES:
         raise ValueError(f"unsupported ratio_mode: {ratio_mode!r}")
 

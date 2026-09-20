@@ -36,17 +36,11 @@ def install_comfy_stubs():
 
     nested_tensor.NestedTensor = NestedTensor
     class KSAMPLER:
-        """Host ``comfy.samplers.KSAMPLER`` contract, minimally modeled.
+        """Test double for ComfyUI's ``KSAMPLER`` contract.
 
-        Mirrors the real ``KSAMPLER.sample(model_wrap, sigmas, extra_args,
-        callback, noise, latent_image, denoise_mask, disable_pbar)`` shape:
-        injects ``denoise_mask`` into ``extra_args``, wraps the guider in the
-        inpaint-style model callable (whose inner call receives only
-        ``(x, sigma, model_options, seed)`` — the mask blending lives in the
-        wrapper), runs the sampler function, and adapts the per-step dict
-        callback to the native 4-arg callback. Only what SPEED exercises is
-        modeled — no noise_scaling step, because test guiders receive
-        already-processed stage tensors.
+        Matches the host sample signature, forwards the denoise mask through
+        the wrapper, runs the sampler function, and adapts callbacks. Stage
+        tensors enter this stub already prepared.
         """
 
         def __init__(self, sampler_function, extra_options=None):
@@ -71,8 +65,7 @@ def install_comfy_stubs():
             )
 
     class _InpaintModel:
-        """Host ``KSamplerX0Inpaint`` shape: mask in the wrapper, inner call
-        receives ``(x, sigma, model_options, seed)`` only."""
+        """Test double for ``KSamplerX0Inpaint``; the wrapper owns the mask."""
 
         def __init__(self, inner):
             self.inner = inner
@@ -257,8 +250,7 @@ class RecordingEchoGuider:
 
 
 class SeededRandomNoise:
-    """Noise source returning seeded random noise, so run outputs are
-    non-trivial and determinism is not vacuously true over zero inputs."""
+    """Seeded random noise for deterministic non-zero test runs."""
 
     def __init__(self, seed=42):
         self.seed = seed

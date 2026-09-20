@@ -51,8 +51,7 @@ def test_manual_config_stays_explicit_with_inherited_noise_fit(monkeypatch):
         sampler_name="euler",
     )
     cfg = captured["config"]
-    # The runtime reads A/beta only under delta_custom; Manual is explicit,
-    # so its noise fit is inherited from SpeedConfig defaults and is inert.
+    # Manual uses explicit boundaries, so A and beta do not affect planning.
     assert cfg.transition_mode == "explicit"
     assert cfg.delta == 0.01
     assert (cfg.noise_amplitude, cfg.noise_decay_exponent) == (12.105, 0.773)
@@ -106,7 +105,7 @@ def test_ratio_mode_uses_goal_only_for_boundary_position():
         transition_goal_1=.3, transition_resolution_1=.25,
         transition_goal_2=.6, transition_resolution_2=.5,
         transition_goal_3=0, transition_resolution_3=.75,
-        # Final goal is intentionally the normal unused default (>1).
+        # The final goal is ignored.
         transition_goal_4=15, transition_resolution_4=1.0,
     )
     assert [len(call) for call in calls] == [4, 4, 5]  # boundaries 3, 6

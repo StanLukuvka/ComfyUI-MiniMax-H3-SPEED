@@ -1,15 +1,4 @@
-"""Behavioral contracts for core MiniMax-H3 SPEED runtime invariants.
-
-Covers four execution properties independently of transition-planning tests:
-
-1. Coupled noise follows the configured stage ladder — each transition
-   expands only to the NEXT stage's grid (spatial and 3D coupled paths).
-2. `denoised_output` preserves H3's full nested video+audio latent.
-3. The I2V LatentWalker lifecycle is exception-safe: any mid-run failure
-   restores pristine conditioning latents.
-4. The `clock_reindex_audio_state` sigma bridge is exercised end-to-end
-   through a real transition (audio-transition oracle).
-"""
+"""Core runtime contracts for noise, outputs, I2V restore, and audio re-entry."""
 
 import pytest
 import torch
@@ -44,17 +33,10 @@ def _cfg(**kwargs):
 
 
 def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain():
-    """Coupled transitions = spectral projection of the SAME full-grid noise.
+    """Coupled stages project one full-resolution noise field into each stage grid.
 
-    For every transition, the runtime must derive the next stage's coupled
-    noise by taking the combined temporal+spatial DCT of the ORIGINAL
-    full-resolution noise and keeping the low-frequency coefficient block
-    for (next_t, next_h, next_w) — NOT by cropping the noise in pixel/latent
-    space (which changes the DCT spectrum). The test recomputes both
-    transitions' re-entry noise independently from the spectral primitives
-    and asserts numerical equality with what the runtime hands the next
-    stage's guider call. Parametrized over the spatial-only path (constant
-    temporal block) and the 3D path (temporal block grows 1→2).
+    The expected re-entry noise is rebuilt from the same DCT operations used
+    by the runtime and compared at both transitions.
     """
     import speed_scripts.spectral as spectral_mod
     from speed_scripts.flow import aligned_sigma, reentry_noise, to_internal_state
@@ -121,7 +103,7 @@ def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain():
         )
 
         full_t = 2
-        # Stage grids from the same rounding the runtime uses.
+        # Stage sizes use the same rounding as the runtime.
         thw = [
             (
                 full_t if not temporal_scales else max(1, round(full_t * temporal_scales[i])),
@@ -130,16 +112,15 @@ def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain():
             )
             for i, s in enumerate((.33, .66, 1.0))
         ]
-        # Ladder sanity (geometry), then the real spectral oracle below.
+        # Check stage sizes before comparing spectral re-entry.
         assert [p.shape[-3:] for p in guider.pubs] == thw
 
-        # The single full-grid field the whole run coupled from.
+        # Full-resolution DCT shared by every coupled stage.
         full_dct = spectral_mod.dct2(spectral_mod.dct_temporal(full_noise_video))
 
         # --- Transition 1: stage 0 -> stage 1 -----------------------------
         s0_t, s0_h, s0_w = thw[0]
-        # Stage-0 pub: coupled coarse noise = spatial lowpass of the full
-        # field's low block (temporal pixel-crop only when t0 < full_t).
+        # Stage 0 starts from the low-frequency block of the full noise field.
         pub0_video = spectral_mod.idct2(
             spectral_mod.dct2(full_noise_video[..., :s0_t, :, :])[..., :s0_h, :s0_w]
         )
@@ -180,17 +161,12 @@ def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain():
             "the full-grid noise (pixel-space cropping drift?)"
         )
 
-        # Final output video is the guider's final stage return, full res.
         final_video, _ = out["samples"].unbind()
         assert tuple(final_video.shape[-3:]) == (full_t, 8, 8)
 
 
 def test_denoised_output_preserves_video_and_audio_streams():
-    """Both returned LATENTs must keep H3's nested video+audio structure.
-
-    The old code extracted only the video stream from the step-x0 and fed
-    that through process_latent_out, so `denoised` lost the audio stream.
-    """
+    """Both returned LATENTs keep the full nested video+audio structure."""
     class RecordingModel:
         sigma_shift_video = 12.0
         sigma_shift_audio = 3.0
@@ -206,10 +182,7 @@ def test_denoised_output_preserves_video_and_audio_streams():
     guider = make_recording_guider()
     guider.model_patcher = Patcher()
 
-    # capture_state is shared with the runtime's fallback wrapper: the fake
-    # guider's callback writes x0 into it, and `denoised` is reconstructed
-    # from x0_output["x0"] — assert the FULL nested x0 arrives at
-    # process_latent_out, not a video-only extraction.
+    # x0_output carries the full nested x0 into process_latent_out.
     x0_output = {}
     out, denoised = run_speed_pipeline(
         make_fake_noise(),
@@ -231,8 +204,7 @@ def test_denoised_output_preserves_video_and_audio_streams():
     video, audio = nested_x0.unbind()
     assert video.ndim == 5 and audio.ndim == 4, "x0 streams unpacked wrong"
 
-    # Both outputs are well-formed LATENT dicts whose samples are the full
-    # nested bundle (video AND audio streams present).
+    # Both outputs keep the nested video and audio streams.
     for name, latent_out in (("output", out), ("denoised", denoised)):
         samples = latent_out["samples"]
         assert getattr(samples, "is_nested", False), f"{name} lost the nested bundle"
@@ -242,16 +214,11 @@ def test_denoised_output_preserves_video_and_audio_streams():
 
 
 def test_forced_failure_restores_pristine_conditioning():
-    """A mid-run failure must restore pristine conditioning latents.
-
-    Forces the failure inside the transition (spectral expansion of stage
-    1), after stage 0 has already downscaled the keyframe latents.
-    """
+    """A mid-run failure restores the original conditioning latents."""
     cfg = _cfg()
     guider = make_recording_guider()
 
-    # Give the guider real I2V-shaped conditioning so the walker has
-    # keyframe/ref latents to snapshot and resize.
+    # Use real I2V-shaped keyframe and reference holders.
     kf = {"latent": torch.zeros(1, 1, 2, 8, 8)}
     ref = {"latent": torch.zeros(1, 1, 2, 8, 8)}
     guider.original_conds = {
@@ -261,8 +228,7 @@ def test_forced_failure_restores_pristine_conditioning():
 
     calls = {"n": 0}
 
-    # The runtime imports spectral_expand by name (from .spectral import ...),
-    # so patch the name where the runtime actually looks it up.
+    # Patch h3_runtime.spectral_expand, the binding used by run_speed_pipeline.
     import speed_scripts.h3_runtime as rt
 
     expanded = rt.spectral_expand
@@ -280,22 +246,13 @@ def test_forced_failure_restores_pristine_conditioning():
     finally:
         rt.spectral_expand = expanded
 
-    # Conditioning latents are back at pristine full res rather than the
-    # half-res tensors stage 0 had installed.
+    # Conditioning returns to the original full resolution.
     assert kf["latent"].shape == (1, 1, 2, 8, 8), "keyframe not restored"
     assert ref["latent"].shape == (1, 1, 2, 8, 8), "ref not restored"
 
 
 def test_audio_transition_oracle_clock_reindex_bridge():
-    """Numeric oracle for the clock_reindex sigma bridge.
-
-    A custom guider produces known NON-ZERO public audio and non-zero x0
-    audio. The test independently computes the expected stage-1 re-entry
-    audio from the flow primitives — to_internal_state, time_shift_sigma,
-    clock_reindex_audio_state (audio_scale = video_shift / audio_shift =
-    12/3 = 4.0), reentry_noise — and asserts numerical equality with the
-    audio stream the runtime actually hands the stage-1 guider call.
-    """
+    """Verify clock_reindex audio re-entry against the flow math."""
     from speed_scripts.flow import (
         aligned_sigma,
         clock_reindex_audio_state,
@@ -316,13 +273,7 @@ def test_audio_transition_oracle_clock_reindex_bridge():
     video_offset = 0.5
 
     class NoisyGuider:
-        """Records the incoming pub (noise slot) per stage; returns non-zero audio.
-
-        The runtime calls guider.sample(pub_noise, zero_latent, ...): the
-        carried re-entry state arrives in the NOISE slot, the zero latent in
-        latent_image. So the audio the runtime hands stage 1 is the noise
-        slot's audio stream — that is what the oracle must match.
-        """
+        """Record each stage input and return a fixed non-zero audio stream."""
 
         class Model:
             sigma_shift_video = 12.0
@@ -363,30 +314,28 @@ def test_audio_transition_oracle_clock_reindex_bridge():
         x0_output=x0_output,
     )
 
-    # Geometry + non-triviality: the stage-1 re-entry audio must be non-zero.
+    # Stage-1 re-entry audio carries non-zero state.
     assert len(guider.pubs) == 2
     reentry_video, reentry_audio = guider.pubs[1]
     assert torch.count_nonzero(reentry_audio) > 0, "oracle audio collapsed to zero"
 
-    # --- Independent oracle for the stage-1 re-entry audio --------------
+    # --- Expected stage-1 re-entry audio --------------------------------
     video_shift, audio_shift = 12.0, 3.0
     audio_scale = video_shift / audio_shift  # 4.0 — as resolve_sigma_shifts computes it
     rsp_q = float(sigmas[2])  # stage-0 boundary (global index 2)
     ratio = 1.0 / .5
     kappa, new_q = aligned_sigma(rsp_q, ratio)
 
-    # Carried audio entering the transition: the runtime converts the stage-0
-    # PUBLIC output (the guider's return) to the internal representation.
+    # Convert the stage-0 public audio to the internal representation.
     stage0_pub_video, stage0_pub_audio = out_public = None, None
-    # Recreate stage-0's public output exactly as the runtime saw it: the
-    # guider returned (noise video + offset, audio_out flat).
+    # Recreate the fixed stage-0 audio output.
     stage0_pub_audio = torch.full_like(reentry_audio, audio_out)
     internal_audio = to_internal_state(
         torch.zeros_like(stage0_pub_audio), stage0_pub_audio, rsp_q, audio_scale
     )[1]
     assert torch.count_nonzero(internal_audio) > 0
 
-    # Clean audio = x0 audio, passed RAW (the runtime does not convert it).
+    # x0 audio stays in model-output space.
     _, x0_audio = x0_output["x0"].unbind()
     assert torch.count_nonzero(x0_audio) > 0, "x0 audio must be non-zero"
 
@@ -401,8 +350,7 @@ def test_audio_transition_oracle_clock_reindex_bridge():
         new_audio_sigma,
         audio_scale,
     )
-    # The runtime re-enters stage 1 with reentry_noise(audio, new_q): the
-    # public (sigma-scaled) representation the guider receives in the noise slot.
+    # Convert the transitioned audio back to the public sigma-scaled form.
     expected_reentry_audio = reentry_noise(transitioned_audio, new_q)
 
     assert torch.allclose(reentry_audio, expected_reentry_audio, atol=1e-5), (
@@ -410,8 +358,7 @@ def test_audio_transition_oracle_clock_reindex_bridge():
         "oracle (audio_scale=4.0)"
     )
 
-    # And the final output audio is the guider's last stage return — audio
-    # stream survived to the end with non-zero content.
+    # Final output keeps the non-zero audio stream.
     _, final_audio = out["samples"].unbind()
     assert torch.count_nonzero(final_audio) > 0
     assert final_audio.shape == reentry_audio.shape
