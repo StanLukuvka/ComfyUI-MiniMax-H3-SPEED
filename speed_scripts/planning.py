@@ -101,6 +101,7 @@ def build_automatic_speed_config(
     noise_amplitude,
     noise_decay_exponent,
     seed_offset,
+    upscale_type="dct",
 ) -> SpeedConfig:
     """Build the config used by the Automatic node."""
     if isinstance(stages, bool) or not isinstance(stages, int) or stages not in STAGES_TO_SCALES:
@@ -114,6 +115,7 @@ def build_automatic_speed_config(
         noise_amplitude=float(noise_amplitude),
         noise_decay_exponent=float(noise_decay_exponent),
         transition_seed_offset=int(seed_offset),
+        upscale_type=upscale_type,
     )
 
 

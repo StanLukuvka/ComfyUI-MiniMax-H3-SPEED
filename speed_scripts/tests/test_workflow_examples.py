@@ -16,7 +16,7 @@ NODE_TYPES = {
     "MiniMaxH3HarvestToConfig",
 }
 SAMPLER_INDEX = {
-    "MiniMaxH3SPEEDSampler": -1,
+    "MiniMaxH3SPEEDSampler": -2,
     "MiniMaxH3SPEEDSamplerManual": -1,
     "MiniMaxH3HarvestToConfig": 0,
 }
