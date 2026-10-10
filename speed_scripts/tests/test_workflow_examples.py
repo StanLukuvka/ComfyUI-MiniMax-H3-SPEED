@@ -16,7 +16,7 @@ NODE_TYPES = {
     "MiniMaxH3HarvestToConfig",
 }
 SAMPLER_INDEX = {
-    "MiniMaxH3SPEEDSampler": -1,
+    "MiniMaxH3SPEEDSampler": -2,
     "MiniMaxH3SPEEDSamplerManual": -1,
     "MiniMaxH3HarvestToConfig": 0,
 }
@@ -50,3 +50,5 @@ def test_committed_examples_select_euler_for_each_public_node():
             if node["type"] in {"MiniMaxH3SPEEDSampler", "MiniMaxH3SPEEDSamplerManual"}:
                 assert "res_" + "history_mode" not in node["widgets_values_named"]
                 assert "reset" not in node["widgets_values"]
+            if node["type"] == "MiniMaxH3SPEEDSampler":
+                assert node["widgets_values"][-1] == "dct"

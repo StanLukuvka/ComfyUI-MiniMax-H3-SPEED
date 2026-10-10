@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import comfy.utils
 
+from speed_scripts.config import UPSCALE_TYPES
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.planning import build_automatic_speed_config
 from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
@@ -58,6 +59,20 @@ class MiniMaxH3SPEEDSampler:
                     list(SUPPORTED_SPEED_SAMPLERS),
                     {"default": "euler"},
                 ),
+                "upscale_type": (
+                    list(UPSCALE_TYPES),
+                    {
+                        "default": "dct",
+                        "tooltip": (
+                            "How the latent is enlarged at each resolution step. "
+                            "dct is the original SPEED method and carries the existing "
+                            "noise forward. Other modes upscale the model's clean "
+                            "estimate with a standard filter and add fresh noise at "
+                            "the same restart sigma. Use for A/B comparison; defaults "
+                            "and evidence are from dct."
+                        ),
+                    },
+                ),
             },
         }
 
@@ -73,6 +88,7 @@ class MiniMaxH3SPEEDSampler:
         noise_amplitude=12.105,
         noise_decay_exponent=0.773,
         seed_offset=10000,
+        upscale_type="dct",
         **kwargs,
     ):
         delta = kwargs.pop("Tolerance (Delta)", 0.005)
@@ -89,6 +105,7 @@ class MiniMaxH3SPEEDSampler:
             noise_amplitude=noise_amplitude,
             noise_decay_exponent=noise_decay_exponent,
             seed_offset=seed_offset,
+            upscale_type=upscale_type,
         )
         return run_speed_pipeline(
             noise,

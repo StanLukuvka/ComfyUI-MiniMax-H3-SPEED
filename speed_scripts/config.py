@@ -10,6 +10,7 @@ NOISE_POLICIES = {"direct_coarse", "coupled_full_grid"}
 AUDIO_POLICIES = {"clock_reindex", "carry_preserve", "untouched"}
 SIGMA_POLICIES = {"canonical", "no_alignment"}
 RATIO_MODES = ("steps", "ratio")
+UPSCALE_TYPES = ("dct", "bilinear", "bicubic", "nearest-exact")
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,11 @@ class SpeedConfig:
     noise_decay_exponent: float = 0.773
     # Optional time scale for each stage. The final stage must use full time resolution.
     temporal_scales: tuple[float, ...] = ()
+    # How the video latent is enlarged at each resolution transition.
+    # "dct" is the original orthonormal DCT zero-pad; the other values are
+    # torch.nn.functional.interpolate modes applied to the clean prediction
+    # followed by a re-noise to the same restart sigma.
+    upscale_type: str = "dct"
 
     def __post_init__(self) -> None:
         scales = tuple(float(scale) for scale in self.scales)
@@ -72,6 +78,8 @@ class SpeedConfig:
             raise ValueError(f"unsupported audio_policy: {self.audio_policy}")
         if self.sigma_policy not in SIGMA_POLICIES:
             raise ValueError(f"unsupported sigma_policy: {self.sigma_policy}")
+        if self.upscale_type not in UPSCALE_TYPES:
+            raise ValueError(f"unsupported upscale_type: {self.upscale_type}")
         if self.audio_policy == "untouched" and self.sigma_policy != "no_alignment":
             raise ValueError("untouched audio requires sigma_policy=no_alignment")
 
@@ -96,5 +104,6 @@ __all__ = [
     "AUDIO_POLICIES",
     "SIGMA_POLICIES",
     "RATIO_MODES",
+    "UPSCALE_TYPES",
     "SpeedConfig",
 ]

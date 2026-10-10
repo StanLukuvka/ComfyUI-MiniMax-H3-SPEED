@@ -31,6 +31,9 @@ Choose how many resolution stages you want:
 
 `Tolerance (Delta)`, `noise_amplitude`, and `noise_decay_exponent` control when those resolution transitions happen. Leave them at their defaults unless you are using a Harvest calibration or deliberately experimenting.
 
+**`upscale_type` (Automatic, advanced)**  
+How the video latent is enlarged at each resolution step. The default `dct` is the original SPEED method: an orthonormal DCT zero-pad that carries the existing noise forward through the transition. The alternatives (`bilinear`, `bicubic`, `nearest-exact`) upscale the model's clean estimate with a standard filter and add fresh noise at the same restart sigma, so a run's hop steps stay identical across settings and only the upscale method differs. Intended for A/B comparison; there is no measured evidence that any non-`dct` mode is better, so defaults and documentation stay based on `dct`.
+
 **Manual — Sampler (Step-Through)**  
 Set up to four `(goal, resolution)` pairs yourself. For every stage except the last active one, `goal` is where that stage ends and `resolution` is its scale, such as `0.25` for quarter resolution. The final active stage always runs to the end of the sigma schedule, so its goal value is ignored.
 

@@ -36,7 +36,7 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 
 ## Sampler architecture
 
-Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that clears all previous-step RES history at every SPEED stage boundary. There is no history-mode widget or switch. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
+Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that clears all previous-step RES history at every SPEED stage boundary. There is no history-mode widget or switch. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++. The Automatic node's `upscale_type` widget selects the resolution-transition method: `dct` (default) zero-pads the orthonormal DCT band structure and carries the existing noise forward; the interpolated modes upscale the model's clean prediction with `torch.nn.functional.interpolate` and re-noise to the restart sigma with fresh deterministic transition-seeded noise.
 
 ## Noise policies
 

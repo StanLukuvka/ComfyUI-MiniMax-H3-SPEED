@@ -11,6 +11,7 @@ All notable changes to this project are documented here. New releases should be 
 - Added a run-scoped RES Multistep adapter.
 - Added continuous progress and preview reporting across the full SPEED run.
 - Added broader regression coverage for sampler selection, RES state, I2V, transitions, Harvest, workflows, and noise policies.
+- Added `upscale_type` to the Automatic node (`dct` default; `bilinear`, `bicubic`, and `nearest-exact` are available for A/B comparison and re-noise from the clean estimate instead of carrying the existing noise forward).
 
 ### Changed
 

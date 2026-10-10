@@ -228,6 +228,81 @@ def _expand_video(
     )
 
 
+def _interpolate_video(video: torch.Tensor, target_hw, mode: str) -> torch.Tensor:
+    """Spatially resize a (B, C, T, H, W) video without mixing frames."""
+    target_h, target_w = (int(target_hw[0]), int(target_hw[1]))
+    batch, channels, frames, source_h, source_w = video.shape
+    if (source_h, source_w) == (target_h, target_w):
+        return video
+    flat = video.transpose(1, 2).reshape(batch * frames, channels, source_h, source_w)
+    kwargs = {} if mode == "nearest-exact" else {"align_corners": False}
+    resized = torch.nn.functional.interpolate(
+        flat.float(),
+        size=(target_h, target_w),
+        mode=mode,
+        **kwargs,
+    )
+    result = (
+        resized.reshape(batch, frames, channels, target_h, target_w)
+        .transpose(1, 2)
+        .to(dtype=video.dtype)
+    )
+    return result
+
+
+def _renoise_upscale(
+    x0_video: torch.Tensor,
+    *,
+    target_thw,
+    sigma: float,
+    mode: str,
+    seed: int,
+    full_noise_coefficients=None,
+) -> torch.Tensor:
+    """Upscale the clean per-frame prediction and re-noise to ``sigma``.
+
+    Unlike the DCT path (which carries the existing low-band noise through
+    the transition), this replaces all noise with a fresh sampled field at
+    the stage's restart sigma. ``x0_video`` is one step stale: it is the
+    last per-step prediction from before the boundary sigma, the same value
+    the clock_reindex audio path already relies on.
+
+    Interpolation preserves signal amplitude (unlike the orthonormal DCT
+    zero-pad), so there is no kappa compensation on the output.
+    """
+    target_t, target_h, target_w = (int(t) for t in target_thw)
+    source_t = x0_video.shape[-3]
+    if target_t != source_t and mode != "dct":
+        raise ValueError(
+            f"upscale_type={mode!r} cannot change the frame count "
+            f"({source_t} -> {target_t})"
+        )
+
+    x0_up = _interpolate_video(x0_video, (target_h, target_w), mode)
+
+    if full_noise_coefficients is not None:
+        # coupled_full_grid: the truncated block of the shared orthonormal
+        # DCT coefficient field is itself unit-variance white noise.
+        coefficients = full_noise_coefficients.to(device=x0_video.device)
+        eps = idct_temporal(
+            idct2(coefficients[..., :target_t, :target_h, :target_w])
+        )
+    else:
+        # direct_coarse: the same deterministic per-transition seed the DCT
+        # path would have consumed (this branch is exclusive of it).
+        generator = torch.Generator(device=x0_video.device)
+        generator.manual_seed(int(seed))
+        eps = torch.randn(
+            x0_video.shape[:-3] + (target_t, target_h, target_w),
+            generator=generator,
+            device=x0_video.device,
+            dtype=torch.float32,
+        )
+
+    new_x = (1.0 - float(sigma)) * x0_up.float() + float(sigma) * eps
+    return new_x.to(dtype=x0_video.dtype)
+
+
 def run_speed_pipeline(
     noise,
     guider,
@@ -350,14 +425,34 @@ def run_speed_pipeline(
             working_sigmas[global_end] = next_sigma
 
             next_h, next_w, next_t = stage_shapes[stage_idx + 1]
-            expanded_video = _expand_video(
-                internal_video,
-                target_thw=(next_t, next_h, next_w),
-                sigma=boundary_sigma,
-                seed=int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
-                full_noise_coefficients=full_noise_coefficients,
-            )
-            transitioned_video = expanded_video * kappa
+            transition_seed = int(noise.seed) + int(config.transition_seed_offset) + stage_idx
+            if config.upscale_type == "dct" or full_noise_coefficients is not None:
+                # DCT zero-pad: this mode is required when the shared coupled
+                # full-grid coefficients must splice the noisy state.
+                expanded_video = _expand_video(
+                    internal_video,
+                    target_thw=(next_t, next_h, next_w),
+                    sigma=boundary_sigma,
+                    seed=transition_seed,
+                    full_noise_coefficients=full_noise_coefficients,
+                )
+                transitioned_video = expanded_video * kappa
+            else:
+                if "x0" not in x0_output:
+                    raise RuntimeError(
+                        f"upscale_type={config.upscale_type!r} requires an "
+                        "x0 callback from this stage"
+                    )
+                # x0_output["x0"] is the model's clean prediction (native
+                # frame, sigma-independent); one step stale by design.
+                x0_video, _ = unpack_latent(x0_output["x0"])
+                transitioned_video = _renoise_upscale(
+                    x0_video,
+                    target_thw=(next_t, next_h, next_w),
+                    sigma=next_sigma,
+                    mode=config.upscale_type,
+                    seed=transition_seed,
+                )
 
             old_audio_sigma = time_shift_sigma(
                 boundary_sigma,
