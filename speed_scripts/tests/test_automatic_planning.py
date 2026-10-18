@@ -4,7 +4,7 @@ import importlib
 
 import pytest
 
-from conftest import make_latent
+from conftest import StubSampler, make_latent
 from speed_scripts.planning import STAGES_TO_SCALES, build_automatic_speed_config
 
 
@@ -17,7 +17,7 @@ def _capture_node_config(monkeypatch, **overrides):
         return latent_image, latent_image
 
     monkeypatch.setattr(mod, "run_speed_pipeline", fake_pipeline)
-    overrides.setdefault("sampler_name", "euler")
+    overrides.setdefault("sampler", StubSampler())
     mod.MiniMaxH3SPEEDSampler().sample(
         noise=object(),
         guider=type("Guider", (), {})(),

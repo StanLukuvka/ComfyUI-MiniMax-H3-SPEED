@@ -1,8 +1,8 @@
 {
   "id": "e3f2b845-8f2c-4b5a-9caf-eac1029d3e7e",
   "revision": 0,
-  "last_node_id": 125,
-  "last_link_id": 270,
+  "last_node_id": 126,
+  "last_link_id": 271,
   "nodes": [
     {
       "id": 92,
@@ -312,8 +312,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 4,
-          "lastNodeId": 125,
-          "lastLinkId": 270,
+          "lastNodeId": 126,
+          "lastLinkId": 271,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -1259,6 +1259,12 @@
                 "link": 266
               },
               {
+                "localized_name": "sampler",
+                "name": "sampler",
+                "type": "SAMPLER",
+                "link": 271
+              },
+              {
                 "localized_name": "sigmas",
                 "name": "sigmas",
                 "type": "SIGMAS",
@@ -1299,8 +1305,7 @@
               0.005,
               12.105,
               0.773,
-              10000,
-              "euler"
+              10000
             ],
             "widgets_values_named": {
               "stages": 3,
@@ -1308,9 +1313,40 @@
               "Tolerance (Delta)": 0.005,
               "noise_amplitude": 12.105,
               "noise_decay_exponent": 0.773,
-              "seed_offset": 10000,
-              "sampler_name": "euler"
+              "seed_offset": 10000
             }
+          },
+          {
+            "id": 126,
+            "type": "KSamplerSelect",
+            "pos": [
+              -753.8489008417173,
+              4816.034932271737
+            ],
+            "size": [
+              315,
+              58
+            ],
+            "flags": {},
+            "order": 0,
+            "mode": 0,
+            "inputs": [],
+            "outputs": [
+              {
+                "localized_name": "SAMPLER",
+                "name": "SAMPLER",
+                "type": "SAMPLER",
+                "links": [
+                  271
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "KSamplerSelect"
+            },
+            "widgets_values": [
+              "euler"
+            ]
           }
         ],
         "groups": [
@@ -1569,7 +1605,7 @@
             "origin_id": 9,
             "origin_slot": 0,
             "target_id": 125,
-            "target_slot": 2,
+            "target_slot": 3,
             "type": "SIGMAS"
           },
           {
@@ -1577,7 +1613,7 @@
             "origin_id": 104,
             "origin_slot": 1,
             "target_id": 125,
-            "target_slot": 3,
+            "target_slot": 4,
             "type": "LATENT"
           },
           {
@@ -1595,6 +1631,14 @@
             "target_id": 23,
             "target_slot": 0,
             "type": "LATENT"
+          },
+          {
+            "id": 271,
+            "origin_id": 126,
+            "origin_slot": 0,
+            "target_id": 125,
+            "target_slot": 2,
+            "type": "SAMPLER"
           }
         ],
         "extra": {}

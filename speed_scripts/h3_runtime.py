@@ -21,12 +21,6 @@ from .flow import (
 )
 from .latent_class import LatentWalker
 from .planning import resolve_transition_steps, stage_resolution
-from .sampler_support import (
-    SamplerCapability,
-    SpeedSamplerHandle,
-    SpeedTransition,
-    create_speed_sampler_handle,
-)
 from .spectral import (
     dct2,
     dct_temporal,
@@ -38,14 +32,6 @@ from .spectral import (
 )
 
 log = logging.getLogger(__name__)
-
-
-class _OverrideSamplerHandle(SpeedSamplerHandle):
-    """Test hook for passing a sampler object directly."""
-
-    def __init__(self, sampler):
-        self.sampler = sampler
-        self.capability = SamplerCapability.STATELESS_STEP_LOCAL
 
 
 def unpack_latent(samples):
@@ -235,14 +221,18 @@ def run_speed_pipeline(
     latent: dict,
     config: SpeedConfig,
     *,
-    sampler_name: str = "euler",
-    sampler_override=None,
+    sampler,
     disable_pbar: bool = False,
     output_device=None,
     preview_callback=None,
     x0_output=None,
 ):
-    """Run the configured SPEED stages."""
+    """Run the configured SPEED stages.
+
+    ``sampler`` is any ComfyUI SAMPLER. Each stage is its own
+    ``guider.sample()`` call, so a multistep sampler's history starts fresh at
+    every resolution change.
+    """
     if "noise_mask" in latent:
         raise ValueError("MiniMax-H3 SPEED does not support noise masks")
 
@@ -296,16 +286,6 @@ def run_speed_pipeline(
         stock_callback = _build_preview_callback(guider, global_total, x0_output)
     preview_guard = _PreviewGuard()
 
-    if sampler_override is not None:
-        if sampler_name != "euler":
-            raise ValueError(
-                "Pass either sampler_name or sampler_override, not both "
-                f"(got sampler_name={sampler_name!r} and sampler_override)."
-            )
-        sampler_handle = _OverrideSamplerHandle(sampler_override)
-    else:
-        sampler_handle = create_speed_sampler_handle(sampler_name)
-
     walker = LatentWalker(guider)
     global_start = 0
     global_done = 0
@@ -325,7 +305,7 @@ def run_speed_pipeline(
             public = guider.sample(
                 stage_start_pub,
                 stage_start_latent,
-                sampler_handle.sampler,
+                sampler,
                 stage_sigmas,
                 callback=callback,
                 disable_pbar=disable_pbar,
@@ -393,17 +373,6 @@ def run_speed_pipeline(
             else:
                 transitioned_audio = internal_audio
 
-            sampler_handle.on_transition(
-                SpeedTransition(
-                    stage_idx=stage_idx,
-                    ratio=ratio,
-                    old_sigma=boundary_sigma,
-                    new_sigma=next_sigma,
-                    source_thw=tuple(internal_video.shape[-3:]),
-                    target_thw=(next_t, next_h, next_w),
-                )
-            )
-
             stage_start_pub = pack_latent(
                 reentry_noise(transitioned_video, next_sigma),
                 reentry_noise(transitioned_audio, next_sigma),
@@ -425,7 +394,7 @@ def run_speed_pipeline(
         last_public = guider.sample(
             stage_start_pub,
             stage_start_latent,
-            sampler_handle.sampler,
+            sampler,
             final_sigmas,
             callback=final_callback,
             disable_pbar=disable_pbar,
@@ -449,7 +418,4 @@ def run_speed_pipeline(
             )
         return output, denoised
     finally:
-        try:
-            sampler_handle.close()
-        finally:
-            walker.apply_final()
+        walker.apply_final()

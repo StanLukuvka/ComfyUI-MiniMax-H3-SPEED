@@ -2,7 +2,7 @@
   "id": "e3f2b845-8f2c-4b5a-9caf-eac1029d3e7e",
   "revision": 0,
   "last_node_id": 126,
-  "last_link_id": 261,
+  "last_link_id": 262,
   "nodes": [
     {
       "id": 92,
@@ -281,7 +281,7 @@
         "state": {
           "lastGroupId": 4,
           "lastNodeId": 126,
-          "lastLinkId": 261,
+          "lastLinkId": 262,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -1029,7 +1029,9 @@
                 "localized_name": "SAMPLER",
                 "name": "SAMPLER",
                 "type": "SAMPLER",
-                "links": []
+                "links": [
+                  262
+                ]
               }
             ],
             "properties": {
@@ -1038,7 +1040,7 @@
               "Node name for S&R": "KSamplerSelect"
             },
             "widgets_values": [
-              "res_multistep"
+              "euler"
             ]
           },
           {
@@ -1260,6 +1262,12 @@
                 "link": 256
               },
               {
+                "localized_name": "sampler",
+                "name": "sampler",
+                "type": "SAMPLER",
+                "link": 262
+              },
+              {
                 "localized_name": "sigmas",
                 "name": "sigmas",
                 "type": "SIGMAS",
@@ -1297,12 +1305,10 @@
               "Node name for S&R": "MiniMaxH3HarvestToConfig"
             },
             "widgets_values": [
-              "euler",
               0.005
             ],
             "widgets_values_named": {
-              "Tolerance (Delta)": 0.005,
-              "sampler_name": "euler"
+              "Tolerance (Delta)": 0.005
             }
           }
         ],
@@ -1562,7 +1568,7 @@
             "origin_id": 9,
             "origin_slot": 0,
             "target_id": 125,
-            "target_slot": 2,
+            "target_slot": 3,
             "type": "SIGMAS"
           },
           {
@@ -1594,8 +1600,16 @@
             "origin_id": 104,
             "origin_slot": 1,
             "target_id": 125,
-            "target_slot": 3,
+            "target_slot": 4,
             "type": "LATENT"
+          },
+          {
+            "id": 262,
+            "origin_id": 17,
+            "origin_slot": 0,
+            "target_id": 125,
+            "target_slot": 2,
+            "type": "SAMPLER"
           }
         ],
         "extra": {}

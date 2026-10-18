@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 
-import comfy.samplers
 import comfy.utils
 import numpy as np
 
@@ -26,7 +25,6 @@ from speed_scripts.planning import (
     find_first_step_below,
     power_at_frequency,
 )
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
 log = logging.getLogger(__name__)
@@ -35,6 +33,13 @@ log = logging.getLogger(__name__)
 def _error_json(error, message, **fields):
     payload = {"error": error, "message": message, **fields}
     return json.dumps(payload)
+
+
+def _sampler_label(sampler):
+    """Best-effort sampler name for the report (from its function name, else its class)."""
+    fn = getattr(sampler, "sampler_function", None)
+    name = getattr(fn, "__name__", None) or type(sampler).__name__
+    return name.removeprefix("sample_").removesuffix("_function")
 
 
 class MiniMaxH3HarvestToConfig:
@@ -60,9 +65,9 @@ class MiniMaxH3HarvestToConfig:
             "required": {
                 "noise": ("NOISE",),
                 "guider": ("GUIDER",),
+                "sampler": ("SAMPLER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
             },
             "optional": {
                 "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
@@ -73,9 +78,9 @@ class MiniMaxH3HarvestToConfig:
         self,
         noise,
         guider,
+        sampler,
         sigmas,
         latent_image,
-        sampler_name,
         **kwargs,
     ):
 
@@ -123,15 +128,15 @@ class MiniMaxH3HarvestToConfig:
         def _capture_callback(step, denoised, x, total_steps):
             return _capture(x, denoised)
 
+        sampler_name = _sampler_label(sampler)
         latent_tensor = latent_image["samples"]
         noise_tensor = noise.generate_noise(latent_image)
 
         try:
-            sampler_obj = comfy.samplers.sampler_object(sampler_name)
             result = guider.sample(
                 noise_tensor,
                 latent_tensor,
-                sampler_obj,
+                sampler,
                 sigmas,
                 callback=_capture_callback,
                 disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
@@ -143,7 +148,7 @@ class MiniMaxH3HarvestToConfig:
                     "harvest_failed",
                     f"Native {sampler_name} harvest failed: {exc}",
                     sampler_name=sampler_name,
-                    fix=f"Run the native {sampler_name} sampler outside this pack and feed the result back in.",
+                    fix="Check the same sampler runs in SamplerCustomAdvanced with these inputs.",
                 ),
                 latent_image,
             )
@@ -248,7 +253,7 @@ class MiniMaxH3HarvestToConfig:
         )
         if usable_fit:
             lines.append(
-                f"Paste into SPEED Sampler: sampler_name={sampler_name}, "
+                f"Paste into SPEED Sampler (same sampler: {sampler_name}): "
                 f"Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, "
                 f"noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)"
             )

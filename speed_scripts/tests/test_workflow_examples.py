@@ -1,4 +1,4 @@
-"""Committed workflow examples match the public V2 node contracts."""
+"""Committed workflow examples match the public node contracts."""
 
 import json
 from pathlib import Path
@@ -15,11 +15,6 @@ NODE_TYPES = {
     "MiniMaxH3SPEEDSamplerManual",
     "MiniMaxH3HarvestToConfig",
 }
-SAMPLER_INDEX = {
-    "MiniMaxH3SPEEDSampler": -1,
-    "MiniMaxH3SPEEDSamplerManual": -1,
-    "MiniMaxH3HarvestToConfig": 0,
-}
 EXPECTED_OUTPUTS = {
     "MiniMaxH3SPEEDSampler": ("output", "denoised_output"),
     "MiniMaxH3SPEEDSamplerManual": ("output", "denoised_output"),
@@ -27,26 +22,50 @@ EXPECTED_OUTPUTS = {
 }
 
 
-def _nodes(value):
+def _graphs(value):
+    """Yield every graph (top level or subgraph) that has its own node list."""
     if isinstance(value, dict):
-        if value.get("type") in NODE_TYPES:
+        if isinstance(value.get("nodes"), list):
             yield value
         for child in value.values():
-            yield from _nodes(child)
+            yield from _graphs(child)
     elif isinstance(value, list):
         for child in value:
-            yield from _nodes(child)
+            yield from _graphs(child)
 
 
-def test_committed_examples_select_euler_for_each_public_node():
+def _link_origin(link):
+    """Return ``(link_id, origin_node_id)`` for dict or array link records."""
+    if isinstance(link, dict):
+        return link["id"], link["origin_id"]
+    return link[0], link[1]
+
+
+def _public_nodes_with_graph(workflow):
+    for graph in _graphs(workflow):
+        for node in graph["nodes"]:
+            if node.get("type") in NODE_TYPES:
+                yield graph, node
+
+
+def test_committed_examples_feed_each_public_node_from_ksampler_select_euler():
     for name in WORKFLOW_NAMES:
         workflow = json.loads((WORKFLOW_DIR / name).read_text())
-        nodes = list(_nodes(workflow))
-        assert nodes
-        for node in nodes:
-            assert node.get("widgets_values_named", {}).get("sampler_name") == "euler"
-            assert node["widgets_values"][SAMPLER_INDEX[node["type"]]] == "euler"
+        found = list(_public_nodes_with_graph(workflow))
+        assert found, name
+        for graph, node in found:
+            nodes_by_id = {other["id"]: other for other in graph["nodes"]}
+            origins = dict(_link_origin(link) for link in graph.get("links", []))
+
+            input_names = [i["name"] for i in node["inputs"]]
+            assert input_names.count("sampler") == 1, (name, node["id"])
+            # SamplerCustomAdvanced order: noise, guider, sampler, ...
+            assert input_names.index("sampler") == 2, (name, node["id"])
+            sampler_input = node["inputs"][2]
+            assert sampler_input["type"] == "SAMPLER"
+            assert sampler_input["link"] is not None
+            source = nodes_by_id[origins[sampler_input["link"]]]
+            assert source["type"] == "KSamplerSelect"
+            assert source["widgets_values"] == ["euler"]
+
             assert tuple(output["name"] for output in node["outputs"]) == EXPECTED_OUTPUTS[node["type"]]
-            if node["type"] in {"MiniMaxH3SPEEDSampler", "MiniMaxH3SPEEDSamplerManual"}:
-                assert "res_" + "history_mode" not in node["widgets_values_named"]
-                assert "reset" not in node["widgets_values"]

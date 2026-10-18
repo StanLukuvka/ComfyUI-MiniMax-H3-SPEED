@@ -7,7 +7,6 @@ import comfy.utils
 from speed_scripts.config import RATIO_MODES
 from speed_scripts.h3_runtime import run_speed_pipeline
 from speed_scripts.planning import build_manual_speed_config
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
 class MiniMaxH3SPEEDSamplerManual:
@@ -31,6 +30,7 @@ class MiniMaxH3SPEEDSamplerManual:
             "required": {
                 "noise": ("NOISE",),
                 "guider": ("GUIDER",),
+                "sampler": ("SAMPLER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
                 "noise_policy": (
@@ -62,10 +62,6 @@ class MiniMaxH3SPEEDSamplerManual:
                     "FLOAT",
                     {"default": 1.0, "min": 0, "max": 1},
                 ),
-                "sampler_name": (
-                    list(SUPPORTED_SPEED_SAMPLERS),
-                    {"default": "euler"},
-                ),
             },
         }
 
@@ -73,9 +69,9 @@ class MiniMaxH3SPEEDSamplerManual:
         self,
         noise,
         guider,
+        sampler,
         sigmas,
         latent_image,
-        sampler_name,
         noise_policy="direct_coarse",
         seed_offset=10000,
         ratio_mode="steps",
@@ -107,7 +103,7 @@ class MiniMaxH3SPEEDSamplerManual:
             sigmas,
             latent_image,
             config,
-            sampler_name=sampler_name,
+            sampler=sampler,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
         )
 
