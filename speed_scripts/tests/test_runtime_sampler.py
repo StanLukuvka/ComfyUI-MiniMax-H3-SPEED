@@ -11,10 +11,10 @@ from conftest import (
     make_nested,
     make_recording_guider,
 )
-from speed_scripts import h3_runtime
+from speed_scripts import runtime
 from speed_scripts.planning import STAGES_TO_SCALES
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.runtime import run_speed_pipeline
 
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
@@ -198,7 +198,7 @@ def test_noise_policy_smoke(noise_policy):
 
 
 def test_coupled_full_grid_transforms_full_noise_once(monkeypatch):
-    original = h3_runtime.dct_temporal
+    original = runtime.dct_temporal
     full_grid_calls = []
 
     def recording_dct_temporal(value):
@@ -206,7 +206,7 @@ def test_coupled_full_grid_transforms_full_noise_once(monkeypatch):
             full_grid_calls.append(tuple(value.shape))
         return original(value)
 
-    monkeypatch.setattr(h3_runtime, "dct_temporal", recording_dct_temporal)
+    monkeypatch.setattr(runtime, "dct_temporal", recording_dct_temporal)
     _run(_cfg(noise_policy="coupled_full_grid"), RecordingEchoGuider(video_offset=.5))
     assert len(full_grid_calls) == 1
 
@@ -232,7 +232,7 @@ def test_coincident_four_stage_ladder_completes_with_zero_step_stages():
 def test_restore_runs_before_final_stage_and_again_in_cleanup(monkeypatch):
     order = []
     monkeypatch.setattr(
-        h3_runtime.LatentWalker, "apply_final", lambda self: order.append("apply_final")
+        runtime.LatentWalker, "apply_final", lambda self: order.append("apply_final")
     )
     _run(_cfg(), make_recording_guider(), noise=make_fake_noise())
     assert order == ["apply_final", "apply_final"]
@@ -245,7 +245,7 @@ def test_restore_is_retried_in_cleanup_when_it_fails(monkeypatch):
         order.append("apply_final")
         raise RuntimeError("restore exploded")
 
-    monkeypatch.setattr(h3_runtime.LatentWalker, "apply_final", exploding_final)
+    monkeypatch.setattr(runtime.LatentWalker, "apply_final", exploding_final)
     with pytest.raises(RuntimeError, match="restore exploded"):
         _run(_cfg(), make_recording_guider(), noise=make_fake_noise())
     assert order == ["apply_final", "apply_final"]

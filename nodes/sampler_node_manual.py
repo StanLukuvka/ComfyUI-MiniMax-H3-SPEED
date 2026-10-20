@@ -5,7 +5,7 @@ from __future__ import annotations
 import comfy.utils
 
 from speed_scripts.config import RATIO_MODES
-from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import build_manual_speed_config
 
 

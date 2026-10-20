@@ -5,7 +5,7 @@ import torch
 
 from conftest import StubSampler, make_fake_noise, make_latent, make_recording_guider
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.runtime import run_speed_pipeline
 
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
@@ -228,8 +228,8 @@ def test_forced_failure_restores_pristine_conditioning():
 
     calls = {"n": 0}
 
-    # Patch h3_runtime.spectral_expand, the binding used by run_speed_pipeline.
-    import speed_scripts.h3_runtime as rt
+    # Patch runtime.spectral_expand, the binding used by run_speed_pipeline.
+    import speed_scripts.runtime as rt
 
     expanded = rt.spectral_expand
 

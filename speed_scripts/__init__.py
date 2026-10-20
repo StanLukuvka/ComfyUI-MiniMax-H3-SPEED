@@ -6,6 +6,7 @@ Package layout:
 - flow.py — transition-coordinate and audio-state math
 - spectral.py — DCT primitives and spectral expansion
 - latent_class.py — generation-local I2V keyframe lifecycle
-- h3_runtime.py — multi-stage SPEED execution
+- runtime.py — multi-stage SPEED execution
+- families.py — MiniMax-H3 latent helpers
 - harvest.py — native-sampler calibration math
 """

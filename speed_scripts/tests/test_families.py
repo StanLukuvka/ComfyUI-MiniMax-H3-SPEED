@@ -3,7 +3,7 @@
 import pytest
 
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import resolve_sigma_shifts
+from speed_scripts.runtime import resolve_sigma_shifts
 from speed_scripts.planning import activation_threshold, power_at_frequency
 
 
