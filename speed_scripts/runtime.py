@@ -1,7 +1,9 @@
-"""Run MiniMax-H3 SPEED across several resolution stages.
+"""Run SPEED across several resolution stages.
 
 Each stage is one ``guider.sample()`` call. Between stages, carry the current
-video/audio state into the next size and continue from the aligned sigma.
+state into the next size and continue from the aligned sigma. What the latent
+holds, and how its extra streams cross a stage, comes from the model family
+(``families.py``).
 """
 
 from __future__ import annotations
@@ -11,15 +13,8 @@ import logging
 import torch
 
 from .config import SpeedConfig
-from .families import pack_latent, resolve_sigma_shifts, unpack_latent
-from .flow import (
-    aligned_sigma,
-    carry_preserved_audio,
-    clock_reindex_audio_state,
-    reentry_noise,
-    time_shift_sigma,
-    to_internal_state,
-)
+from .families import get_family, prepare_latent
+from .flow import aligned_sigma, reentry_noise
 from .latent_class import LatentWalker
 from .planning import resolve_transition_steps, stage_resolution
 from .spectral import (
@@ -95,51 +90,51 @@ class _PreviewGuard:
 
 
 def _coupled_transition(
-    internal_video,
+    internal_main,
     full_noise_coefficients,
     target_thw,
     sigma: float,
 ):
     """Grow the stage from the shared full-resolution noise field."""
     target_t, target_h, target_w = target_thw
-    source_t, source_h, source_w = internal_video.shape[-3:]
-    full_noise_coefficients = full_noise_coefficients.to(device=internal_video.device)
+    source_t, source_h, source_w = internal_main.shape[-3:]
+    full_noise_coefficients = full_noise_coefficients.to(device=internal_main.device)
     target_coefficients = (
         full_noise_coefficients[..., :target_t, :target_h, :target_w].clone()
         * float(sigma)
     )
     target_coefficients[..., :source_t, :source_h, :source_w] = dct2(
-        dct_temporal(internal_video)
+        dct_temporal(internal_main)
     )
-    return idct_temporal(idct2(target_coefficients)).to(dtype=internal_video.dtype)
+    return idct_temporal(idct2(target_coefficients)).to(dtype=internal_main.dtype)
 
 
-def _expand_video(
-    internal_video,
+def _expand_main(
+    internal_main,
     *,
     target_thw,
     sigma: float,
     seed: int,
     full_noise_coefficients=None,
 ):
-    """Grow the carried video state to the next stage size."""
+    """Grow the carried spatial state to the next stage size."""
     target_t, target_h, target_w = target_thw
     if full_noise_coefficients is not None:
         return _coupled_transition(
-            internal_video,
+            internal_main,
             full_noise_coefficients,
             target_thw,
             sigma,
         )
-    if target_t > internal_video.shape[-3]:
+    if target_t > internal_main.shape[-3]:
         return spectral_expand_3d(
-            internal_video,
+            internal_main,
             target_thw,
             sigma,
             seed,
         )
     return spectral_expand(
-        internal_video,
+        internal_main,
         (target_h, target_w),
         sigma,
         seed,
@@ -154,6 +149,7 @@ def run_speed_pipeline(
     config: SpeedConfig,
     *,
     sampler,
+    model_type: str = "h3_video",
     disable_pbar: bool = False,
     output_device=None,
     preview_callback=None,
@@ -163,20 +159,22 @@ def run_speed_pipeline(
 
     ``sampler`` is any ComfyUI SAMPLER. Each stage is its own
     ``guider.sample()`` call, so a multistep sampler's history starts fresh at
-    every resolution change.
+    every resolution change. ``model_type`` picks the family (see
+    ``families.MODEL_TYPES``).
     """
     if "noise_mask" in latent:
-        raise ValueError("MiniMax-H3 SPEED does not support noise masks")
+        raise ValueError("SPEED does not support noise masks")
+    family = get_family(model_type, guider)
+    latent = prepare_latent(guider, latent)
 
-    full_video, full_audio = unpack_latent(latent.get("samples"))
-    if torch.count_nonzero(full_video) or torch.count_nonzero(full_audio):
-        raise ValueError("MiniMax-H3 SPEED requires empty input video/audio latent streams")
+    full_main, full_extra = family.split(latent.get("samples"))
+    if torch.count_nonzero(full_main) or (full_extra is not None and torch.count_nonzero(full_extra)):
+        raise ValueError("SPEED requires an empty input latent")
     if sigmas.ndim != 1 or len(sigmas) < 3:
         raise ValueError("sigmas must be a one-dimensional schedule")
 
-    video_shift, audio_shift, audio_scale = resolve_sigma_shifts(guider)
     scales = config.scales
-    full_t, full_h, full_w = full_video.shape[-3:]
+    full_t, full_h, full_w = full_main.shape[-3:]
     stage_shapes = [
         stage_resolution(config, index, full_h, full_w, full_t)
         for index in range(len(scales))
@@ -189,22 +187,19 @@ def run_speed_pipeline(
 
     working_sigmas = sigmas.clone()
     stage_h, stage_w, stage_t = stage_shapes[0]
-    coarse_video = full_video.new_zeros(
-        full_video.shape[:-3] + (stage_t, stage_h, stage_w)
-    )
-    stage_start_latent = pack_latent(coarse_video, torch.zeros_like(full_audio))
+    coarse_main = full_main.new_zeros(full_main.shape[:-3] + (stage_t, stage_h, stage_w))
+    stage_start_latent = family.join(coarse_main, _maybe(torch.zeros_like, full_extra))
 
     full_noise_coefficients = None
     if config.noise_policy == "coupled_full_grid":
-        full_noise = noise.generate_noise(latent)
-        full_noise_video, full_noise_audio = unpack_latent(full_noise)
-        coarse_noise_video = lowpass_dct(
-            full_noise_video[..., :stage_t, :, :],
+        full_noise_main, full_noise_extra = family.split(noise.generate_noise(latent))
+        coarse_noise_main = lowpass_dct(
+            full_noise_main[..., :stage_t, :, :],
             (stage_h, stage_w),
         )
-        full_noise_coefficients = dct2(dct_temporal(full_noise_video))
-        stage_start_pub = pack_latent(coarse_noise_video, full_noise_audio)
-        del full_noise, full_noise_video
+        full_noise_coefficients = dct2(dct_temporal(full_noise_main))
+        stage_start_pub = family.join(coarse_noise_main, full_noise_extra)
+        del full_noise_main
     else:
         coarse_latent = latent.copy()
         coarse_latent["samples"] = stage_start_latent
@@ -246,13 +241,7 @@ def run_speed_pipeline(
             global_done += len(stage_sigmas) - 1
 
             boundary_sigma = float(working_sigmas[global_end])
-            public_video, public_audio = unpack_latent(public)
-            internal_video, internal_audio = to_internal_state(
-                public_video,
-                public_audio,
-                boundary_sigma,
-                audio_scale,
-            )
+            internal_main, internal_extra = family.to_internal(public, boundary_sigma)
 
             ratio = scales[stage_idx + 1] / scales[stage_idx]
             if config.sigma_policy == "canonical":
@@ -262,56 +251,29 @@ def run_speed_pipeline(
             working_sigmas[global_end] = next_sigma
 
             next_h, next_w, next_t = stage_shapes[stage_idx + 1]
-            expanded_video = _expand_video(
-                internal_video,
+            expanded_main = _expand_main(
+                internal_main,
                 target_thw=(next_t, next_h, next_w),
                 sigma=boundary_sigma,
                 seed=int(noise.seed) + int(config.transition_seed_offset) + stage_idx,
                 full_noise_coefficients=full_noise_coefficients,
             )
-            transitioned_video = expanded_video * kappa
-
-            old_audio_sigma = time_shift_sigma(
+            transitioned_main = expanded_main * kappa
+            transitioned_extra = family.carry_extra(
+                internal_extra,
                 boundary_sigma,
-                video_shift,
-                audio_shift,
-            )
-            new_audio_sigma = time_shift_sigma(
                 next_sigma,
-                video_shift,
-                audio_shift,
+                config.audio_policy,
+                x0_output.get("x0"),
             )
-            if config.audio_policy == "carry_preserve":
-                transitioned_audio = carry_preserved_audio(
-                    internal_audio,
-                    boundary_sigma,
-                    next_sigma,
-                    old_audio_sigma,
-                    new_audio_sigma,
-                )
-            elif config.audio_policy == "clock_reindex":
-                if "x0" not in x0_output:
-                    raise RuntimeError("clock_reindex requires an x0 callback from this stage")
-                _, clean_audio = unpack_latent(x0_output["x0"])
-                transitioned_audio = clock_reindex_audio_state(
-                    internal_audio,
-                    clean_audio,
-                    boundary_sigma,
-                    next_sigma,
-                    old_audio_sigma,
-                    new_audio_sigma,
-                    audio_scale,
-                )
-            else:
-                transitioned_audio = internal_audio
 
-            stage_start_pub = pack_latent(
-                reentry_noise(transitioned_video, next_sigma),
-                reentry_noise(transitioned_audio, next_sigma),
+            stage_start_pub = family.join(
+                reentry_noise(transitioned_main, next_sigma),
+                _maybe(lambda state: reentry_noise(state, next_sigma), transitioned_extra),
             )
-            stage_start_latent = pack_latent(
-                torch.zeros_like(transitioned_video),
-                torch.zeros_like(transitioned_audio),
+            stage_start_latent = family.join(
+                torch.zeros_like(transitioned_main),
+                _maybe(torch.zeros_like, transitioned_extra),
             )
             global_start = global_end
 
@@ -351,3 +313,7 @@ def run_speed_pipeline(
         return output, denoised
     finally:
         walker.apply_final()
+
+
+def _maybe(fn, value):
+    return None if value is None else fn(value)

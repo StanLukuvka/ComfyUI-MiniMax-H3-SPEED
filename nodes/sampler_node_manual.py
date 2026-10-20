@@ -5,6 +5,7 @@ from __future__ import annotations
 import comfy.utils
 
 from speed_scripts.config import RATIO_MODES
+from speed_scripts.families import MODEL_TYPES
 from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import build_manual_speed_config
 
@@ -63,6 +64,9 @@ class MiniMaxH3SPEEDSamplerManual:
                     {"default": 1.0, "min": 0, "max": 1},
                 ),
             },
+            "optional": {
+                "model_type": (list(MODEL_TYPES), {"default": "h3_video"}),
+            },
         }
 
     def sample(
@@ -83,6 +87,7 @@ class MiniMaxH3SPEEDSamplerManual:
         transition_resolution_3=0.75,
         transition_goal_4=15,
         transition_resolution_4=1.0,
+        model_type="h3_video",
         **kwargs,
     ):
         config = build_manual_speed_config(
@@ -104,6 +109,7 @@ class MiniMaxH3SPEEDSamplerManual:
             latent_image,
             config,
             sampler=sampler,
+            model_type=model_type,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
         )
 

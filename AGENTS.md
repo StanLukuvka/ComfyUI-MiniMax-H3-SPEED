@@ -11,6 +11,7 @@ Release-level invariants:
 - The three public node IDs remain stable.
 - Euler remains the reference path for baked calibration and benchmark evidence.
 - All three nodes take a standard ComfyUI `SAMPLER` input (see Sampler architecture).
+- All three nodes take an optional `model_type` switch (`h3_video` default, `image`); see Model families. Old workflows and API prompts without it keep running H3.
 - `direct_coarse` remains the default noise policy. `coupled_full_grid` remains available because its removal has not been shown to be safe; V2 makes no claim that it improves quality.
 - Internal `speed_scripts` APIs may break from V1 where required by the planner/runtime split; see `CHANGELOG.md` for migration details.
 
@@ -38,6 +39,15 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 
 Any ComfyUI SAMPLER is accepted; there is no allowlist and no per-sampler adapter. SPEED passes the connected `SAMPLER` object to `guider.sample()` once per stage. ComfyUI keeps a multistep sampler's history local to one call, so the history resets at every resolution change without any adapter. Ancestral and SDE samplers draw their per-step noise from the run seed in each call. The global SPEED scheduler is sampler-agnostic. Tested results per sampler are in the README.
 
+## Model families
+
+`speed_scripts/families.py` holds one class per `model_type`; the runtime is family-agnostic. A family splits the latent into the spatial stream SPEED resizes (always `[B,C,T,H,W]` inside the runtime) and an optional extra stream, reads a stage's output back into sampler state (`to_internal`), and carries the extra stream across a resolution change (`carry_extra`).
+
+- `h3_video` — nested video/audio latent; audio carried on its own sigma clock with the H3 shifts. Output is bit-identical to the pre-families runtime.
+- `image` — plain image latent from a CONST (flow) model. `to_internal` undoes the latent format's `process_latent_in` (Krea 2 uses Wan 2.1's mean/std), because ComfyUI returns `process_latent_out(x / (1 - sigma))`.
+
+The model type is an explicit switch, never auto-detected; a mismatch raises with the setting to use. Add a model by adding a family, not by branching in the runtime.
+
 ## Noise policies
 
 - **`direct_coarse`** — default. Starts on coarse Gaussian noise and fills newly exposed frequency bands from deterministic transition-seeded Gaussian noise.
@@ -48,9 +58,9 @@ Any ComfyUI SAMPLER is accepted; there is no allowlist and no per-sampler adapte
 - SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
 - Document a sampler as recommended only after a measured run; known-bad samplers go in the README.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SAMPLER`, `SIGMAS`, `LATENT`).
-- Automatic configs do not store placeholder transition indices or latent dimensions. `delta_custom` boundaries are computed from the live sigma schedule and live H3 latent geometry at runtime; `transition_steps` is only meaningful in explicit/manual mode.
+- Automatic configs do not store placeholder transition indices or latent dimensions. `delta_custom` boundaries are computed from the live sigma schedule and live latent geometry at runtime; `transition_steps` is only meaningful in explicit/manual mode.
 - Stage geometry, transition-threshold math, Automatic config construction, and Manual schedule normalization live together in `speed_scripts/planning.py`.
-- `speed_scripts/runtime.py` owns execution rather than planning: H3 latent validation, preview timeline, spectral/audio boundary application, stage calls, and output assembly. Coupled full-grid noise is transformed to spectral coefficients once per generation and reused at every transition.
+- `speed_scripts/runtime.py` owns execution rather than planning: preview timeline, spectral boundary application, stage calls, and output assembly. Latent layout and extra streams belong to the family. Coupled full-grid noise is transformed to spectral coefficients once per generation and reused at every transition.
 - I2V latent lifecycle lives in `speed_scripts/latent_class.py` as one `LatentWalker`. It snapshots only keyframe latents, always resizes from pristine full resolution, restores them before the final stage and on failure, and never wraps or resizes `minimax_refs`. The walker is local to one `run_speed_pipeline()` call; it is not stored on the guider.
 - Sigma Harvest reduces each captured full-resolution residual to its CPU radial power profile inside the sampler callback; it does not retain a run's full residual tensors.
 - No random configuration, no silent randomization in config paths.

@@ -117,7 +117,7 @@ def test_harvest_runs_the_given_sampler_and_emits_its_label(name):
     assert calibration["sampler_name"] == name
     assert calibration["schema_version"] == 2
     assert calibration["measurement_basis"] == "residual_x_minus_denoised"
-    assert calibration["calibration_kind"] == "empirical_h3_residual_fit"
+    assert calibration["calibration_kind"] == "empirical_residual_fit"
     assert calibration["delta"] == .01
     assert 0 < calibration["noise_amplitude"] < 1e6
     assert -5 <= calibration["noise_decay_exponent"] < 10
@@ -193,6 +193,12 @@ def test_removed_harvest_tolerance_alias_fails_closed():
         _harvest(cls, Guider(), delta=.01)
 
 
+def test_harvest_rejects_unknown_model_type_instead_of_taking_the_image_path():
+    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
+    with pytest.raises(ValueError, match="model_type must be one of"):
+        _harvest(cls, Guider(), model_type="sdxl")
+
+
 def test_harvest_reports_no_captures_instead_of_inventing_fit():
     cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
 
@@ -237,7 +243,7 @@ def test_harvest_surfaces_first_residual_capture_failure(monkeypatch, caplog):
     def explode(*args, **kwargs):
         raise RuntimeError("residual exploded")
 
-    monkeypatch.setattr(module, "compute_video_residual", explode)
+    monkeypatch.setattr(module, "compute_residual", explode)
     with caplog.at_level("WARNING", logger=module.__name__):
         text, _ = _harvest(cls, Guider())
 

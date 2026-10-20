@@ -65,15 +65,33 @@ def install_comfy_stubs():
     utils.pack_latents = pack_latents
     utils.unpack_latents = unpack_latents
     model_mgmt.intermediate_device = lambda: "cpu"
+    sample = ModuleType("comfy.sample")
+    # The real one widens generic empty latents to the model's channels; the fakes already match.
+    sample.fix_empty_latent_channels = lambda model, latent_image, *ratios: latent_image
+    model_sampling = ModuleType("comfy.model_sampling")
+
+    def _sampling_class(name, bases=()):
+        return type(name, bases, {"__module__": "comfy.model_sampling"})
+
+    CONST = _sampling_class("CONST")
+    model_sampling.ModelSamplingDiscrete = _sampling_class("ModelSamplingDiscrete")
+    model_sampling.EPS = _sampling_class("EPS")
+    model_sampling.CONST = CONST
+    model_sampling.IMG_TO_IMG_FLOW = _sampling_class("IMG_TO_IMG_FLOW", (CONST,))
+    model_sampling.IMG_TO_IMG_VELOCITY = _sampling_class("IMG_TO_IMG_VELOCITY", (CONST,))
 
     comfy.utils = utils
     comfy.model_management = model_mgmt
     comfy.nested_tensor = nested_tensor
+    comfy.sample = sample
+    comfy.model_sampling = model_sampling
     sys.modules["comfy"] = comfy
     for name, mod in (
         ("utils", utils),
         ("model_management", model_mgmt),
         ("nested_tensor", nested_tensor),
+        ("sample", sample),
+        ("model_sampling", model_sampling),
     ):
         sys.modules[f"comfy.{name}"] = mod
 

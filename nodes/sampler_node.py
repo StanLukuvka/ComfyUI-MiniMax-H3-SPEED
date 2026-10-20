@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import comfy.utils
 
+from speed_scripts.families import MODEL_TYPES
 from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import build_automatic_speed_config
 
@@ -55,6 +56,9 @@ class MiniMaxH3SPEEDSampler:
                     {"default": 10000, "min": 0, "max": 2**31 - 1},
                 ),
             },
+            "optional": {
+                "model_type": (list(MODEL_TYPES), {"default": "h3_video"}),
+            },
         }
 
     def sample(
@@ -69,6 +73,7 @@ class MiniMaxH3SPEEDSampler:
         noise_amplitude=12.105,
         noise_decay_exponent=0.773,
         seed_offset=10000,
+        model_type="h3_video",
         **kwargs,
     ):
         delta = kwargs.pop("Tolerance (Delta)", 0.005)
@@ -93,6 +98,7 @@ class MiniMaxH3SPEEDSampler:
             latent_image,
             config,
             sampler=sampler,
+            model_type=model_type,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
         )
 

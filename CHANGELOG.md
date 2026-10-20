@@ -7,6 +7,7 @@ All notable changes to this project are documented here. New releases should be 
 ### Added
 
 - Added a `sampler` (SAMPLER) input to Automatic, Manual, and Sigma Harvest, fed by KSamplerSelect or any other SAMPLER node.
+- Added an optional `model_type` switch (`h3_video` default, `image`) to Automatic, Manual, and Sigma Harvest. `image` runs flow image models such as MOSS Image and Krea 2.
 - Added continuous progress and preview reporting across the full SPEED run.
 - Added broader regression coverage for the sampler input, I2V, transitions, Harvest, workflows, and noise policies.
 
@@ -21,7 +22,9 @@ All notable changes to this project are documented here. New releases should be 
 - I2V keyframes are restored before the final stage and after failed runs.
 - Harvest now reduces residuals to radial DCT power profiles during sampling instead of keeping every full-resolution residual in memory.
 - `coupled_full_grid` now computes the full-grid DCT once per generation and reuses it across transitions.
-- The runtime is now separated into dedicated planning and execution modules.
+- The runtime is now separated into dedicated planning and execution modules, with per-model latent handling in `speed_scripts/families.py`. `h3_runtime.py` is now `runtime.py`; `unpack_latent` / `pack_latent` / `resolve_sigma_shifts` moved to `families.py` (`unpack_h3` / `pack_h3`). Harvest's `compute_video_residual` / `extract_video_stream` became `compute_residual` and `families.main_stream`.
+- Automatic, Manual, and Harvest now fit a generic empty latent (e.g. `EmptyLatentImage`) to the model's channels before sampling, as SamplerCustomAdvanced does. H3 nested latents are unchanged.
+- Harvest calibration JSON now reports `calibration_kind: empirical_residual_fit` and the `model_type`. The Harvest report text now starts with `Empirical <model_type> residual calibration` (for example `Empirical h3_video residual calibration`) instead of `Empirical H3 residual calibration`.
 
 ### Fixed
 
