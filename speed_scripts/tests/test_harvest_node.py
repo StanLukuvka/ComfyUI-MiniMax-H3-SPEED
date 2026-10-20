@@ -269,3 +269,58 @@ def test_harvest_surfaces_first_profile_reduction_failure(monkeypatch, caplog):
     assert "profile exploded" in error["message"]
     assert error["n_captures"] > 0
     assert sum("spectral profile reduction failed" in record.message for record in caplog.records) == 1
+
+
+class _ImageGuider(Guider):
+    """Plain image latent; the model samples as ``sampling``."""
+
+    def __init__(self, sampling):
+        super().__init__()
+        model = self.model_patcher.model
+        self.model_patcher = type("P", (), {
+            "model": model,
+            "get_model_object": lambda self, name: sampling,
+        })()
+
+    def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+        self.samplers.append(sampler)
+        total = len(sigmas) - 1
+        for step in range(total):
+            if callback is not None:
+                callback(step, latent_image * .5, latent_image, total)
+        return latent_image
+
+
+def _harvest_image(cls, guider, **kwargs):
+    return cls().harvest(
+        noise=Noise(),
+        guider=guider,
+        sampler=StubSampler(),
+        sigmas=torch.linspace(1.0, .025, 20),
+        latent_image={"samples": torch.randn(1, 4, 16, 16)},
+        **kwargs,
+    )
+
+
+def test_harvest_image_runs_the_same_flow_check_as_the_sampler():
+    import comfy.model_sampling
+
+    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
+    eps = _ImageGuider(comfy.model_sampling.EPS())
+    with pytest.raises(ValueError, match=r"flow \(CONST\) models only; this model uses EPS"):
+        _harvest_image(cls, eps, model_type="image")
+    assert eps.samplers == []
+
+    text, _ = _harvest_image(cls, _ImageGuider(comfy.model_sampling.CONST()), model_type="image")
+    assert json.loads(text)["model_type"] == "image"
+
+
+def test_harvest_points_at_model_type_when_the_latent_does_not_match():
+    import comfy.model_sampling
+
+    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
+    text, _ = _harvest_image(cls, _ImageGuider(comfy.model_sampling.CONST()))
+    error = json.loads(text)
+    assert error["error"] == "no_captures"
+    assert "does not match model_type h3_video; use model_type image" in error["message"]
+    assert "did not fire" not in error["message"]

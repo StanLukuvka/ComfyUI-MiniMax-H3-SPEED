@@ -19,7 +19,13 @@ from speed_scripts.harvest import (
     fit_power_law,
     radial_dct_power,
 )
-from speed_scripts.families import MODEL_TYPES, check_model_type, main_stream, prepare_latent
+from speed_scripts.families import (
+    MODEL_TYPES,
+    check_model_type,
+    main_stream,
+    prepare_latent,
+    require_flow_sampling,
+)
 from speed_scripts.planning import (
     activation_threshold,
     find_first_step_below,
@@ -91,7 +97,10 @@ class MiniMaxH3HarvestToConfig:
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
+        if model_type == "image":
+            require_flow_sampling(guider)
 
+        callback_count = 0
         capture_count = 0
         freqs_all = []
         profiles_all = []
@@ -129,6 +138,8 @@ class MiniMaxH3HarvestToConfig:
 
         # ComfyUI calls sampler callbacks as: (step, denoised, x, total_steps).
         def _capture_callback(step, denoised, x, total_steps):
+            nonlocal callback_count
+            callback_count += 1
             return _capture(x, denoised)
 
         sampler_name = _sampler_label(sampler)
@@ -158,11 +169,21 @@ class MiniMaxH3HarvestToConfig:
             )
 
         if capture_count == 0:
-            message = (
-                f"Residual capture failed: {first_residual_error}"
-                if first_residual_error is not None
-                else "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup."
-            )
+            if first_residual_error is not None:
+                message = f"Residual capture failed: {first_residual_error}"
+            elif callback_count:
+                hint = (
+                    "use model_type image for image models"
+                    if model_type == "h3_video"
+                    else "use model_type h3_video for MiniMax-H3 video latents"
+                )
+                message = (
+                    f"No per-step residual snapshots recorded. The sampler callback fired "
+                    f"{callback_count} times, but its latent does not match model_type "
+                    f"{model_type}; {hint}."
+                )
+            else:
+                message = "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup."
             return (
                 _error_json(
                     "no_captures",

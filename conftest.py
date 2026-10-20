@@ -79,6 +79,9 @@ def install_comfy_stubs():
     model_sampling.CONST = CONST
     model_sampling.IMG_TO_IMG_FLOW = _sampling_class("IMG_TO_IMG_FLOW", (CONST,))
     model_sampling.IMG_TO_IMG_VELOCITY = _sampling_class("IMG_TO_IMG_VELOCITY", (CONST,))
+    flow = _sampling_class("ModelSamplingDiscreteFlow")
+    model_sampling.ModelSamplingDiscreteFlow = flow
+    model_sampling.ModelSamplingAV = _sampling_class("ModelSamplingAV", (flow,))
 
     comfy.utils = utils
     comfy.model_management = model_mgmt

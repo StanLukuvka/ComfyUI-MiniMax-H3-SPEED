@@ -28,14 +28,17 @@ class AffineModel:
         return x * self.std + self.mean
 
 
-def _flow_patcher(model, sampling=None):
-    """Patcher stand-in: ``get_model_object`` returns the latent sampling class, as in ComfyUI."""
+def _flow_patcher(model, sampling=None, latent_dimensions=2):
+    """Patcher stand-in: ``get_model_object`` returns the sampling class and latent format, as in ComfyUI."""
     import comfy.model_sampling
 
-    sampling = comfy.model_sampling.CONST() if sampling is None else sampling
+    objects = {
+        "model_sampling": comfy.model_sampling.CONST() if sampling is None else sampling,
+        "latent_format": type("LatentFormat", (), {"latent_dimensions": latent_dimensions})(),
+    }
     return type("P", (), {
         "model": model,
-        "get_model_object": lambda self, name: sampling,
+        "get_model_object": lambda self, name: objects[name],
     })()
 
 
@@ -47,8 +50,8 @@ class OracleFlowGuider:
     result goes through ``inverse_noise_scaling`` and ``process_latent_out``.
     """
 
-    def __init__(self, clean):
-        self.model_patcher = _flow_patcher(AffineModel())
+    def __init__(self, clean, latent_dimensions=2):
+        self.model_patcher = _flow_patcher(AffineModel(), latent_dimensions=latent_dimensions)
         self.clean = clean
         self.starts = []
         self.ends = []
@@ -83,7 +86,8 @@ def _image_latent(shape):
 @pytest.mark.parametrize("shape", [(2, 4, 8, 8), (1, 4, 1, 8, 8)])
 def test_image_run_keeps_shape_and_carries_state_across_the_affine_latent_format(shape):
     clean = torch.randn((shape[0], 4, 8, 8), generator=torch.Generator().manual_seed(1))
-    guider = OracleFlowGuider(clean)
+    # A 5D single-frame latent comes from a 3-dimensional latent format (Wan 2.1, used by Krea 2).
+    guider = OracleFlowGuider(clean, latent_dimensions=len(shape) - 2)
     out, denoised = run_speed_pipeline(
         ImageNoise(), guider, SIGMAS, _image_latent(shape), CFG,
         sampler=StubSampler(), model_type="image", disable_pbar=True,
@@ -151,9 +155,30 @@ def test_image_family_rejects_non_flow_sampling():
     assert isinstance(get_family("image", ok), ImageFamily)
 
 
+def test_image_family_accepts_model_sampling_av():
+    """FLOW_AV models build ``class ModelSampling(ModelSamplingAV, CONST)`` in model_base.py."""
+    import comfy.model_sampling
+
+    sampling = type("ModelSampling", (comfy.model_sampling.ModelSamplingAV, comfy.model_sampling.CONST), {})()
+    guider = type("G", (), {"model_patcher": _flow_patcher(AffineModel(), sampling)})()
+    assert isinstance(get_family("image", guider), ImageFamily)
+
+
+def test_image_family_matches_the_latent_rank_to_the_latent_format():
+    flat = ImageFamily(OracleFlowGuider(torch.zeros(1), latent_dimensions=2))
+    with pytest.raises(ValueError, match=r"got a \[B,C,1,H,W\] latent, but this model's latent format is 2-dimensional"):
+        flat.split(torch.zeros(1, 4, 1, 8, 8))
+
+    framed = ImageFamily(OracleFlowGuider(torch.zeros(1), latent_dimensions=3))
+    main, _ = framed.split(torch.zeros(1, 4, 1, 8, 8))
+    assert framed.join(main, None).shape == (1, 4, 1, 8, 8)
+    with pytest.raises(ValueError, match=r"expects a \[B,C,1,H,W\] latent for this model"):
+        framed.split(torch.zeros(1, 4, 8, 8))
+
+
 def test_image_family_rejects_multi_frame_latents():
     family = ImageFamily(OracleFlowGuider(torch.zeros(1)))
-    with pytest.raises(ValueError, match=r"\[B,C,H,W\] or \[B,C,1,H,W\]"):
+    with pytest.raises(ValueError, match=r"expects a \[B,C,H,W\] latent for this model; got \[1, 4, 3, 8, 8\]"):
         family.split(torch.zeros(1, 4, 3, 8, 8))
 
 
