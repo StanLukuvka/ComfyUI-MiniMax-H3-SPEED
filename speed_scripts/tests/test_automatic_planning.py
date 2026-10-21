@@ -36,7 +36,9 @@ def test_automatic_node_public_surface_and_defaults():
             "noise_policy", "Tolerance (Delta)", "noise_amplitude",
             "noise_decay_exponent", "seed_offset"} <= set(required)
     assert "transition_mode" not in required
-    assert required["stages"] == ("INT", {"default": 3, "min": 2, "max": 4})
+    assert required["stages"][0] == "INT"
+    assert {k: v for k, v in required["stages"][1].items() if k != "tooltip"} == {
+        "default": 3, "min": 2, "max": 4}
     assert required["Tolerance (Delta)"][1]["default"] == 0.005
     assert required["noise_amplitude"][1]["default"] == 12.105
     assert required["noise_decay_exponent"][1]["default"] == 0.773

@@ -28,7 +28,18 @@ def test_nodes_take_the_sampler_custom_advanced_inputs_in_order():
     for module_name, class_name, _method in NODES:
         required = _node(module_name, class_name).INPUT_TYPES()["required"]
         assert list(required)[:5] == ADVANCED_INPUTS, class_name
-        assert required["sampler"] == ("SAMPLER",)
+        assert required["sampler"][0] == "SAMPLER"
+
+
+def test_every_input_and_output_has_a_tooltip():
+    for module_name, class_name, _method in NODES:
+        node = _node(module_name, class_name)
+        for section in node.INPUT_TYPES().values():
+            for name, spec in section.items():
+                assert spec[1].get("tooltip", "").strip(), (class_name, name)
+        assert len(node.OUTPUT_TOOLTIPS) == len(node.RETURN_TYPES), class_name
+        assert all(tip.strip() for tip in node.OUTPUT_TOOLTIPS), class_name
+        assert node.DESCRIPTION.strip(), class_name
 
 
 def test_programmatic_node_calls_take_the_sampler_custom_advanced_parameters_in_order():
