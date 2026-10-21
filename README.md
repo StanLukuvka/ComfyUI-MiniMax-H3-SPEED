@@ -111,7 +111,7 @@ See [evidence/README.md](evidence/README.md) for the full 10s GIFs (360p, 12fps)
 ## Current limitations
 
 - H3 batch size is currently **1**. Image models take any batch size.
-- `model_type image` takes single images only (`[B,C,H,W]` or `[B,C,1,H,W]`) and needs a flow (CONST) model. Other models, such as EPS or v-prediction checkpoints, are rejected with an error. img2img with a non-empty latent is not supported.
+- `model_type image` takes single images only (`[B,C,H,W]`, or `[B,C,1,H,W]` for 3-dimensional latent formats such as Krea 2's Wan 2.1 format) and needs a flow (CONST) model, in Harvest too. Other models, such as EPS or v-prediction checkpoints, are rejected with an error. img2img with a non-empty latent is not supported.
 - `noise_mask` / masked denoising is not supported.
 - The `latent_image` must start empty (for H3, both the video and audio streams). SPEED's I2V support comes through MiniMax-H3 keyframe conditioning, which is resized and restored separately.
 - SPEED expects the MiniMax-H3 nested latent layout: one video stream plus one audio stream.
