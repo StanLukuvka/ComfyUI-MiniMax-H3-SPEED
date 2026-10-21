@@ -1,9 +1,9 @@
-"""Focused H3 runtime/config safety contracts."""
+"""Model-family and config safety contracts."""
 
 import pytest
 
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import resolve_sigma_shifts
+from speed_scripts.families import resolve_sigma_shifts
 from speed_scripts.planning import activation_threshold, power_at_frequency
 
 

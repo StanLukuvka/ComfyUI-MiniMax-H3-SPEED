@@ -3,10 +3,10 @@
 import pytest
 import torch
 
-from conftest import make_fake_noise, make_latent, make_recording_guider
+from conftest import StubSampler, make_fake_noise, make_latent, make_recording_guider
 from speed_scripts.config import SpeedConfig
 from speed_scripts.flow import aligned_sigma
-from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import resolve_transition_steps
 
 
@@ -35,7 +35,7 @@ def _run(config, sigmas=SIGMAS, latent=None, preview_callback=None):
         sigmas,
         latent or make_latent(),
         config,
-        sampler_override=object(),
+        sampler=StubSampler(),
         disable_pbar=True,
         preview_callback=preview_callback,
     )

@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-from conftest import make_fake_noise, make_latent, make_recording_guider
+from conftest import StubSampler, make_fake_noise, make_latent, make_recording_guider
 from speed_scripts.config import SpeedConfig
-from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.runtime import run_speed_pipeline
 
 
 SIGMAS = torch.tensor([1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0.0])
@@ -18,7 +18,7 @@ def _run(config, *, guider=None, latent=None, sigmas=SIGMAS):
         sigmas,
         latent if latent is not None else make_latent(),
         config,
-        sampler_override=object(),
+        sampler=StubSampler(),
         disable_pbar=True,
     )
 
@@ -98,7 +98,7 @@ def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain():
             SIGMAS,
             make_latent(),
             cfg,
-            sampler_override=object(),
+            sampler=StubSampler(),
             disable_pbar=True,
         )
 
@@ -190,7 +190,7 @@ def test_denoised_output_preserves_video_and_audio_streams():
         SIGMAS,
         make_latent(),
         _cfg(),
-        sampler_override=object(),
+        sampler=StubSampler(),
         disable_pbar=True,
         x0_output=x0_output,
     )
@@ -228,8 +228,8 @@ def test_forced_failure_restores_pristine_conditioning():
 
     calls = {"n": 0}
 
-    # Patch h3_runtime.spectral_expand, the binding used by run_speed_pipeline.
-    import speed_scripts.h3_runtime as rt
+    # Patch runtime.spectral_expand, the binding used by run_speed_pipeline.
+    import speed_scripts.runtime as rt
 
     expanded = rt.spectral_expand
 
@@ -309,7 +309,7 @@ def test_audio_transition_oracle_clock_reindex_bridge():
         sigmas,
         make_latent(),
         cfg,
-        sampler_override=object(),
+        sampler=StubSampler(),
         disable_pbar=True,
         x0_output=x0_output,
     )
@@ -326,9 +326,8 @@ def test_audio_transition_oracle_clock_reindex_bridge():
     ratio = 1.0 / .5
     kappa, new_q = aligned_sigma(rsp_q, ratio)
 
-    # Convert the stage-0 public audio to the internal representation.
-    stage0_pub_video, stage0_pub_audio = out_public = None, None
-    # Recreate the fixed stage-0 audio output.
+    # Recreate the fixed stage-0 audio output and convert it to the internal
+    # representation.
     stage0_pub_audio = torch.full_like(reentry_audio, audio_out)
     internal_audio = to_internal_state(
         torch.zeros_like(stage0_pub_audio), stage0_pub_audio, rsp_q, audio_scale

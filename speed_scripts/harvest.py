@@ -11,28 +11,18 @@ import math
 import numpy as np
 import torch
 
+from .families import main_stream
 from .spectral import dct2
 
 
-def extract_video_stream(value) -> torch.Tensor | None:
-    """Return the video stream from an H3 nested latent or 5D video tensor."""
-    if getattr(value, "is_nested", False):
-        return next(
-            (stream for stream in value.unbind() if getattr(stream, "ndim", 0) == 5),
-            None,
-        )
-    if isinstance(value, torch.Tensor) and value.ndim == 5:
-        return value
-    return None
-
-
-def compute_video_residual(x_value, denoised_value) -> torch.Tensor | None:
-    """Return the H3 video residual ``x - denoised`` when both inputs are valid."""
-    x_video = extract_video_stream(x_value)
-    denoised_video = extract_video_stream(denoised_value)
-    if x_video is None or denoised_video is None:
+def compute_residual(x_value, denoised_value, model_type="h3_video") -> torch.Tensor | None:
+    """Return the spatial-stream residual ``x - denoised`` when both inputs are valid."""
+    x_main = main_stream(x_value, model_type)
+    denoised_main = main_stream(denoised_value, model_type)
+    if x_main is None or denoised_main is None:
         return None
-    return x_video - denoised_video
+    return x_main - denoised_main
+
 
 def radial_dct_power(video: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     """Measure average DCT power by distance from zero frequency."""
@@ -92,8 +82,7 @@ def classify_fit_quality(fit: dict) -> str:
 
 
 __all__ = [
-    "extract_video_stream",
-    "compute_video_residual",
+    "compute_residual",
     "radial_dct_power",
     "fit_power_law",
     "classify_fit_quality",

@@ -1,8 +1,8 @@
 """Calibrate Automatic SPEED from one native full-resolution sampler run.
 
 Measure `x - denoised` at each step, fit `P = A * |omega|^(-beta)`, and
-return A, beta, and delta for the Automatic node. This measures H3's residual
-spectrum, not the clean-data spectrum from the SPEED paper.
+return A, beta, and delta for the Automatic node. This measures the model's
+residual spectrum, not the clean-data spectrum from the SPEED paper.
 """
 
 from __future__ import annotations
@@ -10,23 +10,27 @@ from __future__ import annotations
 import json
 import logging
 
-import comfy.samplers
 import comfy.utils
 import numpy as np
 
 from speed_scripts.harvest import (
     classify_fit_quality,
-    compute_video_residual,
-    extract_video_stream,
+    compute_residual,
     fit_power_law,
     radial_dct_power,
+)
+from speed_scripts.families import (
+    MODEL_TYPES,
+    check_model_type,
+    main_stream,
+    prepare_latent,
+    require_flow_sampling,
 )
 from speed_scripts.planning import (
     activation_threshold,
     find_first_step_below,
     power_at_frequency,
 )
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
 log = logging.getLogger(__name__)
@@ -37,6 +41,13 @@ def _error_json(error, message, **fields):
     return json.dumps(payload)
 
 
+def _sampler_label(sampler):
+    """Best-effort sampler name for the report (from its function name, else its class)."""
+    fn = getattr(sampler, "sampler_function", None)
+    name = getattr(fn, "__name__", None) or type(sampler).__name__
+    return name.removeprefix("sample_").removesuffix("_function")
+
+
 class MiniMaxH3HarvestToConfig:
     """Measure one native sampler run and return an Automatic calibration."""
 
@@ -45,8 +56,9 @@ class MiniMaxH3HarvestToConfig:
         "sampler run. Re-run it when the sampler, model, scheduler, step count, "
         "or denoising behavior changes. It fits the residual spectrum "
         "(x - denoised) to P = A·|ω|^-beta and returns A/beta for Automatic. "
-        "The calibration basis is the H3 residual spectrum, separate from the "
-        "clean-data spectrum in the SPEED paper."
+        "The calibration basis is the model's residual spectrum, separate from "
+        "the clean-data spectrum in the SPEED paper. Set model_type to match "
+        "the SPEED Sampler."
     )
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")
@@ -60,12 +72,13 @@ class MiniMaxH3HarvestToConfig:
             "required": {
                 "noise": ("NOISE",),
                 "guider": ("GUIDER",),
+                "sampler": ("SAMPLER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-                "sampler_name": (list(SUPPORTED_SPEED_SAMPLERS), {"default": "euler"}),
             },
             "optional": {
                 "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
+                "model_type": (list(MODEL_TYPES), {"default": "h3_video"}),
             },
         }
 
@@ -73,17 +86,21 @@ class MiniMaxH3HarvestToConfig:
         self,
         noise,
         guider,
+        sampler,
         sigmas,
         latent_image,
-        sampler_name,
         **kwargs,
     ):
 
         delta = float(kwargs.pop("Tolerance (Delta)", 0.005))
+        model_type = check_model_type(kwargs.pop("model_type", "h3_video"))
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
+        if model_type == "image":
+            require_flow_sampling(guider)
 
+        callback_count = 0
         capture_count = 0
         freqs_all = []
         profiles_all = []
@@ -94,7 +111,7 @@ class MiniMaxH3HarvestToConfig:
             """Turn one residual into a CPU frequency-power profile immediately."""
             nonlocal capture_count, first_residual_error, first_profile_error
             try:
-                residual = compute_video_residual(x_current, denoised_est)
+                residual = compute_residual(x_current, denoised_est, model_type)
             except Exception as exc:
                 if first_residual_error is None:
                     first_residual_error = exc
@@ -121,17 +138,20 @@ class MiniMaxH3HarvestToConfig:
 
         # ComfyUI calls sampler callbacks as: (step, denoised, x, total_steps).
         def _capture_callback(step, denoised, x, total_steps):
+            nonlocal callback_count
+            callback_count += 1
             return _capture(x, denoised)
 
+        sampler_name = _sampler_label(sampler)
+        latent_image = prepare_latent(guider, latent_image)
         latent_tensor = latent_image["samples"]
         noise_tensor = noise.generate_noise(latent_image)
 
         try:
-            sampler_obj = comfy.samplers.sampler_object(sampler_name)
             result = guider.sample(
                 noise_tensor,
                 latent_tensor,
-                sampler_obj,
+                sampler,
                 sigmas,
                 callback=_capture_callback,
                 disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
@@ -143,17 +163,27 @@ class MiniMaxH3HarvestToConfig:
                     "harvest_failed",
                     f"Native {sampler_name} harvest failed: {exc}",
                     sampler_name=sampler_name,
-                    fix=f"Run the native {sampler_name} sampler outside this pack and feed the result back in.",
+                    fix="Check the same sampler runs in SamplerCustomAdvanced with these inputs.",
                 ),
                 latent_image,
             )
 
         if capture_count == 0:
-            message = (
-                f"Residual capture failed: {first_residual_error}"
-                if first_residual_error is not None
-                else "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup."
-            )
+            if first_residual_error is not None:
+                message = f"Residual capture failed: {first_residual_error}"
+            elif callback_count:
+                hint = (
+                    "use model_type image for image models"
+                    if model_type == "h3_video"
+                    else "use model_type h3_video for MiniMax-H3 video latents"
+                )
+                message = (
+                    f"No per-step residual snapshots recorded. The sampler callback fired "
+                    f"{callback_count} times, but its latent does not match model_type "
+                    f"{model_type}; {hint}."
+                )
+            else:
+                message = "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup."
             return (
                 _error_json(
                     "no_captures",
@@ -201,11 +231,11 @@ class MiniMaxH3HarvestToConfig:
         r2 = float(fit["r_squared"])
         health = classify_fit_quality(fit)
 
-        video_stream = extract_video_stream(latent_tensor)
-        if video_stream is None:
+        main = main_stream(latent_tensor, model_type)
+        if main is None:
             H_full = W_full = None
         else:
-            H_full, W_full = map(int, video_stream.shape[-2:])
+            H_full, W_full = map(int, main.shape[-2:])
 
         # Convert sigmas once for the transition report.
         try:
@@ -225,11 +255,12 @@ class MiniMaxH3HarvestToConfig:
             "sampler_name": sampler_name,
             # This fit measures x - denoised; x0 uses a different calibration basis.
             "measurement_basis": "residual_x_minus_denoised",
-            "calibration_kind": "empirical_h3_residual_fit",
+            "calibration_kind": "empirical_residual_fit",
+            "model_type": model_type,
         }
 
         lines = [
-            f"Empirical H3 residual calibration ({sampler_name}): noise_amplitude={A:.4f}  noise_decay_exponent={beta:.4f}  r²={r2:.4f}  health={health}",
+            f"Empirical {model_type} residual calibration ({sampler_name}): noise_amplitude={A:.4f}  noise_decay_exponent={beta:.4f}  r²={r2:.4f}  health={health}",
         ]
         if health in ("suspect", "weak", "invalid"):
             lines.append(
@@ -248,7 +279,7 @@ class MiniMaxH3HarvestToConfig:
         )
         if usable_fit:
             lines.append(
-                f"Paste into SPEED Sampler: sampler_name={sampler_name}, "
+                f"Paste into SPEED Sampler (same sampler: {sampler_name}): "
                 f"Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, "
                 f"noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)"
             )

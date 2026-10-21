@@ -18,11 +18,8 @@ for _p in (str(REPO_ROOT), str(NODES_DIR)):
 def install_comfy_stubs():
     """Install the minimal comfy.* surface required by node/runtime tests."""
     comfy = ModuleType("comfy")
-    samplers = ModuleType("comfy.samplers")
     utils = ModuleType("comfy.utils")
     model_mgmt = ModuleType("comfy.model_management")
-    kdiff = ModuleType("comfy.k_diffusion")
-    ksampling = ModuleType("comfy.k_diffusion.sampling")
     nested_tensor = ModuleType("comfy.nested_tensor")
 
     class NestedTensor:
@@ -35,46 +32,6 @@ def install_comfy_stubs():
             return list(self._tensors)
 
     nested_tensor.NestedTensor = NestedTensor
-    class KSAMPLER:
-        """Test double for ComfyUI's ``KSAMPLER`` contract.
-
-        Matches the host sample signature, forwards the denoise mask through
-        the wrapper, runs the sampler function, and adapts callbacks. Stage
-        tensors enter this stub already prepared.
-        """
-
-        def __init__(self, sampler_function, extra_options=None):
-            self.sampler_function = sampler_function
-            self.extra_options = extra_options or {}
-
-        def sample(self, model_wrap, sigmas, extra_args, callback, noise,
-                   latent_image=None, denoise_mask=None, disable_pbar=False):
-            extra_args = dict(extra_args)
-            extra_args["denoise_mask"] = denoise_mask
-            model = _InpaintModel(model_wrap)
-            total_steps = len(sigmas) - 1
-
-            def k_callback(entry):
-                if callback is not None:
-                    callback(entry["i"], entry["denoised"], entry["x"], total_steps)
-
-            return self.sampler_function(
-                model, noise, sigmas, extra_args=extra_args,
-                callback=k_callback, disable=disable_pbar,
-                **self.extra_options,
-            )
-
-    class _InpaintModel:
-        """Test double for ``KSamplerX0Inpaint``; the wrapper owns the mask."""
-
-        def __init__(self, inner):
-            self.inner = inner
-
-        def __call__(self, x, sigma, denoise_mask=None, model_options={}, seed=None):
-            return self.inner(x, sigma, model_options=model_options, seed=seed)
-
-    samplers.sampler_object = lambda name: ("sampler", name)
-    samplers.KSAMPLER = KSAMPLER
     utils.PROGRESS_BAR_ENABLED = True
 
     class ProgressBar:
@@ -108,34 +65,36 @@ def install_comfy_stubs():
     utils.pack_latents = pack_latents
     utils.unpack_latents = unpack_latents
     model_mgmt.intermediate_device = lambda: "cpu"
+    sample = ModuleType("comfy.sample")
+    # The real one widens generic empty latents to the model's channels; the fakes already match.
+    sample.fix_empty_latent_channels = lambda model, latent_image, *ratios: latent_image
+    model_sampling = ModuleType("comfy.model_sampling")
 
-    def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None, **kwargs):
-        extra_args = {} if extra_args is None else extra_args
-        for i in range(len(sigmas) - 1):
-            sigma = sigmas[i]
-            denoised = model(x, sigma, **extra_args)
-            d = (x - denoised) / sigma
-            x = x + d * (sigmas[i + 1] - sigma)
-            if callback is not None:
-                callback({"x": x, "i": i, "sigma": sigma, "denoised": denoised})
-        return x
+    def _sampling_class(name, bases=()):
+        return type(name, bases, {"__module__": "comfy.model_sampling"})
 
-    ksampling.sample_euler = sample_euler
+    CONST = _sampling_class("CONST")
+    model_sampling.ModelSamplingDiscrete = _sampling_class("ModelSamplingDiscrete")
+    model_sampling.EPS = _sampling_class("EPS")
+    model_sampling.CONST = CONST
+    model_sampling.IMG_TO_IMG_FLOW = _sampling_class("IMG_TO_IMG_FLOW", (CONST,))
+    model_sampling.IMG_TO_IMG_VELOCITY = _sampling_class("IMG_TO_IMG_VELOCITY", (CONST,))
+    flow = _sampling_class("ModelSamplingDiscreteFlow")
+    model_sampling.ModelSamplingDiscreteFlow = flow
+    model_sampling.ModelSamplingAV = _sampling_class("ModelSamplingAV", (flow,))
 
-    comfy.samplers = samplers
     comfy.utils = utils
     comfy.model_management = model_mgmt
-    comfy.k_diffusion = kdiff
-    comfy.k_diffusion.sampling = ksampling
     comfy.nested_tensor = nested_tensor
+    comfy.sample = sample
+    comfy.model_sampling = model_sampling
     sys.modules["comfy"] = comfy
     for name, mod in (
-        ("samplers", samplers),
         ("utils", utils),
         ("model_management", model_mgmt),
-        ("k_diffusion", kdiff),
-        ("k_diffusion.sampling", ksampling),
         ("nested_tensor", nested_tensor),
+        ("sample", sample),
+        ("model_sampling", model_sampling),
     ):
         sys.modules[f"comfy.{name}"] = mod
 
@@ -216,7 +175,8 @@ class RecordingEchoGuider:
 
     The public output is the stage's noise video plus a fixed offset, so a
     finished run carries non-trivial signal. Records the sampler object, the
-    sigma schedule, and the noise geometry of each ``sample`` call.
+    sigma schedule, the noise seed, and the noise geometry of each ``sample``
+    call.
     """
 
     class Model:
@@ -230,6 +190,7 @@ class RecordingEchoGuider:
         self.model_patcher = type("P", (), {"model": self.Model()})()
         self.video_offset = video_offset
         self.samplers = []
+        self.seeds = []
         self.sigma_calls = []
         self.noise_shapes = []
         # Real ComfyUI guiders carry the conditioning dict here; I2V tests
@@ -238,6 +199,7 @@ class RecordingEchoGuider:
 
     def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
         self.samplers.append(sampler)
+        self.seeds.append(kwargs.get("seed"))
         self.sigma_calls.append([float(s) for s in sigmas])
         pub_video, pub_audio = list(noise.unbind())
         self.noise_shapes.append(tuple(pub_video.shape))
@@ -249,25 +211,23 @@ class RecordingEchoGuider:
         return out
 
 
-class SeededRandomNoise:
-    """Seeded random noise for deterministic non-zero test runs."""
+class StubSampler:
+    """Minimal stand-in for a ComfyUI SAMPLER (as KSamplerSelect returns).
 
-    def __init__(self, seed=42):
-        self.seed = seed
+    Echo guiders never call it; it is an identity token that guiders record.
+    ``sampler_function.__name__`` follows ComfyUI's ``sample_<name>`` form.
+    """
 
-    def generate_noise(self, latent):
-        video, audio = list(latent["samples"].unbind())
-        generator = torch.Generator().manual_seed(self.seed)
-        return make_nested(
-            torch.randn(video.shape, generator=generator),
-            torch.randn(audio.shape, generator=generator),
-        )
+    def __init__(self, name="euler"):
+        def sampler_function(*args, **kwargs):
+            raise AssertionError("StubSampler is not meant to be run")
 
+        sampler_function.__name__ = f"sample_{name}"
+        self.name = name
+        self.sampler_function = sampler_function
 
-#: Explicit stage ladders for the 2/3/4-stage completion tests: production
-#: Automatic scale ladders with unique, strictly increasing global boundaries
-#: that tile the 10-interval schedule (5 + 5, 3 + 2 + 5, 2 + 2 + 3 + 3).
-LADDER_BOUNDARIES = {2: (5,), 3: (3, 5), 4: (2, 4, 7)}
+    def __repr__(self):
+        return f"StubSampler({self.name!r})"
 
 
 @pytest.fixture(scope="session", autouse=True)

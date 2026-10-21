@@ -10,7 +10,8 @@ Release-level invariants:
 
 - The three public node IDs remain stable.
 - Euler remains the reference path for baked calibration and benchmark evidence.
-- RES Multistep is deterministic, run-scoped, and reset-only at resolution boundaries. There is no history-mode widget.
+- All three nodes take a standard ComfyUI `SAMPLER` input (see Sampler architecture).
+- All three nodes take an optional `model_type` switch (`h3_video` default, `image`); see Model families. Old workflows and API prompts without it keep running H3.
 - `direct_coarse` remains the default noise policy. `coupled_full_grid` remains available because its removal has not been shown to be safe; V2 makes no claim that it improves quality.
 - Internal `speed_scripts` APIs may break from V1 where required by the planner/runtime split; see `CHANGELOG.md` for migration details.
 
@@ -18,17 +19,17 @@ Release-level invariants:
 
 The pack ships exactly three ComfyUI nodes:
 
-1. **`MiniMaxH3SPEEDSampler`** (Automatic) — the generator. It uses the same `noise` / `guider` / `sigmas` / `latent_image` interface as `SamplerCustomAdvanced` and runs a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res). A basic all-in-one KSampler workflow must first be split into the advanced sampling components. Picks `stages` (2-4), auto-computes the transition steps from `Tolerance (Delta)` + `noise_amplitude` + `noise_decay_exponent` via the power-spectrum threshold (`delta_custom` mode). Baked defaults: `Δ0.005 A12.105 β0.773` (conservative, 0.5%). Balanced `Δ0.01 A12.436 β0.786` runs faster at near parity.
+1. **`MiniMaxH3SPEEDSampler`** (Automatic) — the generator. It uses the same `noise` / `guider` / `sampler` / `sigmas` / `latent_image` interface as `SamplerCustomAdvanced` and runs a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res). A basic all-in-one KSampler workflow must first be split into the advanced sampling components. Picks `stages` (2-4), auto-computes the transition steps from `Tolerance (Delta)` + `noise_amplitude` + `noise_decay_exponent` via the power-spectrum threshold (`delta_custom` mode). Baked defaults: `Δ0.005 A12.105 β0.773` (conservative, 0.5%). Balanced `Δ0.01 A12.436 β0.786` runs faster at near parity.
 
 2. **`MiniMaxH3SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `resolution` is the stage scale in both modes. `ratio_mode steps` = goal is a step index (whole numbers only), `ratio` = goal is a 0-1 fraction of the schedule; the boundary is placed at `round(goal * total_steps)`. Used to copy paper schedules or test custom ladders.
 
-3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-resolution pass with the selected sampler (NOT the SPEED chain), computes `residual = x - denoised` per step, immediately reduces each residual to a CPU radial DCT power profile, fits `P = A·|ω|^-β`, and emits a flat sampler-specific `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the matching Automatic configuration. Run it when you change checkpoint, sampler, LoRA/addons, or the sigma schedule.
+3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-resolution pass with the connected sampler (NOT the SPEED chain), computes `residual = x - denoised` per step, immediately reduces each residual to a CPU radial DCT power profile, fits `P = A·|ω|^-β`, and emits a flat sampler-specific `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the matching Automatic configuration. Run it when you change checkpoint, sampler, LoRA/addons, or the sigma schedule.
 
-## Sigma Harvest: Selected native sampler
+## Sigma Harvest: connected native sampler
 
-`MiniMaxH3HarvestToConfig` wraps the selected **native** Comfy sampler (`guider.sample()`), NOT `run_speed_pipeline`. It runs one full-resolution native pass with a fixed sigma schedule.
+`MiniMaxH3HarvestToConfig` runs the connected **native** Comfy sampler (`guider.sample()`), NOT `run_speed_pipeline`. It runs one full-resolution native pass with a fixed sigma schedule.
 
-**How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED, using the same sigma scheduler and step count you intend to run. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler. Read the sampler-specific `calibration` JSON and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. For `res_multistep`, Harvest uses native Comfy `res_multistep`; SPEED generation currently uses the repository's stateful RES adapter.
+**How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED, using the same sigma scheduler and step count you intend to run. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler. Read the sampler-specific `calibration` JSON and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. Harvest and SPEED run the same sampler object, so the calibration matches the sampler that generates.
 
 ## Calibration
 
@@ -36,7 +37,16 @@ Baked defaults and current evidence are Euler-derived. Changing the checkpoint, 
 
 ## Sampler architecture
 
-Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-scoped stateful adapter that clears all previous-step RES history at every SPEED stage boundary. There is no history-mode widget or switch. The global SPEED scheduler remains sampler-agnostic. The supported RES adapter is deterministic and non-ancestral only: no SDE and no CFG++.
+Any ComfyUI SAMPLER is accepted; there is no allowlist and no per-sampler adapter. SPEED passes the connected `SAMPLER` object to `guider.sample()` once per stage. ComfyUI keeps a multistep sampler's history local to one call, so the history resets at every resolution change without any adapter. Ancestral and SDE samplers draw their per-step noise from the run seed in each call. The global SPEED scheduler is sampler-agnostic. Tested results per sampler are in the README.
+
+## Model families
+
+`speed_scripts/families.py` holds one class per `model_type`; the runtime is family-agnostic. A family splits the latent into the spatial stream SPEED resizes (always `[B,C,T,H,W]` inside the runtime) and an optional extra stream, reads a stage's output back into sampler state (`to_internal`), and carries the extra stream across a resolution change (`carry_extra`).
+
+- `h3_video` — nested video/audio latent; audio carried on its own sigma clock with the H3 shifts. Output is bit-identical to the pre-families runtime.
+- `image` — plain image latent from a CONST (flow) model. `to_internal` undoes the latent format's `process_latent_in` (Krea 2 uses Wan 2.1's mean/std), because ComfyUI returns `process_latent_out(x / (1 - sigma))`.
+
+The model type is an explicit switch, never auto-detected; a mismatch raises with the setting to use. Add a model by adding a family, not by branching in the runtime.
 
 ## Noise policies
 
@@ -46,11 +56,11 @@ Stateless samplers use native Comfy sampler objects. `res_multistep` uses a run-
 ## Development Conventions
 
 - SPEED's baked defaults and current evidence are Euler-derived. Re-harvest when changing checkpoint, sampler, LoRA/addons, or materially changing the sigma schedule; do not claim parity for unmeasured samplers.
-- All supported sampler paths are deterministic and non-ancestral. This release does not add ancestral, SDE, or CFG++ variants.
-- Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SIGMAS`, `LATENT`).
-- Automatic configs do not store placeholder transition indices or latent dimensions. `delta_custom` boundaries are computed from the live sigma schedule and live H3 latent geometry at runtime; `transition_steps` is only meaningful in explicit/manual mode.
+- Document a sampler as recommended only after a measured run; known-bad samplers go in the README.
+- Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SAMPLER`, `SIGMAS`, `LATENT`).
+- Automatic configs do not store placeholder transition indices or latent dimensions. `delta_custom` boundaries are computed from the live sigma schedule and live latent geometry at runtime; `transition_steps` is only meaningful in explicit/manual mode.
 - Stage geometry, transition-threshold math, Automatic config construction, and Manual schedule normalization live together in `speed_scripts/planning.py`.
-- `speed_scripts/h3_runtime.py` owns execution rather than planning: H3 latent validation, preview timeline, spectral/audio boundary application, sampler hooks, stage calls, and output assembly. Coupled full-grid noise is transformed to spectral coefficients once per generation and reused at every transition.
+- `speed_scripts/runtime.py` owns execution rather than planning: preview timeline, spectral boundary application, stage calls, and output assembly. Latent layout and extra streams belong to the family. Coupled full-grid noise is transformed to spectral coefficients once per generation and reused at every transition.
 - I2V latent lifecycle lives in `speed_scripts/latent_class.py` as one `LatentWalker`. It snapshots only keyframe latents, always resizes from pristine full resolution, restores them before the final stage and on failure, and never wraps or resizes `minimax_refs`. The walker is local to one `run_speed_pipeline()` call; it is not stored on the guider.
 - Sigma Harvest reduces each captured full-resolution residual to its CPU radial power profile inside the sampler callback; it does not retain a run's full residual tensors.
 - No random configuration, no silent randomization in config paths.

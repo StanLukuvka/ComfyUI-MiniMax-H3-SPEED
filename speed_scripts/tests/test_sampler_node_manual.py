@@ -5,19 +5,19 @@ import importlib
 import pytest
 import torch
 
-from conftest import make_fake_noise, make_latent, make_recording_guider
+from conftest import StubSampler, make_fake_noise, make_latent, make_recording_guider
 from speed_scripts.flow import aligned_sigma
 
 
 def _run_manual(sigmas, **kwargs):
     mod = importlib.import_module("sampler_node_manual")
-    kwargs.setdefault("sampler_name", "euler")
+    kwargs.setdefault("sampler", StubSampler())
     sigma_calls, shapes = [], []
     output = mod.MiniMaxH3SPEEDSamplerManual().sample(
-        make_fake_noise(),
-        make_recording_guider(sigma_calls=sigma_calls, stage_shapes=shapes),
-        sigmas,
-        make_latent(h=8, w=8),
+        noise=make_fake_noise(),
+        guider=make_recording_guider(sigma_calls=sigma_calls, stage_shapes=shapes),
+        sigmas=sigmas,
+        latent_image=make_latent(h=8, w=8),
         **kwargs,
     )
     return output, sigma_calls, shapes
@@ -44,11 +44,11 @@ def test_manual_config_stays_explicit_with_inherited_noise_fit(monkeypatch):
 
     monkeypatch.setattr(mod, "run_speed_pipeline", fake_pipeline)
     mod.MiniMaxH3SPEEDSamplerManual().sample(
-        make_fake_noise(),
-        make_recording_guider(),
-        torch.linspace(1.0, 0.0, 11),
-        make_latent(h=8, w=8),
-        sampler_name="euler",
+        noise=make_fake_noise(),
+        guider=make_recording_guider(),
+        sampler=StubSampler(),
+        sigmas=torch.linspace(1.0, 0.0, 11),
+        latent_image=make_latent(h=8, w=8),
     )
     cfg = captured["config"]
     # Manual uses explicit boundaries, so A and beta do not affect planning.
