@@ -1,8 +1,24 @@
-"""SpeedConfig validation contracts."""
+"""SpeedConfig validation."""
 
 import pytest
 
 from speed_scripts.config import SpeedConfig
+
+
+@pytest.mark.parametrize(
+    "kwargs,error",
+    [
+        ({"scales": (1.0,), "transition_steps": ()}, "at least two scales"),
+        ({"scales": (.5, .75), "transition_steps": (3,)}, "final scale must be 1.0"),
+        ({"scales": (.5, .75, 1.0), "transition_steps": (5,)}, "transition steps"),
+        ({"scales": (.5, 1.0), "transition_steps": (5,), "transition_mode": "bad"}, "transition_mode"),
+        ({"scales": (.5, 1.0), "transition_steps": (5,), "noise_policy": "bad"}, "noise_policy"),
+        ({"scales": (.5, .75, 1.0), "transition_steps": (5, 5)}, "strictly increasing"),
+    ],
+)
+def test_speed_config_rejects_invalid_public_invariants(kwargs, error):
+    with pytest.raises(ValueError, match=error):
+        SpeedConfig(**kwargs)
 
 
 @pytest.mark.parametrize("field", ["noise_amplitude", "noise_decay_exponent"])

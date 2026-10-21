@@ -1,4 +1,4 @@
-"""Sampler-aware native Sigma Harvest node contracts."""
+"""Sigma Harvest node: native run with the connected sampler, calibration JSON, and errors."""
 
 import importlib
 import json
@@ -6,44 +6,31 @@ import json
 import pytest
 import torch
 
-from conftest import StubSampler, make_nested
+from conftest import EchoNoise, H3Model, NestedTensor, Patcher, StubSampler, model_sampling
 
 
-class Noise:
-    seed = 42
-
-    def generate_noise(self, latent):
-        return latent["samples"] if isinstance(latent, dict) else latent
+def _module():
+    return importlib.import_module("sampler_sigma_harvest_node")
 
 
-def _latent():
-    video = torch.randn(1, 4, 8, 16, 16)
-    audio = torch.zeros(1, 1, 2, 44)
-    return {"samples": make_nested(video, audio), "metadata": "keep"}
+class HarvestGuider:
+    """Native-sampler stand-in: Euler steps on a denoiser that predicts half the state.
 
+    Fires the callback after every step and calls ``on_step(step)`` after it.
+    Pass ``sampling`` to give the model a ``model_sampling`` object (image runs).
+    """
 
-class Guider:
-    model_patcher = type(
-        "Patcher",
-        (),
-        {"model": type(
-            "Model",
-            (),
-            {
-                "sigma_shift_video": 12.0,
-                "sigma_shift_audio": 3.0,
-                "process_latent_out": lambda self, x: x,
-            },
-        )()},
-    )()
-
-    def __init__(self):
+    def __init__(self, sampling=None, on_step=None):
+        self.model_patcher = Patcher(H3Model(), model_sampling=sampling)
+        self.on_step = on_step
         self.samplers = []
 
     def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
         self.samplers.append(sampler)
-        video = next(part for part in latent_image.unbind() if part.ndim == 5)
-        state = video.float()
+        if getattr(latent_image, "is_nested", False):
+            state = latent_image.unbind()[0].float()
+        else:
+            state = latent_image.float()
         total = len(sigmas) - 1
         for step in range(total):
             sigma = float(sigmas[step])
@@ -52,22 +39,41 @@ class Guider:
             state = state + derivative * (float(sigmas[step + 1]) - sigma)
             if callback is not None:
                 callback(step, denoised, state, total)
+            if self.on_step is not None:
+                self.on_step(step)
         return state
 
 
-def _harvest(cls, guider, sampler=None, **kwargs):
-    return cls().harvest(
-        noise=Noise(),
+class SilentGuider(HarvestGuider):
+    """Returns without ever firing the callback."""
+
+    def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
+        self.samplers.append(sampler)
+        return latent_image
+
+
+def _h3_latent():
+    video = torch.randn(1, 4, 8, 16, 16)
+    return {"samples": NestedTensor([video, torch.zeros(1, 1, 2, 44)]), "metadata": "keep"}
+
+
+def _harvest(guider, sampler=None, latent=None, **kwargs):
+    return _module().MiniMaxH3HarvestToConfig().harvest(
+        noise=EchoNoise(),
         guider=guider,
         sampler=sampler if sampler is not None else StubSampler(),
         sigmas=torch.linspace(1.0, .025, 20),
-        latent_image=_latent(),
+        latent_image=latent if latent is not None else _h3_latent(),
         **kwargs,
     )
 
 
+def _harvest_image(guider, **kwargs):
+    return _harvest(guider, latent={"samples": torch.randn(1, 4, 16, 16)}, **kwargs)
+
+
 def test_tolerance_delta_defaults_to_the_baked_value():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
+    cls = _module().MiniMaxH3HarvestToConfig
     assert cls.INPUT_TYPES()["optional"]["Tolerance (Delta)"][1]["default"] == 0.005
 
 
@@ -96,21 +102,14 @@ class _FunctionSuffixSampler:
     ],
 )
 def test_sampler_label_strips_sample_prefix_and_function_suffix_or_uses_class_name(sampler, label):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    assert module._sampler_label(sampler) == label
+    assert _module()._sampler_label(sampler) == label
 
 
 @pytest.mark.parametrize("name", ["euler", "heun", "res_multistep"])
 def test_harvest_runs_the_given_sampler_and_emits_its_label(name):
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
     sampler = StubSampler(name)
-    guider = Guider()
-    text, diagnostic = _harvest(
-        cls,
-        guider,
-        sampler,
-        **{"Tolerance (Delta)": .01},
-    )
+    guider = HarvestGuider()
+    text, diagnostic = _harvest(guider, sampler, **{"Tolerance (Delta)": .01})
     calibration = json.loads(text)
 
     assert len(guider.samplers) == 1 and guider.samplers[0] is sampler
@@ -139,8 +138,7 @@ def test_harvest_runs_the_given_sampler_and_emits_its_label(name):
 
 
 def test_harvest_reduces_each_residual_during_callback(monkeypatch):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
+    module = _module()
     original = module.radial_dct_power
     reduced = []
 
@@ -148,39 +146,22 @@ def test_harvest_reduces_each_residual_during_callback(monkeypatch):
         reduced.append(tuple(residual.shape))
         return original(residual)
 
+    def check_reduced(step):
+        assert len(reduced) == step + 1
+
     monkeypatch.setattr(module, "radial_dct_power", recording_radial_dct_power)
-
-    class StreamingGuider(Guider):
-        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-            self.samplers.append(sampler)
-            video = next(part for part in latent_image.unbind() if part.ndim == 5)
-            state = video.float()
-            total = len(sigmas) - 1
-            for step in range(total):
-                sigma = float(sigmas[step])
-                denoised = state * .5
-                derivative = (state - denoised) / sigma if sigma else (state - denoised)
-                state = state + derivative * (float(sigmas[step + 1]) - sigma)
-                callback(step, denoised, state, total)
-                assert len(reduced) == step + 1
-            return state
-
-    text, _ = _harvest(cls, StreamingGuider())
+    text, _ = _harvest(HarvestGuider(on_step=check_reduced))
     assert "error" not in json.loads(text)
     assert len(reduced) == 19
 
 
 def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
-
     monkeypatch.setattr(
-        module,
+        _module(),
         "fit_power_law",
         lambda *args: {"A": 1.0, "beta": -0.5, "r_squared": 0.2, "n_bins": 8},
     )
-    text, _ = _harvest(cls, Guider())
-    calibration = json.loads(text)
+    calibration = json.loads(_harvest(HarvestGuider())[0])
 
     assert calibration["health"] == "suspect"
     assert "Do not paste this calibration into Automatic" in calibration["report"]
@@ -188,26 +169,17 @@ def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
 
 
 def test_removed_harvest_tolerance_alias_fails_closed():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
     with pytest.raises(TypeError, match="Unexpected Harvest option"):
-        _harvest(cls, Guider(), delta=.01)
+        _harvest(HarvestGuider(), delta=.01)
 
 
 def test_harvest_rejects_unknown_model_type_instead_of_taking_the_image_path():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
     with pytest.raises(ValueError, match="model_type must be one of"):
-        _harvest(cls, Guider(), model_type="sdxl")
+        _harvest(HarvestGuider(), model_type="sdxl")
 
 
 def test_harvest_reports_no_captures_instead_of_inventing_fit():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-
-    class SilentGuider(Guider):
-        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-            self.samplers.append(sampler)
-            return latent_image
-
-    text, diagnostic = _harvest(cls, SilentGuider(), StubSampler("heun"))
+    text, diagnostic = _harvest(SilentGuider(), StubSampler("heun"))
     error = json.loads(text)
     assert error["error"] == "no_captures"
     assert error["sampler_name"] == "heun"
@@ -216,19 +188,18 @@ def test_harvest_reports_no_captures_instead_of_inventing_fit():
 
 @pytest.mark.parametrize("error_kind", ["harvest_failed", "fit_failed"])
 def test_error_json_escapes_exception_text(monkeypatch, error_kind):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
     message = 'bad "quote"\nnext line\\slash'
 
-    if error_kind == "harvest_failed":
-        class FailingGuider(Guider):
-            def sample(self, *args, **kwargs):
-                raise RuntimeError(message)
+    def explode(*args, **kwargs):
+        # Harvest reports any sampler error, but only a fit's ValueError.
+        raise ValueError(message)
 
-        text, _ = _harvest(cls, FailingGuider(), StubSampler("dpm_2"))
+    guider = HarvestGuider()
+    if error_kind == "harvest_failed":
+        guider.sample = explode
     else:
-        monkeypatch.setattr(module, "fit_power_law", lambda *args: (_ for _ in ()).throw(ValueError(message)))
-        text, _ = _harvest(cls, Guider(), StubSampler("dpm_2"))
+        monkeypatch.setattr(_module(), "fit_power_law", explode)
+    text, _ = _harvest(guider, StubSampler("dpm_2"))
 
     error = json.loads(text)
     assert error["error"] == error_kind
@@ -237,15 +208,14 @@ def test_error_json_escapes_exception_text(monkeypatch, error_kind):
 
 
 def test_harvest_surfaces_first_residual_capture_failure(monkeypatch, caplog):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
+    module = _module()
 
     def explode(*args, **kwargs):
         raise RuntimeError("residual exploded")
 
     monkeypatch.setattr(module, "compute_residual", explode)
     with caplog.at_level("WARNING", logger=module.__name__):
-        text, _ = _harvest(cls, Guider())
+        text, _ = _harvest(HarvestGuider())
 
     error = json.loads(text)
     assert error["error"] == "no_captures"
@@ -254,15 +224,14 @@ def test_harvest_surfaces_first_residual_capture_failure(monkeypatch, caplog):
 
 
 def test_harvest_surfaces_first_profile_reduction_failure(monkeypatch, caplog):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
+    module = _module()
 
     def explode(*args, **kwargs):
         raise RuntimeError("profile exploded")
 
     monkeypatch.setattr(module, "radial_dct_power", explode)
     with caplog.at_level("WARNING", logger=module.__name__):
-        text, _ = _harvest(cls, Guider())
+        text, _ = _harvest(HarvestGuider())
 
     error = json.loads(text)
     assert error["error"] == "no_spectral_profiles"
@@ -271,55 +240,22 @@ def test_harvest_surfaces_first_profile_reduction_failure(monkeypatch, caplog):
     assert sum("spectral profile reduction failed" in record.message for record in caplog.records) == 1
 
 
-class _ImageGuider(Guider):
-    """Plain image latent; the model samples as ``sampling``."""
-
-    def __init__(self, sampling):
-        super().__init__()
-        model = self.model_patcher.model
-        self.model_patcher = type("P", (), {
-            "model": model,
-            "get_model_object": lambda self, name: sampling,
-        })()
-
-    def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-        self.samplers.append(sampler)
-        total = len(sigmas) - 1
-        for step in range(total):
-            if callback is not None:
-                callback(step, latent_image * .5, latent_image, total)
-        return latent_image
-
-
-def _harvest_image(cls, guider, **kwargs):
-    return cls().harvest(
-        noise=Noise(),
-        guider=guider,
-        sampler=StubSampler(),
-        sigmas=torch.linspace(1.0, .025, 20),
-        latent_image={"samples": torch.randn(1, 4, 16, 16)},
-        **kwargs,
-    )
-
-
 def test_harvest_image_runs_the_same_flow_check_as_the_sampler():
-    import comfy.model_sampling
+    import comfy.model_sampling as ms
 
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    eps = _ImageGuider(comfy.model_sampling.EPS())
+    eps = HarvestGuider(sampling=model_sampling(ms.EPS))
     with pytest.raises(ValueError, match=r"flow \(CONST\) models only; this model uses EPS"):
-        _harvest_image(cls, eps, model_type="image")
+        _harvest_image(eps, model_type="image")
     assert eps.samplers == []
 
-    text, _ = _harvest_image(cls, _ImageGuider(comfy.model_sampling.CONST()), model_type="image")
+    text, _ = _harvest_image(HarvestGuider(sampling=model_sampling(ms.CONST)), model_type="image")
     assert json.loads(text)["model_type"] == "image"
 
 
 def test_harvest_points_at_model_type_when_the_latent_does_not_match():
-    import comfy.model_sampling
+    import comfy.model_sampling as ms
 
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    text, _ = _harvest_image(cls, _ImageGuider(comfy.model_sampling.CONST()))
+    text, _ = _harvest_image(HarvestGuider(sampling=model_sampling(ms.CONST)))
     error = json.loads(text)
     assert error["error"] == "no_captures"
     assert "does not match model_type h3_video; use model_type image" in error["message"]
