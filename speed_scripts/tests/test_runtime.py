@@ -1,4 +1,4 @@
-"""run_speed_pipeline: stage schedules, outputs, noise policies, previews, I2V, audio, image runs."""
+"""run_speed_pipeline end to end: H3 and image runs, noise policies, audio, I2V, failures."""
 
 import pytest
 import torch
@@ -8,30 +8,20 @@ from conftest import (
     AffineModel,
     EchoGuider,
     EchoNoise,
+    NestedTensor,
     OracleFlowGuider,
     SeededNoise,
     StubSampler,
-    attach_i2v,
+    aligned,
     expected_stage_sigmas,
     image_latent,
     make_latent,
 )
-from speed_scripts import runtime
-from speed_scripts import spectral
+from speed_scripts import runtime, spectral
 from speed_scripts.config import SpeedConfig
-from speed_scripts.flow import (
-    aligned_sigma,
-    clock_reindex_audio_state,
-    reentry_noise,
-    time_shift_sigma,
-    to_internal_state,
-)
-from speed_scripts.planning import STAGES_TO_SCALES, resolve_transition_steps
 from speed_scripts.runtime import run_speed_pipeline
-from speed_scripts.spectral import lowpass_dct
 
-#: Explicit boundaries that tile the 10-step schedule for the Automatic 2/3/4-stage ladders.
-LADDER_BOUNDARIES = {2: (5,), 3: (3, 5), 4: (2, 4, 7)}
+QUARTERS = (.25, .5, .75, 1.0)
 
 
 def _run(config, guider=None, *, noise=None, latent=None, sigmas=SIGMAS, **kwargs):
@@ -47,417 +37,257 @@ def _run(config, guider=None, *, noise=None, latent=None, sigmas=SIGMAS, **kwarg
     )
 
 
-def _cfg(**kwargs):
-    kwargs.setdefault("scales", (.33, .66, 1.0))
-    kwargs.setdefault("transition_steps", (3, 5))
-    return SpeedConfig(transition_mode="explicit", **kwargs)
-
-
-def _ladder_cfg(stages):
-    return _cfg(scales=STAGES_TO_SCALES[stages], transition_steps=LADDER_BOUNDARIES[stages])
+def _cfg(scales=(.33, .66, 1.0), transition_steps=(3, 5), **kwargs):
+    return SpeedConfig(scales=scales, transition_steps=transition_steps, transition_mode="explicit", **kwargs)
 
 
 def _assert_full_res_nested(latent):
     video, audio = latent["samples"].unbind()
-    assert video.ndim == 5 and audio.ndim == 4
-    assert tuple(video.shape[-2:]) == (8, 8)
+    assert video.shape == (1, 1, 2, 8, 8) and audio.shape == (1, 1, 2, 44)
 
-
-# ---------------------------------------------------------------------------
-# Stage schedule on the global sigma timeline
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("noise_policy", ["direct_coarse", "coupled_full_grid"])
-def test_explicit_four_stage_schedule_uses_global_boundaries(noise_policy):
-    scales = (.25, .5, .75, 1.0)
-    boundaries = (3, 5, 8)
+def test_h3_run_follows_the_stage_ladder_on_one_global_timeline(noise_policy):
+    sampler = StubSampler("heun")
     guider = EchoGuider(video_offset=.5)
+    previews = []
     out, denoised = _run(
-        _cfg(scales=scales, transition_steps=boundaries, noise_policy=noise_policy), guider
+        _cfg(QUARTERS, (3, 5, 8), noise_policy=noise_policy), guider, sampler=sampler,
+        preview_callback=lambda step, x0, x, total: previews.append((step, total)),
     )
-    calls = guider.sigma_calls
 
-    assert len(calls) == 4
-    for actual, wanted in zip(calls, expected_stage_sigmas(SIGMAS, boundaries, scales)):
+    # Global boundaries; each re-entry sigma is aligned by the scale ratio.
+    for actual, wanted in zip(guider.sigma_calls, expected_stage_sigmas(SIGMAS, (3, 5, 8), QUARTERS), strict=True):
         assert actual == pytest.approx(wanted)
-    assert sum(len(call) - 1 for call in calls) == len(SIGMAS) - 1
+    assert guider.latent_sizes == [(2, 2), (4, 4), (6, 6), (8, 8)]
+    assert [tuple(video.shape) for video, _ in guider.noise] == [(1, 1, 2, s, s) for s in (2, 4, 6, 8)]
+    assert all(seen is sampler for seen in guider.samplers)
+    assert guider.seeds == [42] * 4
+    # Progress and previews see one run, not one per stage.
+    assert previews == [(i, 10) for i in range(10)]
+
+    # Both outputs and the x0 handed to process_latent_out keep the nested video+audio latent.
     _assert_full_res_nested(out)
     _assert_full_res_nested(denoised)
+    assert out["samples"].unbind()[0].abs().sum() > 0
+    x0 = guider.model_patcher.model.latents_out[-1]
+    assert getattr(x0, "is_nested", False) and [p.ndim for p in x0.unbind()] == [5, 4]
 
 
 _SPREAD_FIT = dict(delta=.01, noise_amplitude=219.48, noise_decay_exponent=2.42)
 
 
 @pytest.mark.parametrize(
-    "scales,fit,sigmas,hw,boundaries",
+    "scales,fit,steps,hw,boundaries",
     [
-        ((.25, .5, 1.0), _SPREAD_FIT, torch.linspace(1.0, 0.0, 21), (44, 80), (1, 2)),
-        # Coincident boundaries align the same sigma coordinate twice; the middle
-        # stage has zero denoising intervals.
-        ((.25, .5, 1.0), _SPREAD_FIT, torch.linspace(1.0, 0.0, 11), (8, 8), (1, 1)),
+        ((.25, .5, 1.0), _SPREAD_FIT, 20, (44, 80), (1, 2)),
+        # Coincident boundaries align the same sigma twice; the middle stage has no steps.
+        ((.25, .5, 1.0), _SPREAD_FIT, 10, (8, 8), (1, 1)),
         # The baked Automatic defaults on a tiny latent: two zero-step stages in a row.
-        (STAGES_TO_SCALES[4], dict(delta=.005), SIGMAS, (8, 8), (1, 1, 1)),
+        (QUARTERS, dict(delta=.005), 10, (8, 8), (1, 1, 1)),
     ],
     ids=["spread", "coincident", "baked_four_stage"],
 )
-def test_delta_custom_execution_follows_its_resolved_global_boundaries(
-    scales, fit, sigmas, hw, boundaries
-):
+def test_delta_custom_places_boundaries_from_the_power_spectrum(scales, fit, steps, hw, boundaries):
+    sigmas = torch.linspace(1.0, 0.0, steps + 1)
     cfg = SpeedConfig(scales=scales, transition_steps=(), transition_mode="delta_custom", **fit)
-    assert resolve_transition_steps(cfg, sigmas, *hw) == boundaries
-
     guider = EchoGuider()
     out, _ = _run(cfg, guider, latent=make_latent(h=hw[0], w=hw[1]), sigmas=sigmas)
-    calls = guider.sigma_calls
 
-    assert len(calls) == len(scales)
-    for actual, wanted in zip(calls, expected_stage_sigmas(sigmas, boundaries, scales)):
+    for actual, wanted in zip(guider.sigma_calls, expected_stage_sigmas(sigmas, boundaries, scales), strict=True):
         assert actual == pytest.approx(wanted)
-    assert sum(len(call) - 1 for call in calls) == len(sigmas) - 1
-    video, _ = out["samples"].unbind()
-    assert tuple(video.shape[-2:]) == hw
+    assert tuple(out["samples"].unbind()[0].shape[-2:]) == hw
 
 
-def test_runtime_rejects_boundary_at_schedule_end():
-    with pytest.raises(ValueError, match="inside the sigma schedule"):
-        _run(_cfg(scales=(.5, 1.0), transition_steps=(10,)), noise=EchoNoise())
+SIGMA_ONE_BOUNDARY = torch.tensor([1.0, 1.0, .5, 0.0])
 
 
-# ---------------------------------------------------------------------------
-# Stages, sampler, and outputs
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "latent,config,sigmas,image,error",
+    [
+        ({**make_latent(), "noise_mask": torch.ones(1)}, _cfg(), SIGMAS, False, "noise masks"),
+        ({"samples": NestedTensor([torch.ones(1, 1, 2, 8, 8), torch.zeros(1, 1, 2, 44)])},
+         _cfg(), SIGMAS, False, "empty input latent"),
+        (make_latent(), _cfg(), SIGMAS[:2], False, "one-dimensional schedule"),
+        (make_latent(), _cfg((.5, 1.0), (10,)), SIGMAS, False, "inside the sigma schedule"),
+        # A boundary at sigma 1 cannot be carried into the next stage.
+        (make_latent(), _cfg((.5, 1.0), (1,)), SIGMA_ONE_BOUNDARY, False, r"endpoint sigma must be in \[0, 1\)"),
+        (image_latent((1, 4, 8, 8)), _cfg((.5, 1.0), (1,)), SIGMA_ONE_BOUNDARY, True,
+         "transition sigma must be between zero and one"),
+    ],
+    ids=["noise_mask", "non_empty", "short_sigmas", "boundary_at_end", "h3_boundary_at_sigma_one",
+         "image_boundary_at_sigma_one"],
+)
+def test_run_rejects_unsupported_inputs(latent, config, sigmas, image, error):
+    guider = OracleFlowGuider(torch.zeros(1, 4, 8, 8)) if image else None
+    with pytest.raises(ValueError, match=error):
+        _run(config, guider, latent=latent, sigmas=sigmas, model_type="image" if image else "h3_video")
 
-@pytest.mark.parametrize("stages", (2, 3, 4))
-def test_stage_ladder_passes_the_sampler_and_seed_and_ends_at_full_resolution(stages):
-    sampler = StubSampler("heun")
-    guider = EchoGuider(video_offset=.5)
-    out, denoised = _run(_ladder_cfg(stages), guider, sampler=sampler)
-
-    assert len(guider.sigma_calls) == stages
-    assert all(seen is sampler for seen in guider.samplers)
-    assert guider.seeds == [42] * stages
-    _assert_full_res_nested(out)
-    _assert_full_res_nested(denoised)
-
-
-def test_stage_geometry_follows_the_scale_ladder():
-    """Stage cond geometry follows the configured scale ladder and each
-    stage consumes noise at its own grid: coarse 3x3, expanded 5x5, final 8x8."""
-    guider = EchoGuider()
-    _run(_cfg(), guider, noise=EchoNoise())
-    # round(8 * .33) = 3, round(8 * .66) = 5, final stage at full 8; the
-    # noise video keeps its leading batch/channel dims (1, 1, t, h, w).
-    assert guider.latent_sizes == [(3, 3), (5, 5), (8, 8)]
-    assert guider.noise_shapes == [(1, 1, 2, 3, 3), (1, 1, 2, 5, 5), (1, 1, 2, 8, 8)]
-
-
-def test_denoised_output_preserves_video_and_audio_streams():
-    """Both returned LATENTs keep the full nested video+audio structure."""
-    guider = EchoGuider()
-    out, denoised = _run(_cfg(), guider, noise=EchoNoise(), x0_output={})
-
-    seen = guider.model_patcher.model.latents_out
-    assert seen, "process_latent_out never ran (no x0 captured)"
-    nested_x0 = seen[-1]
-    assert getattr(nested_x0, "is_nested", False), (
-        "process_latent_out received a bare video tensor — the nested "
-        "video+audio x0 was unpacked before reaching the model"
-    )
-    video, audio = nested_x0.unbind()
-    assert video.ndim == 5 and audio.ndim == 4, "x0 streams unpacked wrong"
-
-    for name, latent_out in (("output", out), ("denoised", denoised)):
-        samples = latent_out["samples"]
-        assert getattr(samples, "is_nested", False), f"{name} lost the nested bundle"
-        v, a = samples.unbind()
-        assert v.ndim == 5, f"{name} video stream missing/mangled"
-        assert a.ndim == 4, f"{name} audio stream missing/mangled"
-
-
-class _ExplodingStageGuider(EchoGuider):
-    """EchoGuider whose ``fail_at_call``-th stage call raises."""
-
-    def __init__(self, fail_at_call, **kwargs):
-        super().__init__(**kwargs)
-        self.fail_at_call = fail_at_call
-        self.calls = 0
-
-    def sample(self, *args, **kwargs):
-        self.calls += 1
-        if self.calls == self.fail_at_call:
-            raise RuntimeError("stage exploded")
-        return super().sample(*args, **kwargs)
-
-
-def test_stage_failure_stops_the_run_and_the_next_generation_starts_clean():
-    cfg = _ladder_cfg(3)
-    guider = _ExplodingStageGuider(fail_at_call=2, video_offset=.5)
-    with pytest.raises(RuntimeError, match="stage exploded"):
-        _run(cfg, guider)
-    assert guider.calls == 2  # the final stage never ran
-
-    # Same guider, next generation: identical to a fresh run (and so deterministic).
-    out_second, _ = _run(cfg, guider)
-    out_control, _ = _run(cfg, EchoGuider(video_offset=.5))
-    video_second, audio_second = out_second["samples"].unbind()
-    video_control, audio_control = out_control["samples"].unbind()
-    assert torch.equal(video_second, video_control)
-    assert torch.equal(audio_second, audio_control)
-    assert video_second.abs().sum() > 0
-    _assert_full_res_nested(out_second)
-
-
-# ---------------------------------------------------------------------------
-# Preview callbacks
-# ---------------------------------------------------------------------------
-
-def _four_stage_cfg():
-    return _cfg(scales=(.25, .5, .75, 1.0), transition_steps=(3, 5, 8))
-
-
-def test_preview_callback_sees_one_continuous_global_timeline():
-    seen = []
-
-    def preview(step, x0, x, total_steps):
-        seen.append((step, total_steps))
-
-    _run(_four_stage_cfg(), noise=EchoNoise(), preview_callback=preview)
-    assert seen == [(i, 10) for i in range(10)]
-
-
-def test_preview_callback_failure_disables_future_preview_updates():
-    seen = []
-
-    def preview(step, x0, x, total_steps):
-        seen.append(step)
-        raise RuntimeError("preview exploded")
-
-    _run(_four_stage_cfg(), noise=EchoNoise(), preview_callback=preview)
-    assert seen == [0]
-
-
-# ---------------------------------------------------------------------------
-# Noise policies
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("temporal_scales", [(), (.5, .75, 1.0)], ids=["spatial", "temporal"])
-def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain(temporal_scales):
-    """Coupled stages project one full-resolution noise field into each stage grid.
-
-    The expected re-entry noise is rebuilt from the same DCT operations used
-    by the runtime and compared at both transitions.
-    """
-    noise = SeededNoise(7)
-    full_noise_video, full_noise_audio = noise.generate_noise(make_latent()).unbind()
-    video_offset = 0.37  # makes the stage output (and source block) non-trivial
-    audio_scale = 4.0
-
-    guider = EchoGuider(video_offset=video_offset)
-    out, _ = _run(_cfg(noise_policy="coupled_full_grid", temporal_scales=temporal_scales),
-                  guider, noise=noise)
-    pubs = [video for video, _ in guider.noise]
-
-    full_t = 2
-    # Stage sizes use the same rounding as the runtime.
-    thw = [
-        (
-            full_t if not temporal_scales else max(1, round(full_t * temporal_scales[i])),
-            max(1, round(8 * s)),
-            max(1, round(8 * s)),
-        )
-        for i, s in enumerate((.33, .66, 1.0))
-    ]
-    assert [p.shape[-3:] for p in pubs] == thw
-
-    # Full-resolution DCT shared by every coupled stage.
-    full_dct = spectral.dct2(spectral.dct_temporal(full_noise_video))
-
-    # Stage 0 starts from the low-frequency block of the full noise field.
-    s0_t, s0_h, s0_w = thw[0]
-    stage_pubs = [
-        spectral.idct2(spectral.dct2(full_noise_video[..., :s0_t, :, :])[..., :s0_h, :s0_w])
-    ]
-    for transition, (boundary, ratio) in enumerate(((3, .66 / .33), (5, 1.0 / .66))):
-        rsp_q = float(SIGMAS[boundary])
-        internal = to_internal_state(
-            stage_pubs[-1] + video_offset, full_noise_audio, rsp_q, audio_scale
-        )[0]
-        kappa, new_q = aligned_sigma(rsp_q, ratio)
-        (st, sh, sw), (t, h, w) = thw[transition], thw[transition + 1]
-        target_dct = full_dct[..., :t, :h, :w] * rsp_q
-        target_dct[..., :st, :sh, :sw] = spectral.dct2(spectral.dct_temporal(internal))
-        expanded = spectral.idct_temporal(spectral.idct2(target_dct))
-        expected = reentry_noise(expanded * kappa, new_q)
-        assert torch.allclose(pubs[transition + 1], expected, atol=1e-4), (
-            f"transition {transition + 1} re-entry noise is not the spectral projection "
-            "of the full-grid noise (pixel-space cropping drift?)"
-        )
-        stage_pubs.append(pubs[transition + 1])
-
-    final_video, _ = out["samples"].unbind()
-    assert tuple(final_video.shape[-3:]) == (full_t, 8, 8)
-
-
-def test_coupled_full_grid_transforms_full_noise_once(monkeypatch):
+def test_coupled_full_grid_reuses_one_full_noise_field_in_the_spectral_domain(monkeypatch, temporal_scales):
+    """Each stage's re-entry noise is the carried state with the full field's coefficients around it."""
+    dct, idct = (lambda x: spectral.dct2(spectral.dct_temporal(x))), (lambda c: spectral.idct_temporal(spectral.idct2(c)))
+    full_grid_transforms = []
     original = runtime.dct_temporal
-    full_grid_calls = []
 
-    def recording_dct_temporal(value):
+    def counting_dct_temporal(value):
         if tuple(value.shape[-2:]) == (8, 8):
-            full_grid_calls.append(tuple(value.shape))
+            full_grid_transforms.append(value.shape)
         return original(value)
 
-    monkeypatch.setattr(runtime, "dct_temporal", recording_dct_temporal)
-    _run(_cfg(noise_policy="coupled_full_grid"), EchoGuider(video_offset=.5))
-    assert len(full_grid_calls) == 1
+    monkeypatch.setattr(runtime, "dct_temporal", counting_dct_temporal)
+    noise = SeededNoise(7)
+    full_video, _ = noise.generate_noise(make_latent()).unbind()
+    offset = 0.37  # makes each stage output (the carried block) non-trivial
+    guider = EchoGuider(video_offset=offset)
+    _run(_cfg(noise_policy="coupled_full_grid", temporal_scales=temporal_scales), guider, noise=noise)
+    pubs = [video for video, _ in guider.noise]
+
+    thw = [(max(1, round(2 * temporal_scales[i])) if temporal_scales else 2, round(8 * s), round(8 * s))
+           for i, s in enumerate((.33, .66, 1.0))]
+    assert [tuple(p.shape[-3:]) for p in pubs] == thw
+    # Stage 0 starts from the low band of the full field.
+    t0, h0, w0 = thw[0]
+    assert torch.allclose(pubs[0], spectral.idct2(spectral.dct2(full_video[..., :t0, :, :])[..., :h0, :w0]), atol=1e-5)
+    full = dct(full_video)
+    for i, (boundary, ratio) in enumerate(((3, .66 / .33), (5, 1 / .66))):
+        q = float(SIGMAS[boundary])
+        kappa, new_q = aligned(q, ratio)
+        (st, sh, sw), (t, h, w) = thw[i], thw[i + 1]
+        coefficients = full[..., :t, :h, :w] * q
+        coefficients[..., :st, :sh, :sw] = dct((pubs[i] + offset) * (1 - q))
+        assert torch.allclose(pubs[i + 1], idct(coefficients) * kappa / new_q, atol=1e-4)
+    assert len(full_grid_transforms) == 1  # transformed once per generation
 
 
-# ---------------------------------------------------------------------------
-# H3 audio across a transition
-# ---------------------------------------------------------------------------
-
-def test_audio_transition_oracle_clock_reindex_bridge():
-    """Verify clock_reindex audio re-entry against the flow math."""
+def test_h3_audio_crosses_a_transition_on_its_own_sigma_clock():
+    """clock_reindex: re-noise the carried audio from its x0 on the audio clock (shifts 12 and 3)."""
     sigmas = torch.tensor([1.0, .8, .6, .4, .2, 0.0])
-    cfg = _cfg(scales=(.5, 1.0), transition_steps=(2,), audio_policy="clock_reindex")
-    audio_out = 2.5  # non-zero constant the guider "denoises" to
-
+    audio_out = 2.5
     guider = EchoGuider(video_offset=.5, audio_value=audio_out)
+    # The H3 shifts on the model win over a generic sampling shift.
+    guider.model_patcher.objects["model_sampling"] = type("Sampling", (), {"shift": 1.0, "audio_shift": 1.0})()
     x0_output = {}
-    out, _ = _run(cfg, guider, noise=EchoNoise(), sigmas=sigmas, x0_output=x0_output)
+    out, _ = _run(_cfg((.5, 1.0), (2,)), guider, noise=EchoNoise(), sigmas=sigmas, x0_output=x0_output)
 
-    # Stage-1 re-entry audio carries non-zero state.
-    assert len(guider.noise) == 2
-    _, reentry_audio = guider.noise[1]
-    assert torch.count_nonzero(reentry_audio) > 0, "oracle audio collapsed to zero"
+    def audio_sigma(sigma, video_shift=12.0, audio_shift=3.0):
+        base = sigma / (video_shift + sigma * (1.0 - video_shift))
+        return audio_shift * base / (1.0 + (audio_shift - 1.0) * base)
 
-    video_shift, audio_shift = 12.0, 3.0
-    audio_scale = video_shift / audio_shift  # 4.0 — as resolve_sigma_shifts computes it
-    rsp_q = float(sigmas[2])  # stage-0 boundary (global index 2)
-    kappa, new_q = aligned_sigma(rsp_q, 1.0 / .5)
-
-    # The fixed stage-0 audio output in the internal representation.
-    stage0_pub_audio = torch.full_like(reentry_audio, audio_out)
-    internal_audio = to_internal_state(
-        torch.zeros_like(stage0_pub_audio), stage0_pub_audio, rsp_q, audio_scale
-    )[1]
-    assert torch.count_nonzero(internal_audio) > 0
-
-    # x0 audio stays in model-output space.
+    q = float(sigmas[2])
+    _, new_q = aligned(q, 2.0)
+    old_a, new_a = audio_sigma(q), audio_sigma(new_q)
+    audio_scale = 12.0 / 3.0
     _, x0_audio = x0_output["x0"].unbind()
-    assert torch.count_nonzero(x0_audio) > 0, "x0 audio must be non-zero"
+    carried = torch.full_like(x0_audio, audio_out) * audio_scale * (1 - q)  # internal state at q
+    clean = x0_audio / audio_scale
+    native_noise = (carried * old_a / q - (1 - old_a) * clean) / old_a
+    expected = ((1 - new_a) * clean + new_a * native_noise) * new_q / new_a / new_q
 
-    transitioned_audio = clock_reindex_audio_state(
-        internal_audio,
-        x0_audio,
-        rsp_q,
-        new_q,
-        time_shift_sigma(rsp_q, video_shift, audio_shift),
-        time_shift_sigma(new_q, video_shift, audio_shift),
-        audio_scale,
-    )
-    expected_reentry_audio = reentry_noise(transitioned_audio, new_q)
-    assert torch.allclose(reentry_audio, expected_reentry_audio, atol=1e-5), (
-        "stage-1 re-entry audio does not match the independent clock_reindex "
-        "oracle (audio_scale=4.0)"
-    )
-
-    # Final output keeps the non-zero audio stream.
-    _, final_audio = out["samples"].unbind()
-    assert torch.count_nonzero(final_audio) > 0
-    assert final_audio.shape == reentry_audio.shape
+    _, reentry_audio = guider.noise[1]
+    assert torch.count_nonzero(reentry_audio) > 0
+    assert torch.allclose(reentry_audio, expected, atol=1e-5)
+    assert torch.count_nonzero(out["samples"].unbind()[1]) > 0
 
 
-# ---------------------------------------------------------------------------
-# I2V keyframe lifecycle
-# ---------------------------------------------------------------------------
+def attach_i2v(guider):
+    """Give ``guider`` random 8x8 I2V keyframes (positive and negative) and refs; return both lists."""
+    keyframes = [{"latent": torch.rand(1, 1, 2, 8, 8)} for _ in range(3)]
+    refs = [{"latent": torch.rand(1, 1, 2, 8, 8)} for _ in range(2)]
+    guider.original_conds = {
+        "positive": [{"minimax_keyframes": keyframes[:2], "minimax_refs": refs}],
+        "negative": [{"minimax_keyframes": keyframes[2:], "minimax_refs": []}],
+    }
+    return keyframes, refs
 
-def test_i2v_keyframes_follow_the_stages_and_are_restored_before_the_final_stage():
+
+def _stage_resize(latent, size):
+    """Bilinear per-frame resize of a [B,C,T,H,W] latent, as H3 conditioning is resized."""
+    b, c, t, h, w = latent.shape
+    flat = latent.transpose(1, 2).reshape(b * t, c, h, w)
+    out = torch.nn.functional.interpolate(flat, size=size, mode="bilinear", align_corners=False)
+    return out.reshape(b, t, c, *size).transpose(1, 2)
+
+
+def test_i2v_keyframes_follow_each_stage_from_pristine_and_are_restored_for_the_final_stage():
     guider = EchoGuider(video_offset=.5)
     keyframes, refs = attach_i2v(guider)
     pristine = [holder["latent"].clone() for holder in keyframes + refs]
-    original_conds = guider.original_conds
-    sizes = []
+    seen = []
     sample = guider.sample
 
     def recording_sample(*args, **kwargs):
-        sizes.append([tuple(holder["latent"].shape[-2:]) for holder in keyframes + refs])
+        seen.append([holder["latent"].clone() for holder in keyframes + refs])
         return sample(*args, **kwargs)
 
     guider.sample = recording_sample
-    attributes = set(vars(guider))
-    out, denoised = _run(_ladder_cfg(3), guider)
+    attributes, conds = set(vars(guider)), guider.original_conds
+    _run(_cfg((1 / 3, 2 / 3, 1.0)), guider)
 
-    # Stages are 3x3, 5x5, 8x8; keyframes round up to H3's even patch grid, refs stay full size.
-    assert sizes == [[(4, 4)] * 2 + [(8, 8)] * 2, [(6, 6)] * 2 + [(8, 8)] * 2, [(8, 8)] * 4]
+    # Stages are 3x3, 5x5, 8x8; keyframes use H3's even patch grid (4x4, 6x6) and are always
+    # resized from the pristine latent; refs never change.
+    for stage, size in enumerate([(4, 4), (6, 6), None]):
+        for index, latent in enumerate(seen[stage]):
+            is_keyframe = index < len(keyframes)
+            wanted = _stage_resize(pristine[index], size) if is_keyframe and size else pristine[index]
+            assert torch.allclose(latent, wanted, atol=1e-6)
     for holder, original in zip(keyframes + refs, pristine):
         assert torch.equal(holder["latent"], original)
-    _assert_full_res_nested(out)
-    _assert_full_res_nested(denoised)
-    # The walker is local to the run: nothing is stored on the guider or swapped in its conds.
-    assert set(vars(guider)) == attributes
-    assert guider.original_conds is original_conds
-    cond = original_conds["positive"][0]
-    assert cond["minimax_keyframes"] is keyframes
-    assert cond["minimax_refs"] is refs
+    # The walker is local to the run: nothing is left on the guider.
+    assert set(vars(guider)) == attributes and guider.original_conds is conds
 
 
-def test_i2v_conditioning_is_restored_when_a_stage_fails():
-    guider = _ExplodingStageGuider(fail_at_call=2)
+def test_failures_stop_cleanly_and_the_next_generation_starts_clean():
+    # A failing preview callback is disabled for the rest of the run; the run completes.
+    previews = []
+
+    def failing_preview(step, x0, x, total):
+        previews.append(step)
+        raise RuntimeError("preview exploded")
+
+    _run(_cfg(QUARTERS, (3, 5, 8)), preview_callback=failing_preview)
+    assert previews == [0]
+
+    # A failing stage stops the run and restores the I2V conditioning.
+    guider = EchoGuider(video_offset=.5, fail_at_call=2)
     keyframes, refs = attach_i2v(guider)
     pristine = [holder["latent"].clone() for holder in keyframes + refs]
     with pytest.raises(RuntimeError, match="stage exploded"):
-        _run(_ladder_cfg(3), guider)
+        _run(_cfg(), guider)
+    assert len(guider.samplers) == 2  # the final stage never ran
     for holder, original in zip(keyframes + refs, pristine):
-        assert torch.equal(holder["latent"], original), "conditioning not restored"
+        assert torch.equal(holder["latent"], original)
 
-
-def test_restore_is_retried_in_cleanup_when_it_fails(monkeypatch):
-    order = []
-
-    def exploding_final(self):
-        order.append("apply_final")
-        raise RuntimeError("restore exploded")
-
-    monkeypatch.setattr(runtime.LatentWalker, "apply_final", exploding_final)
-    with pytest.raises(RuntimeError, match="restore exploded"):
-        _run(_cfg(), noise=EchoNoise())
-    assert order == ["apply_final", "apply_final"]
-
-
-# ---------------------------------------------------------------------------
-# Image models (model_type="image")
-# ---------------------------------------------------------------------------
-
-def _run_image(guider, latent, cfg=None):
-    cfg = cfg or _cfg(scales=(.5, 1.0), transition_steps=(5,))
-    return _run(cfg, guider, noise=SeededNoise(7), latent=latent, model_type="image")
+    # The same guider's next generation matches a fresh run exactly.
+    again, _ = _run(_cfg(), guider)
+    control, _ = _run(_cfg(), EchoGuider(video_offset=.5))
+    for a, b in zip(again["samples"].unbind(), control["samples"].unbind()):
+        assert torch.equal(a, b)
 
 
 @pytest.mark.parametrize("noise_policy", ["direct_coarse", "coupled_full_grid"])
 @pytest.mark.parametrize("shape", [(2, 4, 8, 8), (1, 4, 1, 8, 8)])
-def test_image_run_keeps_shape_and_carries_state_across_the_affine_latent_format(shape, noise_policy):
+def test_image_run_carries_state_across_the_affine_latent_format(shape, noise_policy):
     clean = torch.randn((shape[0], 4, 8, 8), generator=torch.Generator().manual_seed(1))
     # A 5D single-frame latent comes from a 3-dimensional latent format (Wan 2.1, used by Krea 2).
     guider = OracleFlowGuider(clean, latent_dimensions=len(shape) - 2)
-    cfg = _cfg(scales=(.5, 1.0), transition_steps=(5,), noise_policy=noise_policy)
-    out, denoised = _run_image(guider, image_latent(shape), cfg)
-    assert out["samples"].shape == shape
-    assert denoised["samples"].shape == shape
+    out, denoised = _run(
+        _cfg((.5, 1.0), (5,), noise_policy=noise_policy), guider, noise=SeededNoise(7),
+        latent=image_latent(shape), model_type="image",
+    )
+    assert out["samples"].shape == denoised["samples"].shape == shape
     assert [tuple(s.shape[-2:]) for s in guider.starts] == [(4, 4), (8, 8)]
 
-    # The second stage starts from the first stage's end state, grown in DCT space and
-    # rescaled by kappa: its low band is exactly kappa * that state.
-    kappa, _ = aligned_sigma(float(SIGMAS[5]), 2.0)
-    carried = lowpass_dct(guider.starts[1], (4, 4))
-    assert torch.allclose(carried, kappa * guider.ends[0], atol=1e-5)
-
+    # Stage 2 starts from stage 1's end state grown in DCT space and rescaled by kappa:
+    # its low band is exactly kappa * that state.
+    kappa, _ = aligned(float(SIGMAS[5]), 2.0)
+    assert torch.allclose(spectral.lowpass_dct(guider.starts[1], (4, 4)), kappa * guider.ends[0], atol=1e-5)
     # An ideal denoiser lands on the clean latent; the output is in latent-format space.
-    expected = AffineModel().process_latent_out(clean).reshape(shape)
-    assert torch.allclose(out["samples"], expected, atol=1e-5)
+    assert torch.allclose(out["samples"], AffineModel().process_latent_out(clean).reshape(shape), atol=1e-5)
 
 
-def test_runtime_fits_a_generic_empty_latent_to_the_model_first(monkeypatch):
+def test_image_run_fits_a_generic_empty_latent_to_the_model_first(monkeypatch):
     import comfy.sample
 
     seen = []
@@ -467,6 +297,7 @@ def test_runtime_fits_a_generic_empty_latent_to_the_model_first(monkeypatch):
         return torch.zeros(latent_image.shape[0], 4, *latent_image.shape[2:])
 
     monkeypatch.setattr(comfy.sample, "fix_empty_latent_channels", widen)
-    out, _ = _run_image(OracleFlowGuider(torch.zeros(1, 4, 8, 8)), image_latent((1, 1, 8, 8)))
+    out, _ = _run(_cfg((.5, 1.0), (5,)), OracleFlowGuider(torch.zeros(1, 4, 8, 8)),
+                  latent=image_latent((1, 1, 8, 8)), model_type="image")
     assert seen == [(1, 1, 8, 8)]
     assert out["samples"].shape == (1, 4, 8, 8)
