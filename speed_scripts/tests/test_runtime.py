@@ -11,6 +11,7 @@ from conftest import (
     OracleFlowGuider,
     SeededNoise,
     StubSampler,
+    attach_i2v,
     expected_stage_sigmas,
     image_latent,
     make_latent,
@@ -56,18 +57,6 @@ def _ladder_cfg(stages):
     return _cfg(scales=STAGES_TO_SCALES[stages], transition_steps=LADDER_BOUNDARIES[stages])
 
 
-def _automatic_calibrated_cfg(stages):
-    """Automatic config that produces coincident boundaries on this test schedule."""
-    return SpeedConfig(
-        scales=STAGES_TO_SCALES[stages],
-        transition_steps=tuple(range(1, len(STAGES_TO_SCALES[stages]))),
-        transition_mode="delta_custom",
-        delta=.005,
-        noise_amplitude=12.105,
-        noise_decay_exponent=.773,
-    )
-
-
 def _assert_full_res_nested(latent):
     video, audio = latent["samples"].unbind()
     assert video.ndim == 5 and audio.ndim == 4
@@ -82,73 +71,51 @@ def _assert_full_res_nested(latent):
 def test_explicit_four_stage_schedule_uses_global_boundaries(noise_policy):
     scales = (.25, .5, .75, 1.0)
     boundaries = (3, 5, 8)
-    guider = EchoGuider()
-    _run(_cfg(scales=scales, transition_steps=boundaries, noise_policy=noise_policy), guider,
-         noise=EchoNoise())
+    guider = EchoGuider(video_offset=.5)
+    out, denoised = _run(
+        _cfg(scales=scales, transition_steps=boundaries, noise_policy=noise_policy), guider
+    )
     calls = guider.sigma_calls
 
     assert len(calls) == 4
     for actual, wanted in zip(calls, expected_stage_sigmas(SIGMAS, boundaries, scales)):
         assert actual == pytest.approx(wanted)
     assert sum(len(call) - 1 for call in calls) == len(SIGMAS) - 1
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
 
 
-def test_delta_custom_execution_matches_its_resolved_global_boundaries():
-    sigmas = torch.linspace(1.0, 0.0, 21)
-    scales = (.25, .5, 1.0)
-    cfg = SpeedConfig(
-        scales=scales,
-        transition_steps=(3, 5),
-        transition_mode="delta_custom",
-        delta=.01,
-        noise_amplitude=219.48,
-        noise_decay_exponent=2.42,
-    )
-    boundaries = resolve_transition_steps(cfg, sigmas, H_full=44, W_full=80)
+_SPREAD_FIT = dict(delta=.01, noise_amplitude=219.48, noise_decay_exponent=2.42)
+
+
+@pytest.mark.parametrize(
+    "scales,fit,sigmas,hw,boundaries",
+    [
+        ((.25, .5, 1.0), _SPREAD_FIT, torch.linspace(1.0, 0.0, 21), (44, 80), (1, 2)),
+        # Coincident boundaries align the same sigma coordinate twice; the middle
+        # stage has zero denoising intervals.
+        ((.25, .5, 1.0), _SPREAD_FIT, torch.linspace(1.0, 0.0, 11), (8, 8), (1, 1)),
+        # The baked Automatic defaults on a tiny latent: two zero-step stages in a row.
+        (STAGES_TO_SCALES[4], dict(delta=.005), SIGMAS, (8, 8), (1, 1, 1)),
+    ],
+    ids=["spread", "coincident", "baked_four_stage"],
+)
+def test_delta_custom_execution_follows_its_resolved_global_boundaries(
+    scales, fit, sigmas, hw, boundaries
+):
+    cfg = SpeedConfig(scales=scales, transition_steps=(), transition_mode="delta_custom", **fit)
+    assert resolve_transition_steps(cfg, sigmas, *hw) == boundaries
+
     guider = EchoGuider()
-    _run(cfg, guider, noise=EchoNoise(), latent=make_latent(h=44, w=80), sigmas=sigmas)
+    out, _ = _run(cfg, guider, latent=make_latent(h=hw[0], w=hw[1]), sigmas=sigmas)
     calls = guider.sigma_calls
 
     assert len(calls) == len(scales)
     for actual, wanted in zip(calls, expected_stage_sigmas(sigmas, boundaries, scales)):
         assert actual == pytest.approx(wanted)
     assert sum(len(call) - 1 for call in calls) == len(sigmas) - 1
-
-
-def test_coincident_delta_boundaries_align_the_same_coordinate_twice():
-    sigmas = torch.linspace(1.0, 0.0, 11)
-    cfg = SpeedConfig(
-        scales=(.25, .5, 1.0),
-        transition_steps=(3, 5),
-        transition_mode="delta_custom",
-        delta=.01,
-        noise_amplitude=219.48,
-        noise_decay_exponent=2.42,
-    )
-    assert resolve_transition_steps(cfg, sigmas, H_full=8, W_full=8) == (1, 1)
-
-    guider = EchoGuider()
-    _run(cfg, guider, noise=EchoNoise(), sigmas=sigmas)
-    calls = guider.sigma_calls
-    original = [float(s) for s in sigmas]
-    _, once = aligned_sigma(original[1], 2.0)
-    _, twice = aligned_sigma(once, 2.0)
-
-    assert calls[0] == pytest.approx(original[:2])
-    assert calls[1] == pytest.approx([once])  # zero denoising intervals
-    assert calls[2][0] == pytest.approx(twice)
-    assert calls[2][1:] == pytest.approx(original[2:])
-    assert sum(len(call) - 1 for call in calls) == len(sigmas) - 1
-
-
-def test_coincident_four_stage_ladder_completes_with_zero_step_stages():
-    guider = EchoGuider()
-    out, _ = _run(_automatic_calibrated_cfg(4), guider)
-
-    assert len(guider.sigma_calls) == 4
-    for call in guider.sigma_calls[1:-1]:
-        assert len(call) == 1
-    _assert_full_res_nested(out)
+    video, _ = out["samples"].unbind()
+    assert tuple(video.shape[-2:]) == hw
 
 
 def test_runtime_rejects_boundary_at_schedule_end():
@@ -161,13 +128,16 @@ def test_runtime_rejects_boundary_at_schedule_end():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("stages", (2, 3, 4))
-def test_every_stage_receives_the_same_sampler_object_and_seed(stages):
+def test_stage_ladder_passes_the_sampler_and_seed_and_ends_at_full_resolution(stages):
     sampler = StubSampler("heun")
-    guider = EchoGuider()
-    _run(_ladder_cfg(stages), guider, sampler=sampler)
-    assert len(guider.samplers) == stages
+    guider = EchoGuider(video_offset=.5)
+    out, denoised = _run(_ladder_cfg(stages), guider, sampler=sampler)
+
+    assert len(guider.sigma_calls) == stages
     assert all(seen is sampler for seen in guider.samplers)
     assert guider.seeds == [42] * stages
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
 
 
 def test_stage_geometry_follows_the_scale_ladder():
@@ -179,29 +149,6 @@ def test_stage_geometry_follows_the_scale_ladder():
     # noise video keeps its leading batch/channel dims (1, 1, t, h, w).
     assert guider.latent_sizes == [(3, 3), (5, 5), (8, 8)]
     assert guider.noise_shapes == [(1, 1, 2, 3, 3), (1, 1, 2, 5, 5), (1, 1, 2, 8, 8)]
-
-
-@pytest.mark.parametrize("stages", (2, 3, 4))
-def test_stage_ladder_completes_at_full_resolution(stages):
-    guider = EchoGuider(video_offset=.5)
-    out, denoised = _run(_ladder_cfg(stages), guider)
-
-    assert len(guider.sigma_calls) == stages
-    assert len(guider.noise_shapes) == stages
-    _assert_full_res_nested(out)
-    _assert_full_res_nested(denoised)
-
-
-def test_run_is_deterministic_with_non_trivial_output():
-    """Same seed and same fake model: two runs produce the same final video."""
-    out, _ = _run(_ladder_cfg(3), EchoGuider(video_offset=.5))
-    again, _ = _run(_ladder_cfg(3), EchoGuider(video_offset=.5))
-    video, audio = out["samples"].unbind()
-    in_video, in_audio = make_latent()["samples"].unbind()
-    assert video.shape == in_video.shape
-    assert audio.shape == in_audio.shape
-    assert torch.equal(video, again["samples"].unbind()[0])
-    assert video.abs().sum() > 0
 
 
 def test_denoised_output_preserves_video_and_audio_streams():
@@ -228,43 +175,35 @@ def test_denoised_output_preserves_video_and_audio_streams():
 
 
 class _ExplodingStageGuider(EchoGuider):
-    """EchoGuider whose next ``failures`` stage calls raise."""
+    """EchoGuider whose ``fail_at_call``-th stage call raises."""
 
-    def __init__(self, failures=0, fail_at_call=None, **kwargs):
+    def __init__(self, fail_at_call, **kwargs):
         super().__init__(**kwargs)
-        self.failures = failures
         self.fail_at_call = fail_at_call
         self.calls = 0
 
     def sample(self, *args, **kwargs):
         self.calls += 1
-        if self.calls == self.fail_at_call or self.failures > 0:
-            self.failures = max(0, self.failures - 1)
+        if self.calls == self.fail_at_call:
             raise RuntimeError("stage exploded")
         return super().sample(*args, **kwargs)
 
 
-def test_stage_failure_stops_later_stages():
-    guider = _ExplodingStageGuider(fail_at_call=2)
-    with pytest.raises(RuntimeError, match="stage exploded"):
-        _run(_ladder_cfg(3), guider)
-    assert guider.calls == 2  # the final stage never ran
-
-
-def test_second_generation_after_failure_starts_clean():
-    """The same guider starts the next generation with clean state."""
+def test_stage_failure_stops_the_run_and_the_next_generation_starts_clean():
     cfg = _ladder_cfg(3)
-    guider = _ExplodingStageGuider(failures=1)
+    guider = _ExplodingStageGuider(fail_at_call=2, video_offset=.5)
     with pytest.raises(RuntimeError, match="stage exploded"):
         _run(cfg, guider)
+    assert guider.calls == 2  # the final stage never ran
 
+    # Same guider, next generation: identical to a fresh run (and so deterministic).
     out_second, _ = _run(cfg, guider)
-    out_control, _ = _run(cfg, EchoGuider())
-
+    out_control, _ = _run(cfg, EchoGuider(video_offset=.5))
     video_second, audio_second = out_second["samples"].unbind()
     video_control, audio_control = out_control["samples"].unbind()
     assert torch.equal(video_second, video_control)
     assert torch.equal(audio_second, audio_control)
+    assert video_second.abs().sum() > 0
     _assert_full_res_nested(out_second)
 
 
@@ -300,15 +239,6 @@ def test_preview_callback_failure_disables_future_preview_updates():
 # ---------------------------------------------------------------------------
 # Noise policies
 # ---------------------------------------------------------------------------
-
-@pytest.mark.parametrize("noise_policy", ("direct_coarse", "coupled_full_grid"))
-def test_noise_policy_smoke(noise_policy):
-    guider = EchoGuider(video_offset=.5)
-    out, denoised = _run(_cfg(noise_policy=noise_policy), guider)
-    assert len(guider.noise_shapes) == 3
-    _assert_full_res_nested(out)
-    _assert_full_res_nested(denoised)
-
 
 @pytest.mark.parametrize("temporal_scales", [(), (.5, .75, 1.0)], ids=["spatial", "temporal"])
 def test_coupled_full_grid_projects_full_noise_in_the_spectral_domain(temporal_scales):
@@ -442,13 +372,44 @@ def test_audio_transition_oracle_clock_reindex_bridge():
 # I2V keyframe lifecycle
 # ---------------------------------------------------------------------------
 
-def test_restore_runs_before_final_stage_and_again_in_cleanup(monkeypatch):
-    order = []
-    monkeypatch.setattr(
-        runtime.LatentWalker, "apply_final", lambda self: order.append("apply_final")
-    )
-    _run(_cfg(), noise=EchoNoise())
-    assert order == ["apply_final", "apply_final"]
+def test_i2v_keyframes_follow_the_stages_and_are_restored_before_the_final_stage():
+    guider = EchoGuider(video_offset=.5)
+    keyframes, refs = attach_i2v(guider)
+    pristine = [holder["latent"].clone() for holder in keyframes + refs]
+    original_conds = guider.original_conds
+    sizes = []
+    sample = guider.sample
+
+    def recording_sample(*args, **kwargs):
+        sizes.append([tuple(holder["latent"].shape[-2:]) for holder in keyframes + refs])
+        return sample(*args, **kwargs)
+
+    guider.sample = recording_sample
+    attributes = set(vars(guider))
+    out, denoised = _run(_ladder_cfg(3), guider)
+
+    # Stages are 3x3, 5x5, 8x8; keyframes round up to H3's even patch grid, refs stay full size.
+    assert sizes == [[(4, 4)] * 2 + [(8, 8)] * 2, [(6, 6)] * 2 + [(8, 8)] * 2, [(8, 8)] * 4]
+    for holder, original in zip(keyframes + refs, pristine):
+        assert torch.equal(holder["latent"], original)
+    _assert_full_res_nested(out)
+    _assert_full_res_nested(denoised)
+    # The walker is local to the run: nothing is stored on the guider or swapped in its conds.
+    assert set(vars(guider)) == attributes
+    assert guider.original_conds is original_conds
+    cond = original_conds["positive"][0]
+    assert cond["minimax_keyframes"] is keyframes
+    assert cond["minimax_refs"] is refs
+
+
+def test_i2v_conditioning_is_restored_when_a_stage_fails():
+    guider = _ExplodingStageGuider(fail_at_call=2)
+    keyframes, refs = attach_i2v(guider)
+    pristine = [holder["latent"].clone() for holder in keyframes + refs]
+    with pytest.raises(RuntimeError, match="stage exploded"):
+        _run(_ladder_cfg(3), guider)
+    for holder, original in zip(keyframes + refs, pristine):
+        assert torch.equal(holder["latent"], original), "conditioning not restored"
 
 
 def test_restore_is_retried_in_cleanup_when_it_fails(monkeypatch):
@@ -464,58 +425,23 @@ def test_restore_is_retried_in_cleanup_when_it_fails(monkeypatch):
     assert order == ["apply_final", "apply_final"]
 
 
-def test_forced_failure_restores_pristine_conditioning(monkeypatch, i2v_guider):
-    """A mid-run failure restores the original conditioning latents."""
-    calls = {"n": 0}
-    expanded = runtime.spectral_expand
-
-    def fake_expand(value, target_hw, sigma, seed):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise RuntimeError("forced mid-run failure")
-        return expanded(value, target_hw, sigma, seed)
-
-    monkeypatch.setattr(runtime, "spectral_expand", fake_expand)
-    with pytest.raises(RuntimeError, match="forced mid-run failure"):
-        _run(_cfg(), i2v_guider, noise=EchoNoise())
-
-    cond = i2v_guider.original_conds["positive"][0]
-    for holder in cond["minimax_keyframes"] + cond["minimax_refs"]:
-        assert holder["latent"].shape == (1, 1, 2, 8, 8), "conditioning not restored"
-
-
-def test_i2v_smoke_and_pristine_restore_on_success(i2v_guider):
-    original_conds = i2v_guider.original_conds
-    cond = original_conds["positive"][0]
-    keyframes, refs = cond["minimax_keyframes"], cond["minimax_refs"]
-    out, denoised = _run(_ladder_cfg(3), i2v_guider)
-
-    _assert_full_res_nested(out)
-    _assert_full_res_nested(denoised)
-    for holder in keyframes + refs:
-        assert tuple(holder["latent"].shape[-2:]) == (8, 8)
-    assert i2v_guider.original_conds is original_conds
-    assert cond["minimax_keyframes"] is keyframes
-    assert cond["minimax_refs"] is refs
-
-
 # ---------------------------------------------------------------------------
 # Image models (model_type="image")
 # ---------------------------------------------------------------------------
 
-IMAGE_CFG = _cfg(scales=(.5, 1.0), transition_steps=(5,))
-
-
-def _run_image(guider, latent, cfg=IMAGE_CFG):
+def _run_image(guider, latent, cfg=None):
+    cfg = cfg or _cfg(scales=(.5, 1.0), transition_steps=(5,))
     return _run(cfg, guider, noise=SeededNoise(7), latent=latent, model_type="image")
 
 
+@pytest.mark.parametrize("noise_policy", ["direct_coarse", "coupled_full_grid"])
 @pytest.mark.parametrize("shape", [(2, 4, 8, 8), (1, 4, 1, 8, 8)])
-def test_image_run_keeps_shape_and_carries_state_across_the_affine_latent_format(shape):
+def test_image_run_keeps_shape_and_carries_state_across_the_affine_latent_format(shape, noise_policy):
     clean = torch.randn((shape[0], 4, 8, 8), generator=torch.Generator().manual_seed(1))
     # A 5D single-frame latent comes from a 3-dimensional latent format (Wan 2.1, used by Krea 2).
     guider = OracleFlowGuider(clean, latent_dimensions=len(shape) - 2)
-    out, denoised = _run_image(guider, image_latent(shape))
+    cfg = _cfg(scales=(.5, 1.0), transition_steps=(5,), noise_policy=noise_policy)
+    out, denoised = _run_image(guider, image_latent(shape), cfg)
     assert out["samples"].shape == shape
     assert denoised["samples"].shape == shape
     assert [tuple(s.shape[-2:]) for s in guider.starts] == [(4, 4), (8, 8)]
@@ -529,15 +455,6 @@ def test_image_run_keeps_shape_and_carries_state_across_the_affine_latent_format
     # An ideal denoiser lands on the clean latent; the output is in latent-format space.
     expected = AffineModel().process_latent_out(clean).reshape(shape)
     assert torch.allclose(out["samples"], expected, atol=1e-5)
-
-
-def test_coupled_full_grid_runs_for_image_latents():
-    shape = (1, 4, 8, 8)
-    out, _ = _run_image(
-        OracleFlowGuider(torch.zeros(shape)), image_latent(shape),
-        _cfg(scales=(.5, 1.0), transition_steps=(5,), noise_policy="coupled_full_grid"),
-    )
-    assert out["samples"].shape == shape
 
 
 def test_runtime_fits_a_generic_empty_latent_to_the_model_first(monkeypatch):

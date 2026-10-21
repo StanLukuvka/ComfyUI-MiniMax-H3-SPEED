@@ -93,21 +93,18 @@ class _FunctionSuffixSampler:
 
 
 @pytest.mark.parametrize(
-    "sampler,label",
+    "sampler,name",
     [
         (StubSampler("euler"), "euler"),
+        (StubSampler("heun"), "heun"),
         (StubSampler("res_multistep"), "res_multistep"),
         (_FunctionSuffixSampler("dpm_fast"), "dpm_fast"),
         (_ClassNamedSampler(), "_ClassNamedSampler"),
     ],
+    ids=["euler", "heun", "res_multistep", "function_suffix", "class_name"],
 )
-def test_sampler_label_strips_sample_prefix_and_function_suffix_or_uses_class_name(sampler, label):
-    assert _module()._sampler_label(sampler) == label
-
-
-@pytest.mark.parametrize("name", ["euler", "heun", "res_multistep"])
-def test_harvest_runs_the_given_sampler_and_emits_its_label(name):
-    sampler = StubSampler(name)
+def test_harvest_runs_the_given_sampler_and_emits_its_calibration(sampler, name):
+    """The label strips ``sample_`` / ``_function`` from the sampler function, else uses the class name."""
     guider = HarvestGuider()
     text, diagnostic = _harvest(guider, sampler, **{"Tolerance (Delta)": .01})
     calibration = json.loads(text)
@@ -168,14 +165,19 @@ def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
     assert "Paste into SPEED Sampler" not in calibration["report"]
 
 
-def test_removed_harvest_tolerance_alias_fails_closed():
-    with pytest.raises(TypeError, match="Unexpected Harvest option"):
-        _harvest(HarvestGuider(), delta=.01)
-
-
-def test_harvest_rejects_unknown_model_type_instead_of_taking_the_image_path():
-    with pytest.raises(ValueError, match="model_type must be one of"):
-        _harvest(HarvestGuider(), model_type="sdxl")
+@pytest.mark.parametrize(
+    "options,error,match",
+    [
+        # The removed ``delta`` Tolerance alias.
+        ({"delta": .01}, TypeError, "Unexpected Harvest option"),
+        # An unknown model_type must not fall through to the image path.
+        ({"model_type": "sdxl"}, ValueError, "model_type must be one of"),
+    ],
+    ids=["removed_delta_alias", "unknown_model_type"],
+)
+def test_harvest_rejects_bad_options(options, error, match):
+    with pytest.raises(error, match=match):
+        _harvest(HarvestGuider(), **options)
 
 
 def test_harvest_reports_no_captures_instead_of_inventing_fit():
@@ -207,37 +209,29 @@ def test_error_json_escapes_exception_text(monkeypatch, error_kind):
     assert error["sampler_name"] == "dpm_2"
 
 
-def test_harvest_surfaces_first_residual_capture_failure(monkeypatch, caplog):
+@pytest.mark.parametrize(
+    "target,error,log_text",
+    [
+        ("compute_residual", "no_captures", "residual capture failed"),
+        ("radial_dct_power", "no_spectral_profiles", "spectral profile reduction failed"),
+    ],
+)
+def test_harvest_surfaces_the_first_capture_failure(monkeypatch, caplog, target, error, log_text):
     module = _module()
 
     def explode(*args, **kwargs):
-        raise RuntimeError("residual exploded")
+        raise RuntimeError(f"{target} exploded")
 
-    monkeypatch.setattr(module, "compute_residual", explode)
+    monkeypatch.setattr(module, target, explode)
     with caplog.at_level("WARNING", logger=module.__name__):
         text, _ = _harvest(HarvestGuider())
 
-    error = json.loads(text)
-    assert error["error"] == "no_captures"
-    assert "residual exploded" in error["message"]
-    assert sum("residual capture failed" in record.message for record in caplog.records) == 1
-
-
-def test_harvest_surfaces_first_profile_reduction_failure(monkeypatch, caplog):
-    module = _module()
-
-    def explode(*args, **kwargs):
-        raise RuntimeError("profile exploded")
-
-    monkeypatch.setattr(module, "radial_dct_power", explode)
-    with caplog.at_level("WARNING", logger=module.__name__):
-        text, _ = _harvest(HarvestGuider())
-
-    error = json.loads(text)
-    assert error["error"] == "no_spectral_profiles"
-    assert "profile exploded" in error["message"]
-    assert error["n_captures"] > 0
-    assert sum("spectral profile reduction failed" in record.message for record in caplog.records) == 1
+    result = json.loads(text)
+    assert result["error"] == error
+    assert f"{target} exploded" in result["message"]
+    # A failed reduction still counts the residuals that were captured.
+    assert (result["n_captures"] > 0) == (error == "no_spectral_profiles")
+    assert sum(log_text in record.message for record in caplog.records) == 1
 
 
 def test_harvest_image_runs_the_same_flow_check_as_the_sampler():

@@ -1,4 +1,4 @@
-"""I2V conditioning-latent lifecycle contracts."""
+"""LatentWalker: I2V keyframe resizing from pristine latents and restore."""
 
 import torch
 
@@ -28,9 +28,11 @@ def test_walker_resizes_from_pristine_and_restores():
     assert tuple(keyframe["latent"].shape[-2:]) == (6, 10)
 
     walker.apply_final()
-    assert tuple(keyframe["latent"].shape[-2:]) == (8, 16)
     assert torch.equal(keyframe["latent"], pristine)
-    assert not walker._keyframes
+
+    # The restore releases the keyframes; the walker no longer resizes them.
+    walker.apply_stage(3, 5)
+    assert torch.equal(keyframe["latent"], pristine)
 
 
 def test_walker_handles_all_condition_groups_and_leaves_refs_untouched():
@@ -45,20 +47,7 @@ def test_walker_handles_all_condition_groups_and_leaves_refs_untouched():
     for keyframe in (pos_a, pos_b, neg):
         assert tuple(keyframe["latent"].shape[-2:]) == (4, 6)
     assert ref["latent"] is ref_identity
-    assert tuple(ref["latent"].shape[-2:]) == (8, 16)
 
     walker.apply_final()
     for keyframe in (pos_a, pos_b, neg, ref):
         assert tuple(keyframe["latent"].shape[-2:]) == (8, 16)
-    assert not walker._keyframes
-
-
-def test_walkers_are_generation_local():
-    a, b = _holder(), _holder()
-    walker_a = LatentWalker(_guider([{"minimax_keyframes": [a]}]))
-    walker_b = LatentWalker(_guider([{"minimax_keyframes": [b]}]))
-
-    walker_a.apply_stage(3, 5)
-    assert tuple(a["latent"].shape[-2:]) == (4, 6)
-    assert tuple(b["latent"].shape[-2:]) == (8, 16)
-    assert walker_a._keyframes is not walker_b._keyframes

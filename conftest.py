@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-import pytest
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -317,14 +316,12 @@ def capture_node_config(monkeypatch, node_cls, **inputs):
     return captured["config"]
 
 
-@pytest.fixture
-def i2v_guider():
-    """EchoGuider with two I2V keyframes and two refs (all 8x8) on its positive conditioning."""
-    guider = EchoGuider(video_offset=.5)
+def attach_i2v(guider):
+    """Give ``guider`` two random 8x8 I2V keyframes and two refs; return ``(keyframes, refs)``."""
     keyframes = [{"latent": torch.rand(1, 1, 2, 8, 8)} for _ in range(2)]
     refs = [{"latent": torch.rand(1, 1, 2, 8, 8)} for _ in range(2)]
     guider.original_conds = {
         "positive": [{"minimax_keyframes": keyframes, "minimax_refs": refs}],
         "negative": [],
     }
-    return guider
+    return keyframes, refs

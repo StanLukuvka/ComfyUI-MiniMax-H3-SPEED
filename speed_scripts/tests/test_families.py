@@ -73,27 +73,28 @@ def test_non_h3_model_is_rejected_instead_of_using_generic_shift():
 # image
 # ---------------------------------------------------------------------------
 
-def test_image_family_rejects_non_flow_sampling():
+@pytest.mark.parametrize(
+    "base,name",
+    [
+        ("EPS", "ModelSamplingDiscrete / EPS"),
+        ("IMG_TO_IMG_FLOW", "ModelSamplingDiscrete / IMG_TO_IMG_FLOW / CONST"),
+        ("IMG_TO_IMG_VELOCITY", "ModelSamplingDiscrete / IMG_TO_IMG_VELOCITY / CONST"),
+    ],
+)
+def test_image_family_rejects_non_flow_sampling(base, name):
     import comfy.model_sampling as ms
 
-    cases = (
-        (ms.EPS, "ModelSamplingDiscrete / EPS"),
-        (ms.IMG_TO_IMG_FLOW, "ModelSamplingDiscrete / IMG_TO_IMG_FLOW / CONST"),
-        (ms.IMG_TO_IMG_VELOCITY, "ModelSamplingDiscrete / IMG_TO_IMG_VELOCITY / CONST"),
-    )
-    for base, expected in cases:
-        guider = _guider(flow_patcher(model_sampling(ms.ModelSamplingDiscrete, base)))
-        with pytest.raises(ValueError, match=f"flow \\(CONST\\) models only; this model uses {re.escape(expected)}$"):
-            get_family("image", guider)
-    ok = _guider(flow_patcher(model_sampling(ms.ModelSamplingDiscrete, ms.CONST)))
-    assert isinstance(get_family("image", ok), ImageFamily)
+    guider = _guider(flow_patcher(model_sampling(ms.ModelSamplingDiscrete, getattr(ms, base))))
+    with pytest.raises(ValueError, match=f"flow \\(CONST\\) models only; this model uses {re.escape(name)}$"):
+        get_family("image", guider)
 
 
-def test_image_family_accepts_model_sampling_av():
-    """FLOW_AV models build ``class ModelSampling(ModelSamplingAV, CONST)`` in model_base.py."""
+# FLOW_AV models build ``class ModelSampling(ModelSamplingAV, CONST)`` in model_base.py.
+@pytest.mark.parametrize("first", ["ModelSamplingDiscrete", "ModelSamplingAV"])
+def test_image_family_accepts_flow_sampling(first):
     import comfy.model_sampling as ms
 
-    guider = _guider(flow_patcher(model_sampling(ms.ModelSamplingAV, ms.CONST)))
+    guider = _guider(flow_patcher(model_sampling(getattr(ms, first), ms.CONST)))
     assert isinstance(get_family("image", guider), ImageFamily)
 
 
