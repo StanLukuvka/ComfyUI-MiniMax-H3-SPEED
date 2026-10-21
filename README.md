@@ -65,7 +65,18 @@ Automatic and Manual return output and denoised LATENTs; Harvest returns calibra
 
 Set **`model_type = image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Wire it like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). `model_type` defaults to `h3_video`, so existing workflows are unchanged.
 
+Example workflows: [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json) and [`workflows/image_kroma_SPEED.json`](workflows/image_kroma_SPEED.json). Each has Harvest, Automatic, Manual and a plain reference on one set of loaders; only Automatic is active, already set to that model's harvested values.
+
 The shipped Automatic calibration is H3's. Run Harvest with `model_type = image` on your model and settings, and paste its values in. At Δ 0.005 the harvested boundary lands in the first step or two of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
+
+RTX 5070 Laptop, the office mug gag as a still ([evidence](evidence/README.md#image-models-model_type--image--the-same-gag-as-a-still)):
+
+| Model | Plain | Automatic 3 stages, Δ 0.05 | Manual, 0.5× to half the steps |
+|---|---|---|---|
+| MOSS Image, 1344×768, 20 steps, CFG 5 | 23 s | 18 s (1.27×) | 15 s (1.5×) |
+| Kroma (Krea 2 finetune), 1216×832, 8 steps, CFG 1 | 16 s | 12 s (1.33×) | 11 s (1.45×) |
+
+Every SPEED run was clean and as detailed as plain. The composition differs from the plain run with the same seed, because the first stage draws its noise at the coarse size; SPEED runs with the same seed share one composition.
 
 ## Speed improvements
 

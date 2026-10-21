@@ -9,6 +9,8 @@ WORKFLOW_NAMES = (
     "video_minimax_h3_SPEED_Sigma_Calculated.json",
     "video_minimax_h3_SPEED_Sigma_Manual.json",
     "video_minimax_h3_SPEED_SIGMA.json",
+    "image_moss_SPEED.json",
+    "image_kroma_SPEED.json",
 )
 NODE_TYPES = {
     "MiniMaxH3SPEEDSampler",
