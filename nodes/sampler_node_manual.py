@@ -57,7 +57,7 @@ class MiniMaxH3SPEEDSamplerManual:
                     ["direct_coarse", "coupled_full_grid"],
                     {
                         "default": "direct_coarse",
-                        "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed, but on H3 video it gave back most of the speed gain (5-10% vs 15-30%).",
+                        "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed. On H3 video it saved only 5-10%, against 15-30% for direct_coarse.",
                     },
                 ),
                 "seed_offset": (

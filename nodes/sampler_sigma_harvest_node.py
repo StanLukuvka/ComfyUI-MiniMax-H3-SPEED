@@ -84,15 +84,15 @@ class MiniMaxH3HarvestToConfig:
                 ),
                 "sampler": (
                     "SAMPLER",
-                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Euler is the calibrated reference; other samplers work but their baked numbers are unmeasured."},
+                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Use the sampler you will run SPEED with; the calibration is specific to it."},
                 ),
                 "sigmas": (
                     "SIGMAS",
-                    {"tooltip": "Sigma schedule, same as SamplerCustomAdvanced. Stage boundaries are placed on this schedule."},
+                    {"tooltip": "Sigma schedule for the native calibration pass. Use the same scheduler and step count you will run SPEED with."},
                 ),
                 "latent_image": (
                     "LATENT",
-                    {"tooltip": "Latent to sample, same as SamplerCustomAdvanced. The final stage runs at this full size."},
+                    {"tooltip": "Latent for the native full-resolution pass, at the size you will run SPEED at."},
                 ),
             },
             "optional": {
