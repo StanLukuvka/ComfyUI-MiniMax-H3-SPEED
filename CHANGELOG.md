@@ -29,7 +29,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Fixed
 
-- `direct_coarse` now draws its transition fill noise on the CPU, as ComfyUI draws its own noise, so a seed gives the same image on every device. Before, it was drawn on the latent's device, so CPU and GPU (and possibly different GPUs) gave different images. This changes `direct_coarse` outputs slightly; speed is unchanged.
+- `direct_coarse` now draws its transition fill noise on the CPU, as ComfyUI draws its own noise, so a seed gives the same image on every device. Before, it was drawn on the latent's device, so CPU and GPU (and possibly different GPUs) gave different images. This changes `direct_coarse` images for the same seed, often the whole composition, because the fill seeds detail the model builds on; speed is unchanged.
 - Fixed Automatic silently coercing invalid stage counts; only 2, 3, or 4 are accepted.
 - Fixed non-finite calibration A/beta values passing `SpeedConfig` validation.
 - Fixed temporal schedules being able to finish below full temporal resolution.
