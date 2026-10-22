@@ -62,6 +62,15 @@ def lowpass_dct(value: torch.Tensor, target_hw: tuple[int, int]) -> torch.Tensor
     return idct2(dct2(value)[..., :target_h, :target_w]).to(dtype=original_dtype)
 
 
+def _seeded_randn(shape, seed: int, device: torch.device) -> torch.Tensor:
+    """Standard normal noise drawn on the CPU, like ComfyUI's own noise, so a
+    seed gives the same values on every device."""
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(int(seed))
+    noise = torch.randn(shape, generator=generator, device="cpu", dtype=torch.float32)
+    return noise.to(device)
+
+
 def spectral_expand(
     value: torch.Tensor,
     target_hw: tuple[int, int],
@@ -78,13 +87,8 @@ def spectral_expand(
         raise ValueError("sigma must be in [0, 1]")
 
     source_coefficients = dct2(value).float()
-    generator = torch.Generator(device=value.device)
-    generator.manual_seed(int(seed))
-    expanded = torch.randn(
-        value.shape[:-2] + (target_h, target_w),
-        generator=generator,
-        device=value.device,
-        dtype=torch.float32,
+    expanded = _seeded_randn(
+        value.shape[:-2] + (target_h, target_w), seed, value.device
     )
     expanded.mul_(float(sigma))
     expanded[..., :source_h, :source_w] = source_coefficients
@@ -148,15 +152,8 @@ def spectral_expand_3d(
         raise ValueError("sigma must be in [0, 1]")
 
     original_dtype = value.dtype
-    generator = torch.Generator(device=value.device)
-    generator.manual_seed(int(seed))
     target_shape = value.shape[:-3] + (target_t, target_h, target_w)
-    dct_full = torch.randn(
-        target_shape,
-        generator=generator,
-        device=value.device,
-        dtype=torch.float32,
-    )
+    dct_full = _seeded_randn(target_shape, seed, value.device)
     dct_full.mul_(float(sigma))
 
     source_dct = dct2(dct_temporal(value))
