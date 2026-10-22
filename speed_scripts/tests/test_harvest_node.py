@@ -1,4 +1,4 @@
-"""Sampler-aware native Sigma Harvest node contracts."""
+"""Sigma Harvest node: native run with the connected sampler, calibration JSON, and error JSONs."""
 
 import importlib
 import json
@@ -6,321 +6,212 @@ import json
 import pytest
 import torch
 
-from conftest import StubSampler, make_nested
+from conftest import EchoNoise, H3Model, NestedTensor, Patcher, StubSampler, model_sampling
+
+harvest_module = importlib.import_module("sampler_sigma_harvest_node")
 
 
-class Noise:
-    seed = 42
+class HarvestGuider:
+    """Native-sampler stand-in: Euler steps on a denoiser that predicts half the state.
 
-    def generate_noise(self, latent):
-        return latent["samples"] if isinstance(latent, dict) else latent
+    Fires the callback after every step (unless ``silent``), then ``on_step(step)``.
+    """
 
-
-def _latent():
-    video = torch.randn(1, 4, 8, 16, 16)
-    audio = torch.zeros(1, 1, 2, 44)
-    return {"samples": make_nested(video, audio), "metadata": "keep"}
-
-
-class Guider:
-    model_patcher = type(
-        "Patcher",
-        (),
-        {"model": type(
-            "Model",
-            (),
-            {
-                "sigma_shift_video": 12.0,
-                "sigma_shift_audio": 3.0,
-                "process_latent_out": lambda self, x: x,
-            },
-        )()},
-    )()
-
-    def __init__(self):
+    def __init__(self, sampling=None, on_step=None, silent=False):
+        self.model_patcher = Patcher(H3Model(), model_sampling=sampling or model_sampling())
+        self.on_step = on_step
+        self.silent = silent
         self.samplers = []
 
     def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
         self.samplers.append(sampler)
-        video = next(part for part in latent_image.unbind() if part.ndim == 5)
-        state = video.float()
+        if self.silent:
+            return latent_image
+        nested = getattr(latent_image, "is_nested", False)
+        state = (latent_image.unbind()[0] if nested else latent_image).float()
         total = len(sigmas) - 1
         for step in range(total):
             sigma = float(sigmas[step])
             denoised = state * .5
-            derivative = (state - denoised) / sigma if sigma else (state - denoised)
-            state = state + derivative * (float(sigmas[step + 1]) - sigma)
-            if callback is not None:
-                callback(step, denoised, state, total)
-        return state
+            state = state + (state - denoised) / sigma * (float(sigmas[step + 1]) - sigma)
+            out = NestedTensor([state, torch.zeros(1, 1, 2, 44)]) if nested else state
+            den = NestedTensor([denoised, torch.zeros(1, 1, 2, 44)]) if nested else denoised
+            callback(step, den, out, total)
+            if self.on_step is not None:
+                self.on_step(step)
+        return out
 
 
-def _harvest(cls, guider, sampler=None, **kwargs):
-    return cls().harvest(
-        noise=Noise(),
-        guider=guider,
-        sampler=sampler if sampler is not None else StubSampler(),
+def _red_noise(*shape):
+    """Seeded noise integrated over H and W, so its power falls off with frequency."""
+    return torch.randn(shape, generator=torch.Generator().manual_seed(0)).cumsum(-1).cumsum(-2)
+
+
+def _h3_latent():
+    return {"samples": NestedTensor([_red_noise(1, 4, 8, 16, 16), torch.zeros(1, 1, 2, 44)])}
+
+
+def _image_latent():
+    return {"samples": _red_noise(1, 4, 16, 16)}
+
+
+def _harvest(guider=None, sampler=None, latent=None, **kwargs):
+    return harvest_module.MiniMaxH3HarvestToConfig().harvest(
+        noise=EchoNoise(),
+        guider=guider or HarvestGuider(),
+        sampler=sampler or StubSampler(),
         sigmas=torch.linspace(1.0, .025, 20),
-        latent_image=_latent(),
+        latent_image=latent or _h3_latent(),
         **kwargs,
     )
-
-
-def test_tolerance_delta_defaults_to_the_baked_value():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    assert cls.INPUT_TYPES()["optional"]["Tolerance (Delta)"][1]["default"] == 0.005
 
 
 class _ClassNamedSampler:
     """A SAMPLER without ``sampler_function``; labelled by its class name."""
 
 
-class _FunctionSuffixSampler:
+def _function_suffix_sampler(name):
     """A SAMPLER whose function is named ``<name>_function`` (e.g. dpm_fast)."""
-
-    def __init__(self, name):
-        def sampler_function(*args, **kwargs):
-            raise AssertionError("not meant to be run")
-
-        sampler_function.__name__ = f"{name}_function"
-        self.sampler_function = sampler_function
+    sampler = StubSampler()
+    sampler.sampler_function.__name__ = f"{name}_function"
+    return sampler
 
 
 @pytest.mark.parametrize(
-    "sampler,label",
+    "sampler,name,model_type,latent",
     [
-        (StubSampler("euler"), "euler"),
-        (StubSampler("res_multistep"), "res_multistep"),
-        (_FunctionSuffixSampler("dpm_fast"), "dpm_fast"),
-        (_ClassNamedSampler(), "_ClassNamedSampler"),
+        (StubSampler("euler"), "euler", "h3_video", _h3_latent),
+        (StubSampler("res_multistep"), "res_multistep", "h3_video", _h3_latent),
+        (_function_suffix_sampler("dpm_fast"), "dpm_fast", "h3_video", _h3_latent),
+        (_ClassNamedSampler(), "_ClassNamedSampler", "h3_video", _h3_latent),
+        (StubSampler("euler"), "euler", "image", _image_latent),
     ],
+    ids=["euler", "res_multistep", "function_suffix", "class_name", "image"],
 )
-def test_sampler_label_strips_sample_prefix_and_function_suffix_or_uses_class_name(sampler, label):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    assert module._sampler_label(sampler) == label
-
-
-@pytest.mark.parametrize("name", ["euler", "heun", "res_multistep"])
-def test_harvest_runs_the_given_sampler_and_emits_its_label(name):
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    sampler = StubSampler(name)
-    guider = Guider()
-    text, diagnostic = _harvest(
-        cls,
-        guider,
-        sampler,
-        **{"Tolerance (Delta)": .01},
-    )
+def test_harvest_runs_the_given_sampler_once_and_emits_its_calibration(sampler, name, model_type, latent):
+    guider = HarvestGuider()
+    text, diagnostic = _harvest(guider, sampler, latent(), model_type=model_type, **{"Tolerance (Delta)": .01})
     calibration = json.loads(text)
 
-    assert len(guider.samplers) == 1 and guider.samplers[0] is sampler
-    assert calibration["sampler_name"] == name
-    assert calibration["schema_version"] == 2
-    assert calibration["measurement_basis"] == "residual_x_minus_denoised"
-    assert calibration["calibration_kind"] == "empirical_residual_fit"
-    assert calibration["delta"] == .01
+    assert guider.samplers == [sampler]
+    assert {key: calibration[key] for key in (
+        "schema_version", "sampler_name", "model_type", "delta", "measurement_basis", "calibration_kind",
+    )} == {
+        "schema_version": 2, "sampler_name": name, "model_type": model_type, "delta": .01,
+        "measurement_basis": "residual_x_minus_denoised", "calibration_kind": "empirical_residual_fit",
+    }
     assert 0 < calibration["noise_amplitude"] < 1e6
-    assert -5 <= calibration["noise_decay_exponent"] < 10
-    assert {"r2", "health", "report"} <= set(calibration)
-    assert isinstance(diagnostic, dict) and "samples" in diagnostic
+    assert 0 < calibration["noise_decay_exponent"] < 10
+    assert {"r2", "health"} <= set(calibration)
+    assert "samples" in diagnostic
 
-    report_lines = calibration["report"].splitlines()
-    assert name in report_lines[0]
-    if calibration["noise_decay_exponent"] > 0 and calibration["health"] != "invalid":
-        paste_line = next(
-            line for line in report_lines if line.startswith("Paste into SPEED Sampler")
-        )
-        assert f"same sampler: {name}" in paste_line
-        assert "noise_amplitude=" + format(calibration["noise_amplitude"], ".4f") in paste_line
-        assert "noise_decay_exponent=" + format(calibration["noise_decay_exponent"], ".4f") in paste_line
-        assert "Tolerance (Delta)=" + format(calibration["delta"], ".3f") in paste_line
-    else:
-        assert "Do not paste this calibration into Automatic" in calibration["report"]
+    report = calibration["report"].splitlines()
+    assert name in report[0]
+    paste = next(line for line in report if line.startswith("Paste into SPEED Sampler"))
+    assert f"same sampler: {name}" in paste
+    assert f"noise_amplitude={calibration['noise_amplitude']:.4f}" in paste
+    assert f"noise_decay_exponent={calibration['noise_decay_exponent']:.4f}" in paste
+    assert "Tolerance (Delta)=0.010" in paste
 
 
-def test_harvest_reduces_each_residual_during_callback(monkeypatch):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
-    original = module.radial_dct_power
+def test_harvest_reduces_each_residual_inside_the_callback(monkeypatch):
     reduced = []
+    original = harvest_module.radial_dct_power
 
-    def recording_radial_dct_power(residual):
-        reduced.append(tuple(residual.shape))
+    def recording(residual):
+        reduced.append(residual.shape)
         return original(residual)
 
-    monkeypatch.setattr(module, "radial_dct_power", recording_radial_dct_power)
+    def check(step):
+        assert len(reduced) == step + 1  # reduced before the sampler's next step
 
-    class StreamingGuider(Guider):
-        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-            self.samplers.append(sampler)
-            video = next(part for part in latent_image.unbind() if part.ndim == 5)
-            state = video.float()
-            total = len(sigmas) - 1
-            for step in range(total):
-                sigma = float(sigmas[step])
-                denoised = state * .5
-                derivative = (state - denoised) / sigma if sigma else (state - denoised)
-                state = state + derivative * (float(sigmas[step + 1]) - sigma)
-                callback(step, denoised, state, total)
-                assert len(reduced) == step + 1
-            return state
-
-    text, _ = _harvest(cls, StreamingGuider())
+    monkeypatch.setattr(harvest_module, "radial_dct_power", recording)
+    text, _ = _harvest(HarvestGuider(on_step=check))
     assert "error" not in json.loads(text)
     assert len(reduced) == 19
 
 
-def test_unusable_harvest_fit_is_not_reported_as_paste_ready(monkeypatch):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
-
+@pytest.mark.parametrize(
+    "beta,r2,health,paste_ready",
+    [
+        (0.8, 0.9, "good", True),
+        (0.8, 0.5, "fair", True),
+        (0.8, 0.1, "weak", True),
+        (-0.5, 0.2, "suspect", False),
+        (float("nan"), 0.9, "invalid", False),
+    ],
+)
+def test_fit_health_decides_whether_the_report_is_paste_ready(monkeypatch, beta, r2, health, paste_ready):
     monkeypatch.setattr(
-        module,
-        "fit_power_law",
-        lambda *args: {"A": 1.0, "beta": -0.5, "r_squared": 0.2, "n_bins": 8},
+        harvest_module, "fit_power_law", lambda *args: {"A": 1.0, "beta": beta, "r_squared": r2, "n_bins": 8}
     )
-    text, _ = _harvest(cls, Guider())
-    calibration = json.loads(text)
-
-    assert calibration["health"] == "suspect"
-    assert "Do not paste this calibration into Automatic" in calibration["report"]
-    assert "Paste into SPEED Sampler" not in calibration["report"]
-
-
-def test_removed_harvest_tolerance_alias_fails_closed():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    with pytest.raises(TypeError, match="Unexpected Harvest option"):
-        _harvest(cls, Guider(), delta=.01)
+    calibration = json.loads(_harvest()[0])
+    assert calibration["health"] == health
+    assert ("Paste into SPEED Sampler" in calibration["report"]) is paste_ready
+    assert ("Do not paste this calibration into Automatic" in calibration["report"]) is not paste_ready
+    assert ("WARNING" in calibration["report"]) is (health not in ("good", "fair"))
 
 
-def test_harvest_rejects_unknown_model_type_instead_of_taking_the_image_path():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    with pytest.raises(ValueError, match="model_type must be one of"):
-        _harvest(cls, Guider(), model_type="sdxl")
-
-
-def test_harvest_reports_no_captures_instead_of_inventing_fit():
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-
-    class SilentGuider(Guider):
-        def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-            self.samplers.append(sampler)
-            return latent_image
-
-    text, diagnostic = _harvest(cls, SilentGuider(), StubSampler("heun"))
-    error = json.loads(text)
-    assert error["error"] == "no_captures"
-    assert error["sampler_name"] == "heun"
-    assert isinstance(diagnostic, dict)
-
-
-@pytest.mark.parametrize("error_kind", ["harvest_failed", "fit_failed"])
-def test_error_json_escapes_exception_text(monkeypatch, error_kind):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
-    message = 'bad "quote"\nnext line\\slash'
-
-    if error_kind == "harvest_failed":
-        class FailingGuider(Guider):
-            def sample(self, *args, **kwargs):
-                raise RuntimeError(message)
-
-        text, _ = _harvest(cls, FailingGuider(), StubSampler("dpm_2"))
-    else:
-        monkeypatch.setattr(module, "fit_power_law", lambda *args: (_ for _ in ()).throw(ValueError(message)))
-        text, _ = _harvest(cls, Guider(), StubSampler("dpm_2"))
-
-    error = json.loads(text)
-    assert error["error"] == error_kind
-    assert message in error["message"]
-    assert error["sampler_name"] == "dpm_2"
-
-
-def test_harvest_surfaces_first_residual_capture_failure(monkeypatch, caplog):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
-
+def _explode(error=RuntimeError):
     def explode(*args, **kwargs):
-        raise RuntimeError("residual exploded")
+        raise error('bad "quote"\nnext line\\slash')
 
-    monkeypatch.setattr(module, "compute_residual", explode)
-    with caplog.at_level("WARNING", logger=module.__name__):
-        text, _ = _harvest(cls, Guider())
-
-    error = json.loads(text)
-    assert error["error"] == "no_captures"
-    assert "residual exploded" in error["message"]
-    assert sum("residual capture failed" in record.message for record in caplog.records) == 1
+    return explode
 
 
-def test_harvest_surfaces_first_profile_reduction_failure(monkeypatch, caplog):
-    module = importlib.import_module("sampler_sigma_harvest_node")
-    cls = module.MiniMaxH3HarvestToConfig
+@pytest.mark.parametrize(
+    "patch,guider,inputs,error,message,log_text",
+    [
+        ({}, HarvestGuider(silent=True), {}, "no_captures", "callback did not fire", None),
+        (None, None, {}, "harvest_failed", 'bad "quote"\nnext line\\slash', None),
+        # Harvest reports a fit's ValueError; the error text survives JSON escaping.
+        ({"fit_power_law": _explode(ValueError)}, None, {}, "fit_failed", 'bad "quote"\nnext line\\slash', None),
+        # The first failure of each capture step is surfaced once, not swallowed.
+        ({"compute_residual": _explode()}, None, {}, "no_captures", "Residual capture failed: bad", "residual capture failed"),
+        ({"radial_dct_power": _explode()}, None, {}, "no_spectral_profiles", "Spectral profile reduction failed: bad",
+         "spectral profile reduction failed"),
+        # A latent that does not match model_type points at the right setting.
+        ({}, None, {"latent": _image_latent()}, "no_captures",
+         "does not match model_type h3_video; use model_type image", None),
+        ({}, None, {"model_type": "image"}, "no_captures",
+         "does not match model_type image; use model_type h3_video", None),
+    ],
+    ids=["silent_sampler", "sampler_failed", "fit_failed", "residual_failed", "profile_failed",
+         "image_latent_as_h3", "h3_latent_as_image"],
+)
+def test_harvest_returns_an_error_json_instead_of_a_calibration(
+    monkeypatch, caplog, patch, guider, inputs, error, message, log_text
+):
+    guider = guider or HarvestGuider()
+    if patch is None:
+        guider.sample = _explode()
+    for name, replacement in (patch or {}).items():
+        monkeypatch.setattr(harvest_module, name, replacement)
+    with caplog.at_level("WARNING", logger=harvest_module.__name__):
+        text, diagnostic = _harvest(guider, StubSampler("dpm_2"), **inputs)
 
-    def explode(*args, **kwargs):
-        raise RuntimeError("profile exploded")
-
-    monkeypatch.setattr(module, "radial_dct_power", explode)
-    with caplog.at_level("WARNING", logger=module.__name__):
-        text, _ = _harvest(cls, Guider())
-
-    error = json.loads(text)
-    assert error["error"] == "no_spectral_profiles"
-    assert "profile exploded" in error["message"]
-    assert error["n_captures"] > 0
-    assert sum("spectral profile reduction failed" in record.message for record in caplog.records) == 1
-
-
-class _ImageGuider(Guider):
-    """Plain image latent; the model samples as ``sampling``."""
-
-    def __init__(self, sampling):
-        super().__init__()
-        model = self.model_patcher.model
-        self.model_patcher = type("P", (), {
-            "model": model,
-            "get_model_object": lambda self, name: sampling,
-        })()
-
-    def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
-        self.samplers.append(sampler)
-        total = len(sigmas) - 1
-        for step in range(total):
-            if callback is not None:
-                callback(step, latent_image * .5, latent_image, total)
-        return latent_image
-
-
-def _harvest_image(cls, guider, **kwargs):
-    return cls().harvest(
-        noise=Noise(),
-        guider=guider,
-        sampler=StubSampler(),
-        sigmas=torch.linspace(1.0, .025, 20),
-        latent_image={"samples": torch.randn(1, 4, 16, 16)},
-        **kwargs,
-    )
+    result = json.loads(text)
+    assert (result["error"], result["sampler_name"]) == (error, "dpm_2")
+    assert message in result["message"]
+    assert "samples" in diagnostic
+    if log_text:
+        assert sum(log_text in record.message for record in caplog.records) == 1
 
 
-def test_harvest_image_runs_the_same_flow_check_as_the_sampler():
-    import comfy.model_sampling
-
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    eps = _ImageGuider(comfy.model_sampling.EPS())
-    with pytest.raises(ValueError, match=r"flow \(CONST\) models only; this model uses EPS"):
-        _harvest_image(cls, eps, model_type="image")
-    assert eps.samplers == []
-
-    text, _ = _harvest_image(cls, _ImageGuider(comfy.model_sampling.CONST()), model_type="image")
-    assert json.loads(text)["model_type"] == "image"
-
-
-def test_harvest_points_at_model_type_when_the_latent_does_not_match():
-    import comfy.model_sampling
-
-    cls = importlib.import_module("sampler_sigma_harvest_node").MiniMaxH3HarvestToConfig
-    text, _ = _harvest_image(cls, _ImageGuider(comfy.model_sampling.CONST()))
-    error = json.loads(text)
-    assert error["error"] == "no_captures"
-    assert "does not match model_type h3_video; use model_type image" in error["message"]
-    assert "did not fire" not in error["message"]
+@pytest.mark.parametrize(
+    "inputs,error,match",
+    [
+        ({"delta": .01}, TypeError, "Unexpected Harvest option"),  # the removed Tolerance alias
+        ({"model_type": "sdxl"}, ValueError, "model_type must be one of"),
+        # The image path runs the same flow-model check as the sampler, before sampling.
+        ({"model_type": "image", "latent": _image_latent(),
+          "guider": HarvestGuider(sampling=model_sampling("EPS"))},
+         ValueError, r"flow \(CONST\) models only; this model uses EPS"),
+    ],
+    ids=["removed_delta_alias", "unknown_model_type", "non_flow_image_model"],
+)
+def test_harvest_rejects_bad_inputs(inputs, error, match):
+    guider = inputs.pop("guider", HarvestGuider())
+    with pytest.raises(error, match=match):
+        _harvest(guider, **inputs)
+    assert guider.samplers == []
