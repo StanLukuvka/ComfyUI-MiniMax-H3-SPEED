@@ -1,4 +1,4 @@
-"""Manual MiniMax-H3 SPEED sampler with an explicit stage schedule."""
+"""Manual SPEED sampler with an explicit stage schedule."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import build_manual_speed_config
 
 
-class MiniMaxH3SPEEDSamplerManual:
+class SPEEDSamplerManual:
     """Progressive-resolution SPEED sampling with user-defined stage boundaries."""
 
     DESCRIPTION = (
@@ -27,7 +27,7 @@ class MiniMaxH3SPEEDSamplerManual:
         "Latent of the model's last clean-image (x0) estimate, as from SamplerCustomAdvanced.",
     )
     FUNCTION = "sample"
-    CATEGORY = "sampling/minimax_h3_speed"
+    CATEGORY = "sampling/speed"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -148,14 +148,9 @@ class MiniMaxH3SPEEDSamplerManual:
                         "tooltip": "Stage 4 scale relative to full size (0.5 = half width and height). 0 disables this stage. The last active stage must be 1.0.",
                     },
                 ),
-            },
-            "optional": {
                 "model_type": (
                     list(MODEL_TYPES),
-                    {
-                        "default": "h3_video",
-                        "tooltip": "h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Must match the model; it is never auto-detected.",
-                    },
+                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
                 ),
             },
         }
@@ -167,6 +162,7 @@ class MiniMaxH3SPEEDSamplerManual:
         sampler,
         sigmas,
         latent_image,
+        model_type,
         noise_policy="direct_coarse",
         seed_offset=10000,
         ratio_mode="steps",
@@ -178,7 +174,6 @@ class MiniMaxH3SPEEDSamplerManual:
         transition_resolution_3=0.75,
         transition_goal_4=15,
         transition_resolution_4=1.0,
-        model_type="h3_video",
         **kwargs,
     ):
         config = build_manual_speed_config(
@@ -205,13 +200,24 @@ class MiniMaxH3SPEEDSamplerManual:
         )
 
 
-NODE_CLASS_MAPPINGS = {"MiniMaxH3SPEEDSamplerManual": MiniMaxH3SPEEDSamplerManual}
+class MiniMaxH3SPEEDSamplerManual(SPEEDSamplerManual):
+    """Deprecated ID for ``SPEEDSamplerManual``, kept so saved workflows still load."""
+
+    DEPRECATED = True
+
+
+NODE_CLASS_MAPPINGS = {
+    "SPEEDSamplerManual": SPEEDSamplerManual,
+    "MiniMaxH3SPEEDSamplerManual": MiniMaxH3SPEEDSamplerManual,
+}
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MiniMaxH3SPEEDSamplerManual": "MiniMax H3 SPEED — Sampler (Manual Step-Through)"
+    "SPEEDSamplerManual": "SPEED — Sampler (Manual Step-Through)",
+    "MiniMaxH3SPEEDSamplerManual": "MiniMax H3 SPEED — Sampler (Manual Step-Through) (deprecated)",
 }
 
 __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
+    "SPEEDSamplerManual",
     "MiniMaxH3SPEEDSamplerManual",
 ]

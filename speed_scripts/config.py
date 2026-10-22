@@ -16,16 +16,17 @@ RATIO_MODES = ("steps", "ratio")
 class SpeedConfig:
     """Settings for the SPEED stage schedule and transitions."""
 
-    scales: tuple[float, ...] = (0.5, 1.0)
-    transition_steps: tuple[int, ...] = (5,)
+    scales: tuple[float, ...]
+    transition_steps: tuple[int, ...] = ()
     noise_policy: str = "direct_coarse"
     audio_policy: str = "clock_reindex"
     sigma_policy: str = "canonical"
     transition_seed_offset: int = 10_000
     transition_mode: str = "explicit"
-    delta: float = 0.01
-    noise_amplitude: float = 12.105
-    noise_decay_exponent: float = 0.773
+    # Automatic (delta_custom) only: the Harvest fit and tolerance. No model's numbers are baked in.
+    delta: float | None = None
+    noise_amplitude: float | None = None
+    noise_decay_exponent: float | None = None
     # Optional time scale for each stage. The final stage must use full time resolution.
     temporal_scales: tuple[float, ...] = ()
 
@@ -57,15 +58,18 @@ class SpeedConfig:
             # Automatic mode calculates its transition steps from the live sigma schedule.
             steps = ()
 
-        if not 0.0 < self.delta < 1.0:
-            raise ValueError("delta must be in (0, 1)")
-        if (
-            not math.isfinite(self.noise_amplitude)
-            or not math.isfinite(self.noise_decay_exponent)
-            or self.noise_amplitude <= 0.0
-            or self.noise_decay_exponent <= 0.0
-        ):
-            raise ValueError("power spectrum A and beta must be positive finite values")
+        if self.transition_mode == "delta_custom":
+            if None in (self.delta, self.noise_amplitude, self.noise_decay_exponent):
+                raise ValueError("delta_custom needs delta, noise_amplitude and noise_decay_exponent")
+            if not 0.0 < self.delta < 1.0:
+                raise ValueError("delta must be in (0, 1)")
+            if (
+                not math.isfinite(self.noise_amplitude)
+                or not math.isfinite(self.noise_decay_exponent)
+                or self.noise_amplitude <= 0.0
+                or self.noise_decay_exponent <= 0.0
+            ):
+                raise ValueError("power spectrum A and beta must be positive finite values")
         if self.noise_policy not in NOISE_POLICIES:
             raise ValueError(f"unsupported noise_policy: {self.noise_policy}")
         if self.audio_policy not in AUDIO_POLICIES:

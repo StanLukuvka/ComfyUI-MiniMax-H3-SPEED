@@ -388,7 +388,7 @@
     },
     {
       "id": 11,
-      "type": "MiniMaxH3HarvestToConfig",
+      "type": "SPEEDSigmaHarvest",
       "pos": [
         1450,
         90
@@ -445,7 +445,7 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "MiniMaxH3HarvestToConfig"
+        "Node name for S&R": "SPEEDSigmaHarvest"
       },
       "widgets_values": [
         0.005,
@@ -495,7 +495,7 @@
     },
     {
       "id": 13,
-      "type": "MiniMaxH3SPEEDSampler",
+      "type": "SPEEDSampler",
       "pos": [
         1450,
         470
@@ -552,7 +552,7 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "MiniMaxH3SPEEDSampler"
+        "Node name for S&R": "SPEEDSampler"
       },
       "widgets_values": [
         3,
@@ -656,7 +656,7 @@
     },
     {
       "id": 16,
-      "type": "MiniMaxH3SPEEDSamplerManual",
+      "type": "SPEEDSamplerManual",
       "pos": [
         1450,
         850
@@ -713,7 +713,7 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "MiniMaxH3SPEEDSamplerManual"
+        "Node name for S&R": "SPEEDSamplerManual"
       },
       "widgets_values": [
         "coupled_full_grid",

@@ -15,7 +15,7 @@ from .families import main_stream
 from .spectral import dct2
 
 
-def compute_residual(x_value, denoised_value, model_type="h3_video") -> torch.Tensor | None:
+def compute_residual(x_value, denoised_value, model_type) -> torch.Tensor | None:
     """Return the spatial-stream residual ``x - denoised`` when both inputs are valid."""
     x_main = main_stream(x_value, model_type)
     denoised_main = main_stream(denoised_value, model_type)

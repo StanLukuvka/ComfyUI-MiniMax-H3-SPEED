@@ -168,7 +168,6 @@ def build_manual_speed_config(
         transition_steps=transition_steps,
         transition_mode="explicit",
         noise_policy=noise_policy,
-        delta=0.01,
         transition_seed_offset=int(seed_offset),
     )
 

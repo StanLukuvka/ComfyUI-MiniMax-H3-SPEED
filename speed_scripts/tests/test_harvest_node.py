@@ -56,7 +56,8 @@ def _image_latent():
 
 
 def _harvest(guider=None, sampler=None, latent=None, **kwargs):
-    return harvest_module.MiniMaxH3HarvestToConfig().harvest(
+    kwargs.setdefault("model_type", "h3_video")
+    return harvest_module.SPEEDSigmaHarvest().harvest(
         noise=EchoNoise(),
         guider=guider or HarvestGuider(),
         sampler=sampler or StubSampler(),
@@ -173,11 +174,14 @@ def _explode(error=RuntimeError):
         # A latent that does not match model_type points at the right setting.
         ({}, None, {"latent": _image_latent()}, "no_captures",
          "does not match model_type h3_video; use model_type image", None),
+        # A plain 5-D latent (Krea 2's [B,C,1,H,W]) is not H3's nested video/audio latent.
+        ({}, None, {"latent": {"samples": _red_noise(1, 4, 1, 16, 16)}}, "no_captures",
+         "does not match model_type h3_video; use model_type image", None),
         ({}, None, {"model_type": "image"}, "no_captures",
          "does not match model_type image; use model_type h3_video", None),
     ],
     ids=["silent_sampler", "sampler_failed", "fit_failed", "residual_failed", "profile_failed",
-         "image_latent_as_h3", "h3_latent_as_image"],
+         "image_latent_as_h3", "five_d_image_latent_as_h3", "h3_latent_as_image"],
 )
 def test_harvest_returns_an_error_json_instead_of_a_calibration(
     monkeypatch, caplog, patch, guider, inputs, error, message, log_text

@@ -10,9 +10,17 @@ import torch
 
 from conftest import EchoGuider, EchoNoise, StubSampler, expected_stage_sigmas, make_latent
 
-AUTOMATIC = ("sampler_node", "MiniMaxH3SPEEDSampler")
-MANUAL = ("sampler_node_manual", "MiniMaxH3SPEEDSamplerManual")
-HARVEST = ("sampler_sigma_harvest_node", "MiniMaxH3HarvestToConfig")
+AUTOMATIC = ("sampler_node", "SPEEDSampler")
+MANUAL = ("sampler_node_manual", "SPEEDSamplerManual")
+HARVEST = ("sampler_sigma_harvest_node", "SPEEDSigmaHarvest")
+# Old IDs from when the pack was H3-only, kept as deprecated subclasses.
+DEPRECATED = {
+    "MiniMaxH3SPEEDSampler": AUTOMATIC,
+    "MiniMaxH3SPEEDSamplerManual": MANUAL,
+    "MiniMaxH3HarvestToConfig": HARVEST,
+}
+# A test calibration (H3's Euler fit); the node itself has no default.
+FIT = {"noise_amplitude": 12.105, "noise_decay_exponent": 0.773}
 POLICIES = ["direct_coarse", "coupled_full_grid"]
 
 
@@ -27,6 +35,9 @@ def capture_node_config(monkeypatch, node_cls, **inputs):
     monkeypatch.setattr(importlib.import_module(node_cls.__module__), "run_speed_pipeline", fake_pipeline)
     inputs.setdefault("sampler", StubSampler())
     inputs.setdefault("sigmas", torch.linspace(1.0, 0.0, 11))
+    inputs.setdefault("model_type", "h3_video")
+    for name, value in FIT.items():
+        inputs.setdefault(name, value)
     node_cls().sample(noise=EchoNoise(), guider=EchoGuider(), latent_image=make_latent(), **inputs)
     return captured["config"]
 
@@ -36,16 +47,32 @@ def _node(module_and_class):
     return getattr(importlib.import_module(module_name), class_name)
 
 
-def test_package_registers_exactly_the_three_nodes():
+def test_package_registers_the_three_nodes_and_their_deprecated_ids():
     spec = importlib.util.spec_from_file_location(
         "speed_pack_test", Path(__file__).resolve().parents[2] / "__init__.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert set(module.NODE_CLASS_MAPPINGS) == {
-        "MiniMaxH3SPEEDSampler", "MiniMaxH3SPEEDSamplerManual", "MiniMaxH3HarvestToConfig",
-    }
+    current = {AUTOMATIC[1], MANUAL[1], HARVEST[1]}
+    assert set(module.NODE_CLASS_MAPPINGS) == current | set(DEPRECATED)
     assert set(module.NODE_DISPLAY_NAME_MAPPINGS) == set(module.NODE_CLASS_MAPPINGS)
+    for name in current:
+        assert not getattr(module.NODE_CLASS_MAPPINGS[name], "DEPRECATED", False)
+    # A deprecated ID is a thin subclass: same inputs and behaviour, flagged for the frontend.
+    for old_id, node in DEPRECATED.items():
+        old, new = module.NODE_CLASS_MAPPINGS[old_id], _node(node)
+        assert old.DEPRECATED is True and old.__mro__[1].__name__ == new.__name__
+        assert "(deprecated)" in module.NODE_DISPLAY_NAME_MAPPINGS[old_id]
+
+
+@pytest.mark.parametrize("node", [AUTOMATIC, MANUAL, HARVEST], ids=lambda n: n[1])
+def test_model_type_is_required_with_no_default(node):
+    cls = _node(node)
+    kind, options = cls.INPUT_TYPES()["required"]["model_type"]
+    assert kind == ["h3_video", "image"] and "default" not in options
+    assert "optional" not in cls.INPUT_TYPES()
+    params = inspect.signature(getattr(cls, cls.FUNCTION)).parameters
+    assert params["model_type"].default is inspect.Parameter.empty
 
 
 @pytest.mark.parametrize("node", [AUTOMATIC, MANUAL, HARVEST], ids=lambda n: n[1])
@@ -62,21 +89,17 @@ def test_nodes_take_the_sampler_custom_advanced_inputs(node):
 @pytest.mark.parametrize(
     "node,group,name,expected",
     [
-        # Optional on every node, so old workflows and API prompts without it keep running H3.
-        (AUTOMATIC, "optional", "model_type", (["h3_video", "image"], {"default": "h3_video"})),
-        (MANUAL, "optional", "model_type", (["h3_video", "image"], {"default": "h3_video"})),
-        (HARVEST, "optional", "model_type", (["h3_video", "image"], {"default": "h3_video"})),
         (AUTOMATIC, "required", "noise_policy", (POLICIES, {"default": "direct_coarse"})),
         (MANUAL, "required", "noise_policy", (POLICIES, {"default": "direct_coarse"})),
         (AUTOMATIC, "required", "stages", ("INT", {"default": 3, "min": 2, "max": 4})),
-        # Baked Euler calibration: Δ0.005 A12.105 β0.773, editable to four decimals.
         (AUTOMATIC, "required", "Tolerance (Delta)",
          ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001})),
+        # No model's calibration is baked in: 0 means "not set", editable to four decimals.
         (AUTOMATIC, "required", "noise_amplitude",
-         ("FLOAT", {"default": 12.105, "min": 0.0001, "max": 1e6, "step": 0.0001, "round": 0.0001})),
+         ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1e6, "step": 0.0001, "round": 0.0001})),
         (AUTOMATIC, "required", "noise_decay_exponent",
-         ("FLOAT", {"default": 0.773, "min": 0.0001, "max": 10.0, "step": 0.0001, "round": 0.0001})),
-        (HARVEST, "optional", "Tolerance (Delta)",
+         ("FLOAT", {"default": 0.0, "min": 0.0, "max": 10.0, "step": 0.0001, "round": 0.0001})),
+        (HARVEST, "required", "Tolerance (Delta)",
          ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001})),
         (MANUAL, "required", "ratio_mode", (["steps", "ratio"], {"default": "steps"})),
         (MANUAL, "required", "transition_resolution_1", ("FLOAT", {"default": 0.25, "min": 0, "max": 1})),
@@ -124,7 +147,9 @@ def test_automatic_builds_a_delta_custom_config_from_its_inputs(monkeypatch, sta
         ({"Tolerance (Delta)": 1.0}, r"delta must be in \(0, 1\)"),
         *[({field: bad}, "positive finite")
           for field in ("noise_amplitude", "noise_decay_exponent")
-          for bad in (float("nan"), float("inf"), 0.0, -1.0)],
+          for bad in (float("nan"), float("inf"), -1.0)],
+        # 0 is the unset widget value: ask for a Harvest calibration instead of guessing one.
+        *[({field: 0.0}, "not set .* Run Sigma Harvest") for field in ("noise_amplitude", "noise_decay_exponent")],
     ],
 )
 def test_automatic_rejects_bad_inputs(monkeypatch, kwargs, error):
@@ -161,10 +186,9 @@ def test_manual_runs_its_schedule_with_the_given_sampler(steps, kwargs, boundari
     sigmas = torch.linspace(1.0, 0.0, steps + 1)
     sampler = StubSampler("heun")
     guider = EchoGuider()
-    # No model_type: old workflows keep running H3.
     _node(MANUAL)().sample(
         noise=EchoNoise(), guider=guider, sampler=sampler, sigmas=sigmas,
-        latent_image=make_latent(), **kwargs,
+        latent_image=make_latent(), model_type="h3_video", **kwargs,
     )
     for actual, wanted in zip(guider.sigma_calls, expected_stage_sigmas(sigmas, boundaries, scales), strict=True):
         assert actual == pytest.approx(wanted)
@@ -175,10 +199,9 @@ def test_manual_runs_its_schedule_with_the_given_sampler(steps, kwargs, boundari
 def test_automatic_runs_every_stage_with_the_given_sampler():
     sampler = StubSampler("heun")
     guider = EchoGuider()
-    # No model_type: old workflows keep running H3.
     out, _ = _node(AUTOMATIC)().sample(
         noise=EchoNoise(), guider=guider, sampler=sampler, sigmas=torch.linspace(1.0, 0.0, 11),
-        latent_image=make_latent(), stages=3,
+        latent_image=make_latent(), model_type="h3_video", stages=3, **FIT,
     )
     assert guider.latent_sizes == [(3, 3), (5, 5), (8, 8)]
     assert all(seen is sampler for seen in guider.samplers) and len(guider.samplers) == 3
@@ -202,5 +225,6 @@ def test_manual_rejects_bad_schedules(kwargs, error):
     with pytest.raises(ValueError, match=error):
         _node(MANUAL)().sample(
             noise=EchoNoise(), guider=EchoGuider(), sampler=StubSampler(),
-            sigmas=torch.linspace(1.0, 0.0, 20), latent_image=make_latent(), **kwargs,
+            sigmas=torch.linspace(1.0, 0.0, 20), latent_image=make_latent(),
+            model_type="h3_video", **kwargs,
         )

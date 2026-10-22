@@ -8,10 +8,11 @@ V2 is the major-release boundary for the multi-sampler/runtime rewrite. The publ
 
 Release-level invariants:
 
-- The three public node IDs remain stable.
+- The three public node IDs are `SPEEDSampler`, `SPEEDSamplerManual` and `SPEEDSigmaHarvest`. The old IDs `MiniMaxH3SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` and `MiniMaxH3HarvestToConfig` stay registered as `DEPRECATED` subclasses, plus node replacements, so saved workflows still load. Keep both sets stable.
 - Euler remains the reference path for baked calibration and benchmark evidence.
 - All three nodes take a standard ComfyUI `SAMPLER` input (see Sampler architecture).
-- All three nodes take an optional `model_type` switch (`h3_video` default, `image`); see Model families. Old workflows and API prompts without it keep running H3.
+- All three nodes take a required `model_type` switch (`h3_video`, `image`) with no default anywhere (widget, node signature, runtime, Harvest helpers); see Model families. A missing value fails validation; a mismatched one raises.
+- Nothing model-specific is a default. Automatic's `noise_amplitude` / `noise_decay_exponent` start at 0 (unset, raises), and `SpeedConfig` has no baked A/beta/delta.
 - `direct_coarse` remains the default noise policy. `coupled_full_grid` remains available because its removal has not been shown to be safe; V2 makes no claim that it improves quality.
 - Internal `speed_scripts` APIs may break from V1 where required by the planner/runtime split; see `CHANGELOG.md` for migration details.
 
@@ -19,15 +20,15 @@ Release-level invariants:
 
 The pack ships exactly three ComfyUI nodes:
 
-1. **`MiniMaxH3SPEEDSampler`** (Automatic) — the generator. It uses the same `noise` / `guider` / `sampler` / `sigmas` / `latent_image` interface as `SamplerCustomAdvanced` and runs a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res). A basic all-in-one KSampler workflow must first be split into the advanced sampling components. Picks `stages` (2-4), auto-computes the transition steps from `Tolerance (Delta)` + `noise_amplitude` + `noise_decay_exponent` via the power-spectrum threshold (`delta_custom` mode). Baked defaults: `Δ0.005 A12.105 β0.773` (conservative, 0.5%). Balanced `Δ0.01 A12.436 β0.786` runs faster at near parity.
+1. **`SPEEDSampler`** (Automatic) — the generator. It uses the same `noise` / `guider` / `sampler` / `sigmas` / `latent_image` interface as `SamplerCustomAdvanced` and runs a multi-stage progressive-resolution diffusion pass (low-res first, boundary-align, then full-res). A basic all-in-one KSampler workflow must first be split into the advanced sampling components. Picks `stages` (2-4), auto-computes the transition steps from `Tolerance (Delta)` + `noise_amplitude` + `noise_decay_exponent` via the power-spectrum threshold (`delta_custom` mode). No A/beta defaults; H3 Euler reference values: `Δ0.005 A12.105 β0.773` (conservative, 0.5%). Balanced `Δ0.01 A12.436 β0.786` runs faster at near parity.
 
-2. **`MiniMaxH3SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `resolution` is the stage scale in both modes. `ratio_mode steps` = goal is a step index (whole numbers only), `ratio` = goal is a 0-1 fraction of the schedule; the boundary is placed at `round(goal * total_steps)`. Used to copy paper schedules or test custom ladders.
+2. **`SPEEDSamplerManual`** (Manual Step-Through) — same engine, explicit schedule. Up to four `(transition_goal, transition_resolution)` pairs; `goal == 0` or `resolution == 0` disables that stage. `resolution` is the stage scale in both modes. `ratio_mode steps` = goal is a step index (whole numbers only), `ratio` = goal is a 0-1 fraction of the schedule; the boundary is placed at `round(goal * total_steps)`. Used to copy paper schedules or test custom ladders.
 
-3. **`MiniMaxH3HarvestToConfig`** (Sigma Harvest) — calibration tool. Runs one native full-resolution pass with the connected sampler (NOT the SPEED chain), computes `residual = x - denoised` per step, immediately reduces each residual to a CPU radial DCT power profile, fits `P = A·|ω|^-β`, and emits a flat sampler-specific `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the matching Automatic configuration. Run it when you change checkpoint, sampler, LoRA/addons, or the sigma schedule.
+3. **`SPEEDSigmaHarvest`** (Sigma Harvest) — calibration tool. Runs one native full-resolution pass with the connected sampler (NOT the SPEED chain), computes `residual = x - denoised` per step, immediately reduces each residual to a CPU radial DCT power profile, fits `P = A·|ω|^-β`, and emits a flat sampler-specific `calibration` JSON (`noise_amplitude`, `noise_decay_exponent`, `delta`, `r2`, `health`, `report`) to paste back into the matching Automatic configuration. Run it when you change checkpoint, sampler, LoRA/addons, or the sigma schedule.
 
 ## Sigma Harvest: connected native sampler
 
-`MiniMaxH3HarvestToConfig` runs the connected **native** Comfy sampler (`guider.sample()`), NOT `run_speed_pipeline`. It runs one full-resolution native pass with a fixed sigma schedule.
+`SPEEDSigmaHarvest` runs the connected **native** Comfy sampler (`guider.sample()`), NOT `run_speed_pipeline`. It runs one full-resolution native pass with a fixed sigma schedule.
 
 **How to use it:** run the Harvest node at full-res with the sampler you intend to use in SPEED, using the same sigma scheduler and step count you intend to run. For base H3, the reference calibration workflow uses 28–32 steps with the `simple` sigma scheduler. Read the sampler-specific `calibration` JSON and paste its `noise_amplitude` / `noise_decay_exponent` / `Tolerance (Delta)` into the matching Automatic run. Harvest and SPEED run the same sampler object, so the calibration matches the sampler that generates.
 

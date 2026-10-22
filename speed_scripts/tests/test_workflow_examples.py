@@ -7,10 +7,11 @@ import pytest
 
 WORKFLOWS = sorted((Path(__file__).parents[2] / "workflows").glob("*.json"))
 OUTPUTS = {
-    "MiniMaxH3SPEEDSampler": ("output", "denoised_output"),
-    "MiniMaxH3SPEEDSamplerManual": ("output", "denoised_output"),
-    "MiniMaxH3HarvestToConfig": ("calibration", "diagnostic_latent"),
+    "SPEEDSampler": ("output", "denoised_output"),
+    "SPEEDSamplerManual": ("output", "denoised_output"),
+    "SPEEDSigmaHarvest": ("calibration", "diagnostic_latent"),
 }
+DEPRECATED_IDS = {"MiniMaxH3SPEEDSampler", "MiniMaxH3SPEEDSamplerManual", "MiniMaxH3HarvestToConfig"}
 
 
 def _graphs(value):
@@ -44,6 +45,8 @@ def test_example_feeds_each_public_node_from_ksampler_select_euler(path):
             for link in graph.get("links", [])
         )
         for node in graph["nodes"]:
+            # Examples use the current IDs, never the deprecated ones.
+            assert node.get("type") not in DEPRECATED_IDS, node["type"]
             if node.get("type") not in OUTPUTS:
                 continue
             found += 1
