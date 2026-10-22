@@ -22,6 +22,10 @@ class MiniMaxH3SPEEDSampler:
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
+    OUTPUT_TOOLTIPS = (
+        "Final latent at full resolution, as from SamplerCustomAdvanced.",
+        "Latent of the model's last clean-image (x0) estimate, as from SamplerCustomAdvanced.",
+    )
     FUNCTION = "sample"
     CATEGORY = "sampling/minimax_h3_speed"
 
@@ -29,35 +33,92 @@ class MiniMaxH3SPEEDSampler:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "noise": ("NOISE",),
-                "guider": ("GUIDER",),
-                "sampler": ("SAMPLER",),
-                "sigmas": ("SIGMAS",),
-                "latent_image": ("LATENT",),
-                "stages": ("INT", {"default": 3, "min": 2, "max": 4}),
+                "noise": (
+                    "NOISE",
+                    {"tooltip": "Noise source, same as SamplerCustomAdvanced (e.g. RandomNoise). Its seed also seeds the sampler."},
+                ),
+                "guider": (
+                    "GUIDER",
+                    {"tooltip": "Guider, same as SamplerCustomAdvanced (e.g. CFGGuider, BasicGuider)."},
+                ),
+                "sampler": (
+                    "SAMPLER",
+                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Euler is the calibrated reference; other samplers work but their baked numbers are unmeasured."},
+                ),
+                "sigmas": (
+                    "SIGMAS",
+                    {"tooltip": "Sigma schedule, same as SamplerCustomAdvanced. Stage boundaries are placed on this schedule."},
+                ),
+                "latent_image": (
+                    "LATENT",
+                    {"tooltip": "Latent to sample, same as SamplerCustomAdvanced. The final stage runs at this full size."},
+                ),
+                "stages": (
+                    "INT",
+                    {
+                        "default": 3,
+                        "min": 2,
+                        "max": 4,
+                        "tooltip": "Number of progressive-resolution stages (2-4). 2 = 0.5x then full; 3 = 1/3x, 2/3x, full; 4 = 0.25x, 0.5x, 0.75x, full.",
+                    },
+                ),
                 "noise_policy": (
                     ["direct_coarse", "coupled_full_grid"],
-                    {"default": "direct_coarse"},
+                    {
+                        "default": "direct_coarse",
+                        "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed. On H3 video it saved only 5-10%, against 15-30% for direct_coarse.",
+                    },
                 ),
                 "Tolerance (Delta)": (
                     "FLOAT",
-                    {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001},
+                    {
+                        "default": 0.005,
+                        "min": 1e-4,
+                        "max": 0.5,
+                        "step": 0.001,
+                        "tooltip": "Delta: how much error is accepted when a stage switches to a higher resolution. Smaller = more conservative, later transitions, smaller saving. Boundaries come from the power-spectrum fit (noise_amplitude, noise_decay_exponent). For images, 0.05 is the useful setting.",
+                    },
                 ),
                 "noise_amplitude": (
                     "FLOAT",
-                    {"default": 12.105, "min": 0.0001, "max": 1e6, "step": 0.0001, "round": 0.0001},
+                    {
+                        "default": 12.105,
+                        "min": 0.0001,
+                        "max": 1e6,
+                        "step": 0.0001,
+                        "round": 0.0001,
+                        "tooltip": "A in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule; the default is Euler-derived for H3.",
+                    },
                 ),
                 "noise_decay_exponent": (
                     "FLOAT",
-                    {"default": 0.773, "min": 0.0001, "max": 10.0, "step": 0.0001, "round": 0.0001},
+                    {
+                        "default": 0.773,
+                        "min": 0.0001,
+                        "max": 10.0,
+                        "step": 0.0001,
+                        "round": 0.0001,
+                        "tooltip": "beta in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule; the default is Euler-derived for H3.",
+                    },
                 ),
                 "seed_offset": (
                     "INT",
-                    {"default": 10000, "min": 0, "max": 2**31 - 1},
+                    {
+                        "default": 10000,
+                        "min": 0,
+                        "max": 2**31 - 1,
+                        "tooltip": "direct_coarse only: salts the seed of the high-frequency fill drawn at each resolution transition (seed + seed_offset + stage index). Ignored by coupled_full_grid. Does not change the first stage's noise or the sampler seed. Leave at 10000 unless you want a different fill pattern for the same seed.",
+                    },
                 ),
             },
             "optional": {
-                "model_type": (list(MODEL_TYPES), {"default": "h3_video"}),
+                "model_type": (
+                    list(MODEL_TYPES),
+                    {
+                        "default": "h3_video",
+                        "tooltip": "h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Must match the model; it is never auto-detected.",
+                    },
+                ),
             },
         }
 
