@@ -7,7 +7,7 @@
 
 Make MiniMax-H3 video generation faster without retraining. SPEED starts denoising on a cheaper low-resolution grid, then increases the resolution as finer detail becomes useful. This avoids paying for full-resolution compute during the noisiest early steps.
 
-> **MiniMax-H3 video, plus flow image models** (tested on MOSS Image and Kroma, a Krea 2 finetune) through the `model_type` switch. H3 audio always stays at full resolution.
+> **MiniMax-H3 video, plus flow image models** (tested on MOSS Image and Krea 2) through the `model_type` switch. H3 audio always stays at full resolution.
 
 ## Installation
 
@@ -46,7 +46,7 @@ For base H3 with **Euler**, you can use the shipped reference values instead of 
 - **Default (baked, 0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
 - **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — faster, with near-parity results in the reference clip
 
-See the [evidence section](evidence/README.md) for examples of how these settings affect generation.
+See the [evidence section](evidence/video_evidence/README.md) for examples of how these settings affect generation.
 
 ## Samplers
 
@@ -65,18 +65,18 @@ Automatic and Manual return output and denoised LATENTs; Harvest returns calibra
 
 Set **`model_type = image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Wire it like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). `model_type` defaults to `h3_video`, so existing workflows are unchanged.
 
-Example workflows: [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json) and [`workflows/image_kroma_SPEED.json`](workflows/image_kroma_SPEED.json). Each has Harvest, Automatic, Manual and a plain reference on one set of loaders; only Automatic is active, already set to that model's harvested values.
+Example workflows: [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](workflows/image_krea2_SPEED.json). Each has Harvest, Automatic and Manual on one set of loaders, in Models, Conditioning, Sampling, SPEED and output groups; only Automatic is active, already set to that model's harvested values and `noise_policy = coupled_full_grid`.
 
-The shipped Automatic calibration is H3's. Run Harvest with `model_type = image` on your model and settings, and paste its values in. At Δ 0.005 the harvested boundary lands in the first step or two of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
+The shipped Automatic calibration is H3's. Run Harvest with `model_type = image` on your model and settings, and paste its values in. At Δ 0.005 the harvested boundary lands in the first few steps of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
 
-RTX 5070 Laptop, the office mug gag as a still ([evidence](evidence/README.md#image-models-model_type--image--the-same-gag-as-a-still)):
+RTX 5070 Laptop, a ramen stall at night as a still ([evidence](evidence/image_evidence/README.md)):
 
 | Model | Plain | Automatic 3 stages, Δ 0.05 | Manual, 0.5× to half the steps |
 |---|---|---|---|
-| MOSS Image, 1344×768, 20 steps, CFG 5 | 23 s | 18 s (1.27×) | 15 s (1.5×) |
-| Kroma (Krea 2 finetune), 1216×832, 8 steps, CFG 1 | 16 s | 12 s (1.33×) | 11 s (1.45×) |
+| MOSS Image, 1344×768, 20 steps, CFG 5 | 22 s | 18 s (1.26×) | 14 s (1.54×) |
+| Krea 2 (raw, fp8), 1216×832, 52 steps, CFG 3.5 | 283 s | 215 s (1.31×) | 183 s (1.55×) |
 
-Every SPEED run was clean and as detailed as plain. The composition differs from the plain run with the same seed, because the first stage draws its noise at the coarse size; SPEED runs with the same seed share one composition.
+Every SPEED run was clean and as detailed as plain. With `noise_policy = coupled_full_grid`, SPEED draws its noise from the seed as SamplerCustomAdvanced does, so it keeps the plain run's composition at the same seed; small details such as an object count can still change. `direct_coarse` draws its own coarse noise and gives a different picture.
 
 ## Speed improvements
 
@@ -96,7 +96,7 @@ These measurements use Euler and the calibration values shown in the table. They
 | Δ0.05 | 3-stage | 262s | 2.18× | very noticeable artifacting but still usable |
 | Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
 
-See [evidence/README.md](evidence/README.md) for the full 10s GIFs (360p, 12fps).
+See [evidence/video_evidence/README.md](evidence/video_evidence/README.md) for the full 10s GIFs (360p, 12fps).
 
 **Rule of thumb:** for quality-first runs, use `stages 3` at Δ0.005; for a balance of speed and quality, use `stages 2` at Δ0.01; for fast drafts, use `stages 4` at Δ0.05.
 

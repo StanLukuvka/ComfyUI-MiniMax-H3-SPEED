@@ -31,7 +31,7 @@ def test_all_five_examples_are_shipped():
         "video_minimax_h3_SPEED_Sigma_Manual.json",
         "video_minimax_h3_SPEED_SIGMA.json",
         "image_moss_SPEED.json",
-        "image_kroma_SPEED.json",
+        "image_krea2_SPEED.json",
     }
 
 
