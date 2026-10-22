@@ -46,7 +46,7 @@ For base H3 with **Euler**, you can use the shipped reference values instead of 
 - **Default (baked, 0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
 - **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — faster, with near-parity results in the reference clip
 
-See the [evidence section](evidence/video_evidence/README.md) for examples of how these settings affect generation.
+See the [evidence section](evidence/h3_evidence/README.md) for examples of how these settings affect generation.
 
 ## Samplers
 
@@ -96,7 +96,7 @@ These measurements use Euler and the calibration values shown in the table. They
 | Δ0.05 | 3-stage | 262s | 2.18× | very noticeable artifacting but still usable |
 | Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
 
-See [evidence/video_evidence/README.md](evidence/video_evidence/README.md) for the full 10s GIFs (360p, 12fps).
+See [evidence/h3_evidence/README.md](evidence/h3_evidence/README.md) for the full 10s GIFs (360p, 12fps).
 
 **Rule of thumb:** for quality-first runs, use `stages 3` at Δ0.005; for a balance of speed and quality, use `stages 2` at Δ0.01; for fast drafts, use `stages 4` at Δ0.05.
 

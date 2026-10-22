@@ -8,7 +8,7 @@ All notable changes to this project are documented here. New releases should be 
 
 - Added a `sampler` (SAMPLER) input to Automatic, Manual, and Sigma Harvest, fed by KSamplerSelect or any other SAMPLER node.
 - Added an optional `model_type` switch (`h3_video` default, `image`) to Automatic, Manual, and Sigma Harvest. `image` runs flow image models such as MOSS Image and Krea 2. Sampler and Harvest both reject non-flow models.
-- Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_krea2_SPEED.json`, and image-model timings (MOSS Image and Krea 2, `coupled_full_grid`, RTX 5070 Laptop) to `evidence/image_evidence/README.md`; split `evidence/` into `video_evidence/` and `image_evidence/`.
+- Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_krea2_SPEED.json`, and image-model timings (MOSS Image and Krea 2, `coupled_full_grid`, RTX 5070 Laptop) to `evidence/image_evidence/README.md`; split `evidence/` into `h3_evidence/` and `image_evidence/`.
 - Added continuous progress and preview reporting across the full SPEED run.
 - Added a ComfyUI tooltip to every input and output of Automatic, Manual, and Sigma Harvest.
 - Added broader regression coverage for the sampler input, I2V, transitions, Harvest, workflows, and noise policies.
