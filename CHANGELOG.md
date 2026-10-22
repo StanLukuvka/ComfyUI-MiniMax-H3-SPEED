@@ -7,14 +7,19 @@ All notable changes to this project are documented here. New releases should be 
 ### Added
 
 - Added a `sampler` (SAMPLER) input to Automatic, Manual, and Sigma Harvest, fed by KSamplerSelect or any other SAMPLER node.
-- Added an optional `model_type` switch (`h3_video` default, `image`) to Automatic, Manual, and Sigma Harvest. `image` runs flow image models such as MOSS Image and Krea 2. Sampler and Harvest both reject non-flow models.
-- Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_kroma_SPEED.json`, and image-model timings (RTX 5070 Laptop) to `evidence/README.md`.
+- Added a required `model_type` switch (`h3_video`, `image`) to Automatic, Manual, and Sigma Harvest, with no default. `image` runs flow image models such as MOSS Image and Krea 2. Sampler and Harvest both reject non-flow models.
+- Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_krea2_SPEED.json`, and image-model timings (MOSS Image and Krea 2, `coupled_full_grid`, RTX 5070 Laptop) to `evidence/image_evidence/README.md`; split `evidence/` into `h3_evidence/` and `image_evidence/`.
 - Added continuous progress and preview reporting across the full SPEED run.
+- Replaced the three H3 example workflows (`video_minimax_h3_SPEED_SIGMA.json`, `_Sigma_Calculated.json`, `_Sigma_Manual.json`) with one flat `workflows/video_h3_SPEED.json`, laid out like the image examples: Harvest, Automatic and Manual on one set of loaders, with only Automatic active.
 - Added a ComfyUI tooltip to every input and output of Automatic, Manual, and Sigma Harvest.
 - Added broader regression coverage for the sampler input, I2V, transitions, Harvest, workflows, and noise policies.
 
 ### Changed
 
+- Renamed the nodes for the model-agnostic pack: `MiniMaxH3SPEEDSampler` → `SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` → `SPEEDSamplerManual`, `MiniMaxH3HarvestToConfig` → `SPEEDSigmaHarvest`, display names `SPEED — …`, category `sampling/speed`. The old IDs stay registered as deprecated subclasses and as node replacements, so saved workflows still load and can be swapped in one step. The example workflows use the new IDs.
+- `model_type` has no default anywhere: not in the widgets, the node functions, `run_speed_pipeline` or Harvest's `compute_residual`. A prompt without it fails validation instead of running as H3.
+- Automatic's `noise_amplitude` and `noise_decay_exponent` no longer default to H3's Euler fit (12.105 / 0.773). They start at 0, which stops with an error asking for a Harvest calibration. The H3 example workflow sets the H3 values explicitly.
+- `SpeedConfig` no longer bakes in H3 numbers: `scales` is required, and `delta` / `noise_amplitude` / `noise_decay_exponent` default to `None` and are required only for `delta_custom`.
 - Sigma Harvest now defaults to the same 0.005 tolerance as Automatic.
 - Sigma Harvest now calibrates the connected sampler instead of assuming Euler.
 - Sigma Harvest now reports that its calibration is based on the empirical `x - denoised` residual spectrum.
@@ -30,6 +35,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Fixed
 
+- Sigma Harvest with `model_type h3_video` on a plain 5-D image latent (such as Krea 2's `[B,C,1,H,W]`) no longer calibrates silently; it returns the `no_captures` error that points at `model_type image`.
 - `direct_coarse` now draws its transition fill noise on the CPU, as ComfyUI draws its own noise, so a seed gives the same image on every device. Before, it was drawn on the latent's device, so CPU and GPU (and possibly different GPUs) gave different images. This changes `direct_coarse` images for the same seed, often the whole composition, because the fill seeds detail the model builds on; speed is unchanged.
 - Fixed Automatic silently coercing invalid stage counts; only 2, 3, or 4 are accepted.
 - Fixed non-finite calibration A/beta values passing `SpeedConfig` validation.

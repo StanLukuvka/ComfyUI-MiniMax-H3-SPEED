@@ -1,4 +1,4 @@
-"""DCT helpers used to resize H3 video latents in frequency space."""
+"""DCT helpers used to resize video latents in frequency space."""
 
 from __future__ import annotations
 

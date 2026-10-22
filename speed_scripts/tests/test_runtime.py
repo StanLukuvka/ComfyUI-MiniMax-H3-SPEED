@@ -26,6 +26,7 @@ QUARTERS = (.25, .5, .75, 1.0)
 
 def _run(config, guider=None, *, noise=None, latent=None, sigmas=SIGMAS, **kwargs):
     kwargs.setdefault("sampler", StubSampler())
+    kwargs.setdefault("model_type", "h3_video")
     return run_speed_pipeline(
         noise if noise is not None else SeededNoise(),
         guider if guider is not None else EchoGuider(),
@@ -47,7 +48,7 @@ def _assert_full_res_nested(latent):
 
 
 @pytest.mark.parametrize("noise_policy", ["direct_coarse", "coupled_full_grid"])
-def test_h3_run_follows_the_stage_ladder_on_one_global_timeline(noise_policy):
+def test_run_follows_the_stage_ladder_on_one_global_timeline(noise_policy):
     sampler = StubSampler("heun")
     guider = EchoGuider(video_offset=.5)
     previews = []
@@ -83,10 +84,10 @@ _SPREAD_FIT = dict(delta=.01, noise_amplitude=219.48, noise_decay_exponent=2.42)
         ((.25, .5, 1.0), _SPREAD_FIT, 20, (44, 80), (1, 2)),
         # Coincident boundaries align the same sigma twice; the middle stage has no steps.
         ((.25, .5, 1.0), _SPREAD_FIT, 10, (8, 8), (1, 1)),
-        # The baked Automatic defaults on a tiny latent: two zero-step stages in a row.
-        (QUARTERS, dict(delta=.005), 10, (8, 8), (1, 1, 1)),
+        # H3's Euler calibration on a tiny latent: two zero-step stages in a row.
+        (QUARTERS, dict(delta=.005, noise_amplitude=12.105, noise_decay_exponent=.773), 10, (8, 8), (1, 1, 1)),
     ],
-    ids=["spread", "coincident", "baked_four_stage"],
+    ids=["spread", "coincident", "h3_euler_four_stage"],
 )
 def test_delta_custom_places_boundaries_from_the_power_spectrum(scales, fit, steps, hw, boundaries):
     sigmas = torch.linspace(1.0, 0.0, steps + 1)
@@ -115,7 +116,7 @@ SIGMA_ONE_BOUNDARY = torch.tensor([1.0, 1.0, .5, 0.0])
         (image_latent((1, 4, 8, 8)), _cfg((.5, 1.0), (1,)), SIGMA_ONE_BOUNDARY, True,
          "transition sigma must be between zero and one"),
     ],
-    ids=["noise_mask", "non_empty", "short_sigmas", "boundary_at_end", "h3_boundary_at_sigma_one",
+    ids=["noise_mask", "non_empty", "short_sigmas", "boundary_at_end", "video_boundary_at_sigma_one",
          "image_boundary_at_sigma_one"],
 )
 def test_run_rejects_unsupported_inputs(latent, config, sigmas, image, error):

@@ -149,7 +149,7 @@ def run_speed_pipeline(
     config: SpeedConfig,
     *,
     sampler,
-    model_type: str = "h3_video",
+    model_type: str,
     disable_pbar: bool = False,
     output_device=None,
     preview_callback=None,

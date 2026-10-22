@@ -217,7 +217,7 @@ def prepare_latent(guider, latent):
     """Copy of ``latent`` with the empty latent fitted to the model, as SamplerCustomAdvanced does.
 
     Generic empty-latent nodes (e.g. EmptyLatentImage) give 4 channels; ComfyUI widens
-    them to the model's latent format. Nested (H3) latents pass through unchanged.
+    them to the model's latent format. Nested (h3_video) latents pass through unchanged.
     """
     import comfy.sample
 
@@ -246,9 +246,11 @@ def get_family(model_type, guider):
 def main_stream(value, model_type):
     """Best-effort ``[B, C, T, H, W]`` spatial stream for diagnostics, or ``None``."""
     if model_type == "h3_video":
-        if getattr(value, "is_nested", False):
-            value = next((s for s in value.unbind() if getattr(s, "ndim", 0) == 5), None)
-        return value if isinstance(value, torch.Tensor) and value.ndim == 5 else None
+        # Only the nested video/audio latent is H3; a plain 5-D tensor (e.g. Krea 2) is not.
+        if not getattr(value, "is_nested", False):
+            return None
+        value = next((s for s in value.unbind() if getattr(s, "ndim", 0) == 5), None)
+        return value if isinstance(value, torch.Tensor) else None
     if not isinstance(value, torch.Tensor) or getattr(value, "is_nested", False):
         return None
     if value.ndim == 4:

@@ -7,7 +7,7 @@
 
 Make MiniMax-H3 video generation faster without retraining. SPEED starts denoising on a cheaper low-resolution grid, then increases the resolution as finer detail becomes useful. This avoids paying for full-resolution compute during the noisiest early steps.
 
-> **MiniMax-H3 video, plus flow image models** (tested on MOSS Image and Kroma, a Krea 2 finetune) through the `model_type` switch. H3 audio always stays at full resolution.
+> **MiniMax-H3 video, plus flow image models** (tested on MOSS Image and Krea 2) through the `model_type` switch. H3 audio always stays at full resolution.
 
 ## Installation
 
@@ -17,8 +17,11 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 # restart ComfyUI
 ```
 
-1. If your workflow already uses **SamplerCustomAdvanced**, replace it with **MiniMax H3 SPEED — Sampler** and connect the same `noise`, `guider`, `sampler`, `sigmas`, and `latent_image` inputs (`sampler` comes from **KSamplerSelect** or any other SAMPLER node). If you use the basic all-in-one `KSampler`, first split it into ComfyUI's advanced sampling components so those inputs are available.
-2. Set **`stages = 2`** or **`3`** (default), then queue the workflow. The shipped Automatic calibration uses the conservative Euler-derived 0.5% delta fit.
+1. If your workflow already uses **SamplerCustomAdvanced**, replace it with **SPEED — Sampler** and connect the same `noise`, `guider`, `sampler`, `sigmas`, and `latent_image` inputs (`sampler` comes from **KSamplerSelect** or any other SAMPLER node). If you use the basic all-in-one `KSampler`, first split it into ComfyUI's advanced sampling components so those inputs are available.
+2. Set **`model_type`** to your model (`h3_video` or `image`); it has no default. Paste `noise_amplitude` and `noise_decay_exponent` from a Harvest run, or for H3 with Euler use the reference values under Sigma Harvest below; they start at 0, which stops with an error.
+3. Set **`stages = 2`** or **`3`** (default), then queue the workflow.
+
+Or start from the example: [`workflows/video_h3_SPEED.json`](workflows/video_h3_SPEED.json) has Harvest, Automatic and Manual on one set of H3 loaders, in Models, Conditioning, Sampling, SPEED and output groups; only Automatic is active.
 
 ## Which node do I need?
 
@@ -29,7 +32,7 @@ Choose how many resolution stages you want:
 `3 = 0.33→0.66→1.0`  
 `4 = 0.25→0.5→0.75→1.0`
 
-`Tolerance (Delta)`, `noise_amplitude`, and `noise_decay_exponent` control when those resolution transitions happen. Leave them at their defaults unless you are using a Harvest calibration or deliberately experimenting.
+`Tolerance (Delta)`, `noise_amplitude`, and `noise_decay_exponent` control when those resolution transitions happen. `noise_amplitude` and `noise_decay_exponent` have no defaults: no model's calibration is baked in. Paste them from Harvest, or for H3 with Euler use the reference values below.
 
 **Manual — Sampler (Step-Through)**  
 Set up to four `(goal, resolution)` pairs yourself. For every stage except the last active one, `goal` is where that stage ends and `resolution` is its scale, such as `0.25` for quarter resolution. The final active stage always runs to the end of the sigma schedule, so its goal value is ignored.
@@ -43,10 +46,10 @@ Harvest is still a native full-resolution pass; it does not run the SPEED chain.
 
 For base H3 with **Euler**, you can use the shipped reference values instead of running Harvest:
 
-- **Default (baked, 0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
+- **Conservative (0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
 - **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — faster, with near-parity results in the reference clip
 
-See the [evidence section](evidence/README.md) for examples of how these settings affect generation.
+See the [evidence section](evidence/h3_evidence/README.md) for examples of how these settings affect generation.
 
 ## Samplers
 
@@ -63,20 +66,20 @@ Automatic and Manual return output and denoised LATENTs; Harvest returns calibra
 
 ## Image models
 
-Set **`model_type = image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Wire it like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). `model_type` defaults to `h3_video`, so existing workflows are unchanged.
+Set **`model_type = image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Wire it like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). `model_type` has no default; set it on every SPEED node. A value that does not match the model and latent stops with an error.
 
-Example workflows: [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json) and [`workflows/image_kroma_SPEED.json`](workflows/image_kroma_SPEED.json). Each has Harvest, Automatic, Manual and a plain reference on one set of loaders; only Automatic is active, already set to that model's harvested values.
+Example workflows: [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](workflows/image_krea2_SPEED.json). Each has Harvest, Automatic and Manual on one set of loaders, in Models, Conditioning, Sampling, SPEED and output groups; only Automatic is active, already set to that model's harvested values and `noise_policy = coupled_full_grid`.
 
-The shipped Automatic calibration is H3's. Run Harvest with `model_type = image` on your model and settings, and paste its values in. At Δ 0.005 the harvested boundary lands in the first step or two of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
+There is no shipped calibration for image models. Run Harvest with `model_type = image` on your model and settings, and paste its values in. At Δ 0.005 the harvested boundary lands in the first few steps of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
 
-RTX 5070 Laptop, the office mug gag as a still ([evidence](evidence/README.md#image-models-model_type--image--the-same-gag-as-a-still)):
+RTX 5070 Laptop, a ramen stall at night as a still ([evidence](evidence/image_evidence/README.md)):
 
 | Model | Plain | Automatic 3 stages, Δ 0.05 | Manual, 0.5× to half the steps |
 |---|---|---|---|
-| MOSS Image, 1344×768, 20 steps, CFG 5 | 23 s | 18 s (1.27×) | 15 s (1.5×) |
-| Kroma (Krea 2 finetune), 1216×832, 8 steps, CFG 1 | 16 s | 12 s (1.33×) | 11 s (1.45×) |
+| MOSS Image, 1344×768, 20 steps, CFG 5 | 22 s | 18 s (1.26×) | 14 s (1.54×) |
+| Krea 2 (raw, fp8), 1216×832, 52 steps, CFG 3.5 | 283 s | 215 s (1.31×) | 183 s (1.55×) |
 
-Every SPEED run was clean and as detailed as plain. The composition differs from the plain run with the same seed, because the first stage draws its noise at the coarse size; SPEED runs with the same seed share one composition.
+Every SPEED run was clean and as detailed as plain. With `noise_policy = coupled_full_grid`, SPEED draws its noise from the seed as SamplerCustomAdvanced does, so it keeps the plain run's composition at the same seed; small details such as an object count can still change. `direct_coarse` draws its own coarse noise and gives a different picture.
 
 ## Speed improvements
 
@@ -96,7 +99,7 @@ These measurements use Euler and the calibration values shown in the table. They
 | Δ0.05 | 3-stage | 262s | 2.18× | very noticeable artifacting but still usable |
 | Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
 
-See [evidence/README.md](evidence/README.md) for the full 10s GIFs (360p, 12fps).
+See [evidence/h3_evidence/README.md](evidence/h3_evidence/README.md) for the full 10s GIFs (360p, 12fps).
 
 **Rule of thumb:** for quality-first runs, use `stages 3` at Δ0.005; for a balance of speed and quality, use `stages 2` at Δ0.01; for fast drafts, use `stages 4` at Δ0.05.
 
@@ -105,6 +108,8 @@ See [evidence/README.md](evidence/README.md) for the full 10s GIFs (360p, 12fps)
 - **A transition falls outside the sigma schedule** → increase your scheduler step count or move Manual transition goals earlier. Every transition must happen after the first sigma and before the final sigma.
 - **"use model_type image" / "use model_type h3_video"** → the `model_type` switch does not match the latent. H3 needs `h3_video`; plain image latents need `image`.
 - **MiniMax-H3 sigma shifts are unavailable** → `model_type h3_video` needs a real MiniMax-H3 model.
+- **noise_amplitude and noise_decay_exponent are not set (0)** → paste the values from a Harvest run for this model, sampler and schedule.
+- **Nodes marked deprecated** → workflows saved before the rename use the old `MiniMaxH3*` node IDs. They still run; right-click a node and replace it with the matching `SPEED` node when convenient.
 - **Text looks blurry / wobbly** → lower `Tolerance (Delta)` from `0.005` (0.5%) toward `0.001`, or use fewer stages. Both options are more conservative and usually slower.
 - **Prompt drifts / objects disappear on 4-stage** → there may be too many resolution hops. Drop to 2 or 3 stages.
 

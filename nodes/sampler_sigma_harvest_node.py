@@ -48,7 +48,7 @@ def _sampler_label(sampler):
     return name.removeprefix("sample_").removesuffix("_function")
 
 
-class MiniMaxH3HarvestToConfig:
+class SPEEDSigmaHarvest:
     """Measure one native sampler run and return an Automatic calibration."""
 
     DESCRIPTION = (
@@ -67,7 +67,7 @@ class MiniMaxH3HarvestToConfig:
         "Latent from the native full-resolution pass, for inspection only. Not a SPEED result.",
     )
     FUNCTION = "harvest"
-    CATEGORY = "sampling/minimax_h3_speed/diagnostics"
+    CATEGORY = "sampling/speed/diagnostics"
     OUTPUT_NODE = False
 
     @classmethod
@@ -94,8 +94,6 @@ class MiniMaxH3HarvestToConfig:
                     "LATENT",
                     {"tooltip": "Latent for the native full-resolution pass, at the size you will run SPEED at."},
                 ),
-            },
-            "optional": {
                 "Tolerance (Delta)": (
                     "FLOAT",
                     {
@@ -108,10 +106,7 @@ class MiniMaxH3HarvestToConfig:
                 ),
                 "model_type": (
                     list(MODEL_TYPES),
-                    {
-                        "default": "h3_video",
-                        "tooltip": "h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Must match the model; it is never auto-detected.",
-                    },
+                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
                 ),
             },
         }
@@ -123,11 +118,12 @@ class MiniMaxH3HarvestToConfig:
         sampler,
         sigmas,
         latent_image,
+        model_type,
         **kwargs,
     ):
 
         delta = float(kwargs.pop("Tolerance (Delta)", 0.005))
-        model_type = check_model_type(kwargs.pop("model_type", "h3_video"))
+        model_type = check_model_type(model_type)
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
@@ -354,12 +350,23 @@ class MiniMaxH3HarvestToConfig:
             output_latent = latent_image
         return (output_json, output_latent)
 
-NODE_CLASS_MAPPINGS = {"MiniMaxH3HarvestToConfig": MiniMaxH3HarvestToConfig}
+class MiniMaxH3HarvestToConfig(SPEEDSigmaHarvest):
+    """Deprecated ID for ``SPEEDSigmaHarvest``, kept so saved workflows still load."""
+
+    DEPRECATED = True
+
+
+NODE_CLASS_MAPPINGS = {
+    "SPEEDSigmaHarvest": SPEEDSigmaHarvest,
+    "MiniMaxH3HarvestToConfig": MiniMaxH3HarvestToConfig,
+}
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MiniMaxH3HarvestToConfig": "MiniMax H3 SPEED — Sigma Harvest (Native Sampler)"
+    "SPEEDSigmaHarvest": "SPEED — Sigma Harvest (Native Sampler)",
+    "MiniMaxH3HarvestToConfig": "MiniMax H3 SPEED — Sigma Harvest (Native Sampler) (deprecated)",
 }
 __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
+    "SPEEDSigmaHarvest",
     "MiniMaxH3HarvestToConfig",
 ]

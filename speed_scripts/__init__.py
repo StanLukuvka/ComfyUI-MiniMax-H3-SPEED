@@ -1,4 +1,4 @@
-"""Core SPEED runtime support for MiniMax-H3.
+"""Core SPEED runtime support.
 
 Package layout:
 - config.py — validated SPEED runtime configuration

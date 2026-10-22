@@ -1,4 +1,4 @@
-"""Automatic MiniMax-H3 SPEED sampler."""
+"""Automatic SPEED sampler for the h3_video and image model types."""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import build_automatic_speed_config
 
 
-class MiniMaxH3SPEEDSampler:
+class SPEEDSampler:
     """Progressive-resolution SPEED sampling with automatic stage placement."""
 
     DESCRIPTION = (
         "Automatic SPEED sampler — pick stages (2, 3, or 4) and go. "
         "Starts cheap at low resolution, then upsamples when the detail "
         "matters. Set Tolerance (0.5% = 0.005) to trade blur for speed. "
-        "Uses baked Euler-derived A/beta; re-calibrate with the Harvest node "
-        "if you change checkpoint, LoRA/addons, sampler, or another factor "
-        "that materially changes the denoising trajectory."
+        "Needs noise_amplitude and noise_decay_exponent from the Sigma Harvest "
+        "node for your model; re-run Harvest if you change checkpoint, LoRA/addons, "
+        "sampler, or another factor that materially changes the denoising trajectory."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
@@ -27,7 +27,7 @@ class MiniMaxH3SPEEDSampler:
         "Latent of the model's last clean-image (x0) estimate, as from SamplerCustomAdvanced.",
     )
     FUNCTION = "sample"
-    CATEGORY = "sampling/minimax_h3_speed"
+    CATEGORY = "sampling/speed"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -82,23 +82,23 @@ class MiniMaxH3SPEEDSampler:
                 "noise_amplitude": (
                     "FLOAT",
                     {
-                        "default": 12.105,
-                        "min": 0.0001,
+                        "default": 0.0,
+                        "min": 0.0,
                         "max": 1e6,
                         "step": 0.0001,
                         "round": 0.0001,
-                        "tooltip": "A in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule; the default is Euler-derived for H3.",
+                        "tooltip": "A in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule. There is no default: 0 means not set and stops with an error.",
                     },
                 ),
                 "noise_decay_exponent": (
                     "FLOAT",
                     {
-                        "default": 0.773,
-                        "min": 0.0001,
+                        "default": 0.0,
+                        "min": 0.0,
                         "max": 10.0,
                         "step": 0.0001,
                         "round": 0.0001,
-                        "tooltip": "beta in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule; the default is Euler-derived for H3.",
+                        "tooltip": "beta in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule. There is no default: 0 means not set and stops with an error.",
                     },
                 ),
                 "seed_offset": (
@@ -110,14 +110,9 @@ class MiniMaxH3SPEEDSampler:
                         "tooltip": "direct_coarse only: salts the seed of the high-frequency fill drawn at each resolution transition (seed + seed_offset + stage index). Ignored by coupled_full_grid. Does not change the first stage's noise or the sampler seed. Leave at 10000 unless you want a different fill pattern for the same seed.",
                     },
                 ),
-            },
-            "optional": {
                 "model_type": (
                     list(MODEL_TYPES),
-                    {
-                        "default": "h3_video",
-                        "tooltip": "h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Must match the model; it is never auto-detected.",
-                    },
+                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
                 ),
             },
         }
@@ -129,12 +124,12 @@ class MiniMaxH3SPEEDSampler:
         sampler,
         sigmas,
         latent_image,
+        model_type,
+        noise_amplitude,
+        noise_decay_exponent,
         stages=3,
         noise_policy="direct_coarse",
-        noise_amplitude=12.105,
-        noise_decay_exponent=0.773,
         seed_offset=10000,
-        model_type="h3_video",
         **kwargs,
     ):
         delta = kwargs.pop("Tolerance (Delta)", 0.005)
@@ -143,6 +138,11 @@ class MiniMaxH3SPEEDSampler:
             raise TypeError(f"Unexpected Automatic option(s): {unexpected}")
         if isinstance(stages, bool) or not isinstance(stages, int) or stages not in (2, 3, 4):
             raise ValueError(f"stages must be exactly 2, 3, or 4; got {stages!r}")
+        if not noise_amplitude or not noise_decay_exponent:
+            raise ValueError(
+                "noise_amplitude and noise_decay_exponent are not set (0). Run Sigma Harvest "
+                "for this model, sampler and schedule and paste its values."
+            )
 
         config = build_automatic_speed_config(
             stages=stages,
@@ -164,13 +164,24 @@ class MiniMaxH3SPEEDSampler:
         )
 
 
-NODE_CLASS_MAPPINGS = {"MiniMaxH3SPEEDSampler": MiniMaxH3SPEEDSampler}
+class MiniMaxH3SPEEDSampler(SPEEDSampler):
+    """Deprecated ID for ``SPEEDSampler``, kept so saved workflows still load."""
+
+    DEPRECATED = True
+
+
+NODE_CLASS_MAPPINGS = {
+    "SPEEDSampler": SPEEDSampler,
+    "MiniMaxH3SPEEDSampler": MiniMaxH3SPEEDSampler,
+}
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MiniMaxH3SPEEDSampler": "MiniMax H3 SPEED — Sampler"
+    "SPEEDSampler": "SPEED — Sampler",
+    "MiniMaxH3SPEEDSampler": "MiniMax H3 SPEED — Sampler (deprecated)",
 }
 
 __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
+    "SPEEDSampler",
     "MiniMaxH3SPEEDSampler",
 ]

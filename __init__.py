@@ -1,4 +1,4 @@
-"""Register the MiniMax-H3 SPEED nodes with ComfyUI.
+"""Register the SPEED nodes with ComfyUI.
 
 Add this package and ``nodes/`` to ``sys.path`` before importing the node
 modules by name.
@@ -16,7 +16,7 @@ for _p in (_NODE_DIR, _NODES_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-print("MiniMax-H3 SPEED node pack: registering nodes...")
+print("SPEED node pack: registering nodes...")
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
@@ -44,6 +44,47 @@ for _name in _NODE_MODULES:
         continue
     _register(_mod, _name)
 
-print("MiniMax-H3 SPEED registration complete: %d node(s)" % len(NODE_CLASS_MAPPINGS))
+# Old MiniMax-H3 node IDs stay registered as deprecated subclasses. Registering
+# them as replacements lets the frontend offer to swap them for the new nodes.
+_REPLACED_IDS = {
+    "MiniMaxH3SPEEDSampler": "SPEEDSampler",
+    "MiniMaxH3SPEEDSamplerManual": "SPEEDSamplerManual",
+    "MiniMaxH3HarvestToConfig": "SPEEDSigmaHarvest",
+}
+_WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN"}
+
+
+def _register_replacements():
+    try:
+        from comfy_api.latest import io
+        from server import PromptServer
+
+        manager = PromptServer.instance.node_replace_manager
+    except (ImportError, AttributeError):
+        return  # ComfyUI without node replacements; the deprecated IDs still load.
+    for old_id, new_id in _REPLACED_IDS.items():
+        if old_id not in NODE_CLASS_MAPPINGS or new_id not in NODE_CLASS_MAPPINGS:
+            continue
+        spec = NODE_CLASS_MAPPINGS[new_id].INPUT_TYPES()
+        inputs = [name for group in ("required", "optional") for name in spec.get(group, {})]
+        widgets = [
+            name
+            for group in ("required", "optional")
+            for name, (kind, *_) in spec.get(group, {}).items()
+            if isinstance(kind, list) or kind in _WIDGET_TYPES
+        ]
+        outputs = len(NODE_CLASS_MAPPINGS[new_id].RETURN_TYPES)
+        manager.register(io.NodeReplace(
+            new_node_id=new_id,
+            old_node_id=old_id,
+            old_widget_ids=widgets,
+            input_mapping=[{"new_id": name, "old_id": name} for name in inputs],
+            output_mapping=[{"new_idx": i, "old_idx": i} for i in range(outputs)],
+        ))
+
+
+_register_replacements()
+
+print("SPEED registration complete: %d node(s)" % len(NODE_CLASS_MAPPINGS))
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
