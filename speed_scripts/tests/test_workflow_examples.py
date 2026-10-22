@@ -25,11 +25,9 @@ def _graphs(value):
         yield from _graphs(child)
 
 
-def test_all_five_examples_are_shipped():
+def test_all_three_examples_are_shipped():
     assert {path.name for path in WORKFLOWS} == {
-        "video_minimax_h3_SPEED_Sigma_Calculated.json",
-        "video_minimax_h3_SPEED_Sigma_Manual.json",
-        "video_minimax_h3_SPEED_SIGMA.json",
+        "video_h3_SPEED.json",
         "image_moss_SPEED.json",
         "image_krea2_SPEED.json",
     }

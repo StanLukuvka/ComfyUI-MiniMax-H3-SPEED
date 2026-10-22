@@ -39,7 +39,7 @@
         "default"
       ],
       "widgets_values_named": {
-        "unet_name": "kromaKrea2_opd.safetensors",
+        "unet_name": "krea2Raw_v10_full_fp8.safetensors",
         "weight_dtype": "default"
       }
     },
@@ -161,7 +161,7 @@
         "masterpiece, best quality, candid 35mm film photograph, real person, natural skin texture: a small ramen stall on a narrow Tokyo side street at night. An elderly cook with short grey hair, a white headband and a navy apron ladles broth into a bowl behind the wooden counter, with steam rising from three large silver pots behind him. The wooden sign above the stall reads \"RAMEN 400\" in large, clear letters, and there is no other text. Exactly six plain paper lanterns hang in a row along the eave: five are red, and the third lantern from the left is blue. Two customers sit on wooden stools at the counter with their backs to the camera, and wet cobblestones in the foreground reflect the lantern light. Medium-wide shot at eye level. ramen stall, six paper lanterns, one blue lantern, elderly cook"
       ],
       "widgets_values_named": {
-        "text": "masterpiece, best quality, candid 35mm film photograph, real person, natural skin texture: a still from a live-action office mockumentary. A young man in his late twenties with tousled brown hair, wearing a light blue button-down shirt and a loosened dark tie, stands in the aisle of a dull open-plan office with his throwing arm still half raised. The white ceramic mug he has just thrown has bounced back off the large window behind him and smacks him squarely in the middle of his forehead, caught at the moment of impact; his eyes are wide and his face is perfectly deadpan. The mug reads \"World's Most Mediocre Boss\" in large, clear letters, and there is no other text. Behind him the unbroken window has closed blinds, grey desks with monitors and yellow sticky notes sit under flat fluorescent light, and far behind him two coworkers at their desks freeze and stare at him. Medium shot at chest height. mug hitting his forehead, deadpan office worker"
+        "text": "masterpiece, best quality, candid 35mm film photograph, real person, natural skin texture: a small ramen stall on a narrow Tokyo side street at night. An elderly cook with short grey hair, a white headband and a navy apron ladles broth into a bowl behind the wooden counter, with steam rising from three large silver pots behind him. The wooden sign above the stall reads \"RAMEN 400\" in large, clear letters, and there is no other text. Exactly six plain paper lanterns hang in a row along the eave: five are red, and the third lantern from the left is blue. Two customers sit on wooden stools at the counter with their backs to the camera, and wet cobblestones in the foreground reflect the lantern light. Medium-wide shot at eye level. ramen stall, six paper lanterns, one blue lantern, elderly cook"
       }
     },
     {
@@ -215,7 +215,7 @@
         3.5
       ],
       "widgets_values_named": {
-        "cfg": 1
+        "cfg": 3.5
       }
     },
     {
@@ -340,7 +340,7 @@
       ],
       "widgets_values_named": {
         "scheduler": "simple",
-        "steps": 8,
+        "steps": 52,
         "denoise": 1
       }
     },
@@ -565,10 +565,10 @@
       ],
       "widgets_values_named": {
         "stages": 3,
-        "noise_policy": "direct_coarse",
+        "noise_policy": "coupled_full_grid",
         "Tolerance (Delta)": 0.05,
-        "noise_amplitude": 9.6035,
-        "noise_decay_exponent": 0.6105,
+        "noise_amplitude": 9.7616,
+        "noise_decay_exponent": 0.6308,
         "seed_offset": 10000,
         "model_type": "image"
       }
@@ -651,7 +651,7 @@
         "speed/krea2_ramen_auto"
       ],
       "widgets_values_named": {
-        "filename_prefix": "speed/kroma_mug_auto"
+        "filename_prefix": "speed/krea2_ramen_auto"
       }
     },
     {
@@ -730,12 +730,12 @@
         "image"
       ],
       "widgets_values_named": {
-        "noise_policy": "direct_coarse",
+        "noise_policy": "coupled_full_grid",
         "seed_offset": 10000,
         "ratio_mode": "steps",
-        "transition_goal_1": 4,
+        "transition_goal_1": 26,
         "transition_resolution_1": 0.5,
-        "transition_goal_2": 8,
+        "transition_goal_2": 52,
         "transition_resolution_2": 1,
         "transition_goal_3": 0,
         "transition_resolution_3": 0,
@@ -822,7 +822,7 @@
         "speed/krea2_ramen_manual"
       ],
       "widgets_values_named": {
-        "filename_prefix": "speed/kroma_mug_manual"
+        "filename_prefix": "speed/krea2_ramen_manual"
       }
     },
     {
@@ -847,7 +847,7 @@
         "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: plain 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 4, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a plain\nrun's composition at the same seed; small details such as an object count can still change.\n"
       ],
       "widgets_values_named": {
-        "text": "## Kroma (Krea 2 finetune)\n\nSettings from the Kroma prompting study: 8 steps, CFG 1, euler / simple, zeroed negative, 1216x832. Prompt: quality prefix, medium first, text clause, key concept repeated at the end.\n\nRTX 5070 Laptop: plain 16 s, Automatic (3 stages, \u0394 0.05) 12 s, Manual (0.5x to step 4) 11-12 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = image**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 4, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\nSPEED changes the composition against a plain SamplerCustomAdvanced run at the same seed (the\nlow-resolution stage gets its own noise), so compare looks, not pixels.\n"
+        "text": "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: plain 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 4, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a plain\nrun's composition at the same seed; small details such as an object count can still change.\n"
       },
       "color": "#222",
       "bgcolor": "#000"

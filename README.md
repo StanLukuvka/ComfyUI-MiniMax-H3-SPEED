@@ -20,6 +20,8 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 1. If your workflow already uses **SamplerCustomAdvanced**, replace it with **MiniMax H3 SPEED — Sampler** and connect the same `noise`, `guider`, `sampler`, `sigmas`, and `latent_image` inputs (`sampler` comes from **KSamplerSelect** or any other SAMPLER node). If you use the basic all-in-one `KSampler`, first split it into ComfyUI's advanced sampling components so those inputs are available.
 2. Set **`stages = 2`** or **`3`** (default), then queue the workflow. The shipped Automatic calibration uses the conservative Euler-derived 0.5% delta fit.
 
+Or start from the example: [`workflows/video_h3_SPEED.json`](workflows/video_h3_SPEED.json) has Harvest, Automatic and Manual on one set of H3 loaders, in Models, Conditioning, Sampling, SPEED and output groups; only Automatic is active.
+
 ## Which node do I need?
 
 **Automatic — Sampler**  

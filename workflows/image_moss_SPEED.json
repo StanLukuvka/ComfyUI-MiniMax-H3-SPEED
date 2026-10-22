@@ -210,7 +210,7 @@
         "A candid photograph of a small ramen stall on a narrow Tokyo side street at night. An elderly cook with short grey hair, a white headband and a navy apron ladles broth into a bowl behind the wooden counter. Steam rises from three large silver pots on the stove behind him. A hand-painted wooden sign above the stall reads \"RAMEN 400\" in white letters. Exactly six plain paper lanterns with no writing on them hang in a row along the eave. Five of the lanterns are red, and the third lantern from the left is blue. Two customers sit on wooden stools at the counter with their backs to the camera. Wet cobblestones in the foreground reflect the lantern light. Medium-wide shot at eye level, with the cook centred and his face in sharp focus."
       ],
       "widgets_values_named": {
-        "text": "A candid photograph, a still from a live-action office mockumentary. A young man in his late twenties with tousled brown hair, wearing a light blue button-down shirt and a loosened dark tie, stands in the aisle of a dull open-plan office. The white ceramic mug he has just thrown has bounced back off the large office window behind him and smacks him squarely in the middle of his forehead, frozen at the moment of impact. His eyes are wide and his face is perfectly deadpan, and his throwing arm is still half raised. The mug reads \"World's Most Mediocre Boss\" in black letters. Behind him the window glass is unbroken, with closed blinds. Around him are grey desks with monitors and yellow sticky notes under flat fluorescent ceiling light. In the background two coworkers at their desks freeze and stare at him. Medium shot at chest height, with the man centred and his face and the mug in sharp focus."
+        "text": "A candid photograph of a small ramen stall on a narrow Tokyo side street at night. An elderly cook with short grey hair, a white headband and a navy apron ladles broth into a bowl behind the wooden counter. Steam rises from three large silver pots on the stove behind him. A hand-painted wooden sign above the stall reads \"RAMEN 400\" in white letters. Exactly six plain paper lanterns with no writing on them hang in a row along the eave. Five of the lanterns are red, and the third lantern from the left is blue. Two customers sit on wooden stools at the counter with their backs to the camera. Wet cobblestones in the foreground reflect the lantern light. Medium-wide shot at eye level, with the cook centred and his face in sharp focus."
       }
     },
     {
@@ -657,10 +657,10 @@
       ],
       "widgets_values_named": {
         "stages": 3,
-        "noise_policy": "direct_coarse",
+        "noise_policy": "coupled_full_grid",
         "Tolerance (Delta)": 0.05,
-        "noise_amplitude": 39.7928,
-        "noise_decay_exponent": 0.9874,
+        "noise_amplitude": 48.4075,
+        "noise_decay_exponent": 1.0333,
         "seed_offset": 10000,
         "model_type": "image"
       }
@@ -743,7 +743,7 @@
         "speed/moss_ramen_auto"
       ],
       "widgets_values_named": {
-        "filename_prefix": "speed/moss_mug_auto"
+        "filename_prefix": "speed/moss_ramen_auto"
       }
     },
     {
@@ -822,7 +822,7 @@
         "image"
       ],
       "widgets_values_named": {
-        "noise_policy": "direct_coarse",
+        "noise_policy": "coupled_full_grid",
         "seed_offset": 10000,
         "ratio_mode": "steps",
         "transition_goal_1": 10,
@@ -914,7 +914,7 @@
         "speed/moss_ramen_manual"
       ],
       "widgets_values_named": {
-        "filename_prefix": "speed/moss_mug_manual"
+        "filename_prefix": "speed/moss_ramen_manual"
       }
     },
     {
@@ -939,7 +939,7 @@
         "## MOSS-Image\n\nSettings from the MOSS prompting study: 20 steps, CFG 5, euler / sgm_uniform, SLG (uncond skip, layer 22, 0-1), empty negative, 1344x768. Prompt: prose, one sentence per element, no quality prefix.\n\nRTX 5070 Laptop: plain 22 s, Automatic (3 stages, \u0394 0.05) 18 s, Manual (0.5x to step 10) 14 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 10, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a plain\nrun's composition at the same seed; small details such as an object count can still change.\n"
       ],
       "widgets_values_named": {
-        "text": "## MOSS-Image\n\nSettings from the MOSS prompting study: 20 steps, CFG 5, euler / sgm_uniform, SLG (uncond skip, layer 22, 0-1), empty negative, 1344x768. Prompt: prose, one sentence per element, no quality prefix.\n\nRTX 5070 Laptop: plain 23 s, Automatic (3 stages, \u0394 0.05) 18 s, Manual (0.5x to step 10) 15 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = image**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 10, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\nSPEED changes the composition against a plain SamplerCustomAdvanced run at the same seed (the\nlow-resolution stage gets its own noise), so compare looks, not pixels.\n"
+        "text": "## MOSS-Image\n\nSettings from the MOSS prompting study: 20 steps, CFG 5, euler / sgm_uniform, SLG (uncond skip, layer 22, 0-1), empty negative, 1344x768. Prompt: prose, one sentence per element, no quality prefix.\n\nRTX 5070 Laptop: plain 22 s, Automatic (3 stages, \u0394 0.05) 18 s, Manual (0.5x to step 10) 14 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 10, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a plain\nrun's composition at the same seed; small details such as an object count can still change.\n"
       },
       "color": "#222",
       "bgcolor": "#000"
