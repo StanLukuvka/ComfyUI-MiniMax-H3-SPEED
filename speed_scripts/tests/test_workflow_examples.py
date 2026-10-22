@@ -1,23 +1,12 @@
-"""Committed workflow examples match the public node contracts."""
+"""The shipped workflow examples wire the public nodes as documented."""
 
 import json
 from pathlib import Path
 
+import pytest
 
-WORKFLOW_DIR = Path(__file__).parents[2] / "workflows"
-WORKFLOW_NAMES = (
-    "video_minimax_h3_SPEED_Sigma_Calculated.json",
-    "video_minimax_h3_SPEED_Sigma_Manual.json",
-    "video_minimax_h3_SPEED_SIGMA.json",
-    "image_moss_SPEED.json",
-    "image_kroma_SPEED.json",
-)
-NODE_TYPES = {
-    "MiniMaxH3SPEEDSampler",
-    "MiniMaxH3SPEEDSamplerManual",
-    "MiniMaxH3HarvestToConfig",
-}
-EXPECTED_OUTPUTS = {
+WORKFLOWS = sorted((Path(__file__).parents[2] / "workflows").glob("*.json"))
+OUTPUTS = {
     "MiniMaxH3SPEEDSampler": ("output", "denoised_output"),
     "MiniMaxH3SPEEDSamplerManual": ("output", "denoised_output"),
     "MiniMaxH3HarvestToConfig": ("calibration", "diagnostic_latent"),
@@ -29,45 +18,43 @@ def _graphs(value):
     if isinstance(value, dict):
         if isinstance(value.get("nodes"), list):
             yield value
-        for child in value.values():
-            yield from _graphs(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _graphs(child)
+        values = value.values()
+    else:
+        values = value if isinstance(value, list) else ()
+    for child in values:
+        yield from _graphs(child)
 
 
-def _link_origin(link):
-    """Return ``(link_id, origin_node_id)`` for dict or array link records."""
-    if isinstance(link, dict):
-        return link["id"], link["origin_id"]
-    return link[0], link[1]
+def test_all_five_examples_are_shipped():
+    assert {path.name for path in WORKFLOWS} == {
+        "video_minimax_h3_SPEED_Sigma_Calculated.json",
+        "video_minimax_h3_SPEED_Sigma_Manual.json",
+        "video_minimax_h3_SPEED_SIGMA.json",
+        "image_moss_SPEED.json",
+        "image_kroma_SPEED.json",
+    }
 
 
-def _public_nodes_with_graph(workflow):
-    for graph in _graphs(workflow):
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.stem)
+def test_example_feeds_each_public_node_from_ksampler_select_euler(path):
+    found = 0
+    for graph in _graphs(json.loads(path.read_text())):
+        nodes = {node["id"]: node for node in graph["nodes"]}
+        # Links are dict records in subgraphs and [id, origin, ...] arrays at the top level.
+        origins = dict(
+            (link["id"], link["origin_id"]) if isinstance(link, dict) else link[:2]
+            for link in graph.get("links", [])
+        )
         for node in graph["nodes"]:
-            if node.get("type") in NODE_TYPES:
-                yield graph, node
-
-
-def test_committed_examples_feed_each_public_node_from_ksampler_select_euler():
-    for name in WORKFLOW_NAMES:
-        workflow = json.loads((WORKFLOW_DIR / name).read_text())
-        found = list(_public_nodes_with_graph(workflow))
-        assert found, name
-        for graph, node in found:
-            nodes_by_id = {other["id"]: other for other in graph["nodes"]}
-            origins = dict(_link_origin(link) for link in graph.get("links", []))
-
-            input_names = [i["name"] for i in node["inputs"]]
-            assert input_names.count("sampler") == 1, (name, node["id"])
+            if node.get("type") not in OUTPUTS:
+                continue
+            found += 1
             # SamplerCustomAdvanced order: noise, guider, sampler, ...
-            assert input_names.index("sampler") == 2, (name, node["id"])
-            sampler_input = node["inputs"][2]
-            assert sampler_input["type"] == "SAMPLER"
-            assert sampler_input["link"] is not None
-            source = nodes_by_id[origins[sampler_input["link"]]]
-            assert source["type"] == "KSamplerSelect"
-            assert source["widgets_values"] == ["euler"]
-
-            assert tuple(output["name"] for output in node["outputs"]) == EXPECTED_OUTPUTS[node["type"]]
+            names = [i["name"] for i in node["inputs"]]
+            assert names.count("sampler") == 1 and names.index("sampler") == 2
+            sampler = node["inputs"][2]
+            assert sampler["type"] == "SAMPLER" and sampler["link"] is not None
+            source = nodes[origins[sampler["link"]]]
+            assert (source["type"], source["widgets_values"]) == ("KSamplerSelect", ["euler"])
+            assert tuple(output["name"] for output in node["outputs"]) == OUTPUTS[node["type"]]
+    assert found

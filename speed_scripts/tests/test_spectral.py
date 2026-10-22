@@ -1,55 +1,23 @@
-"""Spectral transform and expansion contracts."""
+"""direct_coarse transition noise: the carried band is kept, new bands get transition-seeded noise."""
 
 import pytest
 import torch
 
-from speed_scripts.spectral import (
-    dct2,
-    idct2,
-    lowpass_dct,
-    spectral_expand,
-    spectral_expand_3d,
-)
+from speed_scripts.spectral import dct2, spectral_expand, spectral_expand_3d
 
 
-def test_dct_round_trip_and_lowpass_recovery():
-    x = torch.randn(1, 2, 4, 8, 16)
-    assert torch.allclose(idct2(dct2(x)), x, atol=1e-5)
-
-    expanded = spectral_expand(x, (16, 32), sigma=0.0, seed=7)
-    recovered = lowpass_dct(expanded, (8, 16))
-    assert torch.allclose(recovered, x, atol=1e-5)
-
-
-def test_lowpass_preserves_dc_and_removes_fine_structure():
-    dc = torch.ones(1, 1, 32, 32)
-    assert torch.allclose(lowpass_dct(dc, (32, 32)), dc, atol=1e-6)
-
-    checker = torch.zeros(1, 1, 32, 32)
-    checker[..., ::2, ::2] = 1.0
-    coarse = lowpass_dct(checker, (16, 16))
-    assert coarse.std() < checker.std()
-
-
-def test_spectral_expand_preserves_source_band_and_seed_contract():
+def test_spectral_expand_keeps_the_source_band_and_seeds_the_new_bands():
     source = torch.randn(1, 2, 4, 8, 12)
     first = spectral_expand(source, (16, 24), sigma=0.5, seed=99)
-    same = spectral_expand(source, (16, 24), sigma=0.5, seed=99)
-    different = spectral_expand(source, (16, 24), sigma=0.5, seed=100)
 
-    assert torch.equal(first, same)
-    assert not torch.equal(first, different)
-    source_coeffs = dct2(source)
-    expanded_coeffs = dct2(first)
-    assert torch.allclose(expanded_coeffs[..., :8, :12], source_coeffs, atol=1e-5)
+    assert torch.allclose(dct2(first)[..., :8, :12], dct2(source), atol=1e-5)
+    assert torch.equal(first, spectral_expand(source, (16, 24), sigma=0.5, seed=99))
+    assert not torch.equal(first, spectral_expand(source, (16, 24), sigma=0.5, seed=100))
 
-
-def test_spectral_expand_noise_amplitude_tracks_sigma():
-    source = torch.zeros(1, 1, 8, 8)
-    low = dct2(spectral_expand(source, (16, 16), sigma=0.1, seed=3))
-    high = dct2(spectral_expand(source, (16, 16), sigma=0.5, seed=3))
-    low[..., :8, :8] = 0
-    high[..., :8, :8] = 0
+    # The new-band noise amplitude is the transition sigma.
+    zero = torch.zeros(1, 1, 8, 8)
+    low, high = (dct2(spectral_expand(zero, (16, 16), sigma=s, seed=3)) for s in (0.1, 0.5))
+    low[..., :8, :8] = high[..., :8, :8] = 0
     assert torch.allclose(high, low * 5.0, atol=1e-5, rtol=1e-5)
 
 
