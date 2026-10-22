@@ -53,7 +53,7 @@ def test_nodes_take_the_sampler_custom_advanced_inputs(node):
     cls = _node(node)
     advanced = ["noise", "guider", "sampler", "sigmas", "latent_image"]
     assert list(cls.INPUT_TYPES()["required"])[:5] == advanced
-    assert cls.INPUT_TYPES()["required"]["sampler"] == ("SAMPLER",)
+    assert cls.INPUT_TYPES()["required"]["sampler"][0] == "SAMPLER"
     params = inspect.signature(getattr(cls, cls.FUNCTION)).parameters
     assert list(params)[1:6] == advanced  # after self
     assert params["sampler"].default is inspect.Parameter.empty
@@ -84,7 +84,19 @@ def test_nodes_take_the_sampler_custom_advanced_inputs(node):
     ],
 )
 def test_node_input_defaults(node, group, name, expected):
-    assert _node(node).INPUT_TYPES()[group][name] == expected
+    kind, options = _node(node).INPUT_TYPES()[group][name]
+    assert (kind, {k: v for k, v in options.items() if k != "tooltip"}) == expected
+
+
+@pytest.mark.parametrize("node", [AUTOMATIC, MANUAL, HARVEST], ids=lambda n: n[1])
+def test_every_input_and_output_has_a_tooltip(node):
+    cls = _node(node)
+    for section in cls.INPUT_TYPES().values():
+        for name, spec in section.items():
+            assert spec[1].get("tooltip", "").strip(), name
+    assert len(cls.OUTPUT_TOOLTIPS) == len(cls.RETURN_TYPES)
+    assert all(tip.strip() for tip in cls.OUTPUT_TOOLTIPS)
+    assert cls.DESCRIPTION.strip()
 
 
 @pytest.mark.parametrize("stages,scales", [(2, (.5, 1.0)), (3, (1 / 3, 2 / 3, 1.0)), (4, (.25, .5, .75, 1.0))])

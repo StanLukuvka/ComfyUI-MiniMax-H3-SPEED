@@ -62,6 +62,10 @@ class MiniMaxH3HarvestToConfig:
     )
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")
+    OUTPUT_TOOLTIPS = (
+        "Calibration JSON (noise_amplitude, noise_decay_exponent, delta, r2, health, report) to paste into the matching Automatic node. On failure, an error JSON.",
+        "Latent from the native full-resolution pass, for inspection only. Not a SPEED result.",
+    )
     FUNCTION = "harvest"
     CATEGORY = "sampling/minimax_h3_speed/diagnostics"
     OUTPUT_NODE = False
@@ -70,15 +74,45 @@ class MiniMaxH3HarvestToConfig:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "noise": ("NOISE",),
-                "guider": ("GUIDER",),
-                "sampler": ("SAMPLER",),
-                "sigmas": ("SIGMAS",),
-                "latent_image": ("LATENT",),
+                "noise": (
+                    "NOISE",
+                    {"tooltip": "Noise source, same as SamplerCustomAdvanced (e.g. RandomNoise). Its seed also seeds the sampler."},
+                ),
+                "guider": (
+                    "GUIDER",
+                    {"tooltip": "Guider, same as SamplerCustomAdvanced (e.g. CFGGuider, BasicGuider)."},
+                ),
+                "sampler": (
+                    "SAMPLER",
+                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Use the sampler you will run SPEED with; the calibration is specific to it."},
+                ),
+                "sigmas": (
+                    "SIGMAS",
+                    {"tooltip": "Sigma schedule for the native calibration pass. Use the same scheduler and step count you will run SPEED with."},
+                ),
+                "latent_image": (
+                    "LATENT",
+                    {"tooltip": "Latent for the native full-resolution pass, at the size you will run SPEED at."},
+                ),
             },
             "optional": {
-                "Tolerance (Delta)": ("FLOAT", {"default": 0.005, "min": 1e-4, "max": 0.5, "step": 0.001}),
-                "model_type": (list(MODEL_TYPES), {"default": "h3_video"}),
+                "Tolerance (Delta)": (
+                    "FLOAT",
+                    {
+                        "default": 0.005,
+                        "min": 1e-4,
+                        "max": 0.5,
+                        "step": 0.001,
+                        "tooltip": "The Delta the report computes transition boundaries for. It is written into the calibration and the paste line; the fit itself does not depend on it.",
+                    },
+                ),
+                "model_type": (
+                    list(MODEL_TYPES),
+                    {
+                        "default": "h3_video",
+                        "tooltip": "h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Must match the model; it is never auto-detected.",
+                    },
+                ),
             },
         }
 

@@ -10,6 +10,7 @@ All notable changes to this project are documented here. New releases should be 
 - Added an optional `model_type` switch (`h3_video` default, `image`) to Automatic, Manual, and Sigma Harvest. `image` runs flow image models such as MOSS Image and Krea 2. Sampler and Harvest both reject non-flow models.
 - Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_kroma_SPEED.json`, and image-model timings (RTX 5070 Laptop) to `evidence/README.md`.
 - Added continuous progress and preview reporting across the full SPEED run.
+- Added a ComfyUI tooltip to every input and output of Automatic, Manual, and Sigma Harvest.
 - Added broader regression coverage for the sampler input, I2V, transitions, Harvest, workflows, and noise policies.
 
 ### Changed
