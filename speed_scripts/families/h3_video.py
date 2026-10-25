@@ -77,7 +77,7 @@ def unpack_h3(samples):
     if not getattr(samples, "is_nested", False):
         raise ValueError(
             "model_type h3_video needs a MiniMax-H3 NestedTensor video/audio latent; "
-            "use model_type image for image models"
+            "use model_type flow_image for image models"
         )
     streams = list(samples.unbind())
     if len(streams) != 2:

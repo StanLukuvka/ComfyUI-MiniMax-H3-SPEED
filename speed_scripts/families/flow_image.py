@@ -1,4 +1,4 @@
-"""Flow (CONST) image models (``image``): one spatial latent, no extra stream."""
+"""Flow (CONST) image models (``flow_image``): one spatial latent, no extra stream."""
 
 from __future__ import annotations
 
@@ -33,12 +33,12 @@ def require_flow_sampling(guider):
         (comfy.model_sampling.IMG_TO_IMG_FLOW, comfy.model_sampling.IMG_TO_IMG_VELOCITY),
     ):
         raise ValueError(
-            "model_type image supports flow (CONST) models only; "
+            "model_type flow_image supports flow (CONST) models only; "
             f"this model uses {_sampling_name(sampling)}"
         )
 
 
-class ImageFamily:
+class FlowImageFamily:
     """Flow image models: one spatial latent, resized on its own.
 
     The latent's rank follows the model's latent format: ``[B, C, H, W]`` for
@@ -46,7 +46,7 @@ class ImageFamily:
     Wan 2.1 (Krea 2), which ComfyUI's ``fix_empty_latent_channels`` unsqueezes.
     """
 
-    name = "image"
+    name = "flow_image"
 
     def __init__(self, guider):
         require_flow_sampling(guider)
@@ -56,7 +56,7 @@ class ImageFamily:
 
     def split(self, samples):
         if getattr(samples, "is_nested", False):
-            raise ValueError("model_type image got a nested video/audio latent; use model_type h3_video")
+            raise ValueError("model_type flow_image got a nested video/audio latent; use model_type h3_video")
         single_frame = samples.ndim == 5 and samples.shape[2] == 1
         if samples.ndim == 4 and not self.frame_axis:
             return samples.unsqueeze(2), None
@@ -64,12 +64,12 @@ class ImageFamily:
             return samples, None
         if single_frame:
             raise ValueError(
-                "model_type image got a [B,C,1,H,W] latent, but this model's latent format "
+                "model_type flow_image got a [B,C,1,H,W] latent, but this model's latent format "
                 "is 2-dimensional and takes [B,C,H,W]; use an image empty-latent node"
             )
         expected = "[B,C,1,H,W]" if self.frame_axis else "[B,C,H,W]"
         raise ValueError(
-            f"model_type image expects a {expected} latent for this model; got {list(samples.shape)}"
+            f"model_type flow_image expects a {expected} latent for this model; got {list(samples.shape)}"
         )
 
     def join(self, main, extra):

@@ -1,4 +1,4 @@
-# SPEED Evidence: Image Models (`model_type = image`)
+# SPEED Evidence: Image Models (`model_type = flow_image`)
 
 One still per model: a ramen stall on a Tokyo side street at night, with a readable sign, a cook, two customers and exactly six paper lanterns, the third one blue. The sign, the count and the one blue lantern make composition changes easy to see. Each prompt follows its model's prompting study (MOSS: plain prose, one sentence per element, no quality prefix; Krea 2: quality prefix, medium first, text clause, key concepts repeated at the end). The workflows are [`workflows/image_moss_SPEED.json`](../../workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](../../workflows/image_krea2_SPEED.json).
 

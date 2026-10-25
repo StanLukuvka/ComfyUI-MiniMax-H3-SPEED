@@ -122,7 +122,7 @@ SIGMA_ONE_BOUNDARY = torch.tensor([1.0, 1.0, .5, 0.0])
 def test_run_rejects_unsupported_inputs(latent, config, sigmas, image, error):
     guider = OracleFlowGuider(torch.zeros(1, 4, 8, 8)) if image else None
     with pytest.raises(ValueError, match=error):
-        _run(config, guider, latent=latent, sigmas=sigmas, model_type="image" if image else "h3_video")
+        _run(config, guider, latent=latent, sigmas=sigmas, model_type="flow_image" if image else "h3_video")
 
 
 @pytest.mark.parametrize("temporal_scales", [(), (.5, .75, 1.0)], ids=["spatial", "temporal"])
@@ -275,7 +275,7 @@ def test_image_run_carries_state_across_the_affine_latent_format(shape, noise_po
     guider = OracleFlowGuider(clean, latent_dimensions=len(shape) - 2)
     out, denoised = _run(
         _cfg((.5, 1.0), (5,), noise_policy=noise_policy), guider, noise=SeededNoise(7),
-        latent=image_latent(shape), model_type="image",
+        latent=image_latent(shape), model_type="flow_image",
     )
     assert out["samples"].shape == denoised["samples"].shape == shape
     assert [tuple(s.shape[-2:]) for s in guider.starts] == [(4, 4), (8, 8)]
@@ -299,6 +299,6 @@ def test_image_run_fits_a_generic_empty_latent_to_the_model_first(monkeypatch):
 
     monkeypatch.setattr(comfy.sample, "fix_empty_latent_channels", widen)
     out, _ = _run(_cfg((.5, 1.0), (5,)), OracleFlowGuider(torch.zeros(1, 4, 8, 8)),
-                  latent=image_latent((1, 1, 8, 8)), model_type="image")
+                  latent=image_latent((1, 1, 8, 8)), model_type="flow_image")
     assert seen == [(1, 1, 8, 8)]
     assert out["samples"].shape == (1, 4, 8, 8)

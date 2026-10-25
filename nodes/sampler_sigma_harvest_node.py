@@ -106,7 +106,7 @@ class SPEEDSigmaHarvest:
                 ),
                 "model_type": (
                     list(MODEL_TYPES),
-                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
+                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. flow_image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
                 ),
             },
         }
@@ -127,7 +127,7 @@ class SPEEDSigmaHarvest:
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
-        if model_type == "image":
+        if model_type == "flow_image":
             require_flow_sampling(guider)
 
         callback_count = 0
@@ -203,7 +203,7 @@ class SPEEDSigmaHarvest:
                 message = f"Residual capture failed: {first_residual_error}"
             elif callback_count:
                 hint = (
-                    "use model_type image for image models"
+                    "use model_type flow_image for image models"
                     if model_type == "h3_video"
                     else "use model_type h3_video for MiniMax-H3 video latents"
                 )

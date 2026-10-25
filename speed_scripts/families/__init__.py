@@ -7,12 +7,12 @@ stream crosses a resolution change.
 
 - ``h3_video``: MiniMax-H3 nested video/audio latent. Audio is carried on its
   own sigma clock.
-- ``image``: a plain ``[B, C, H, W]`` or ``[B, C, 1, H, W]`` latent from a flow
-  image model (Krea 2, MOSS Image, ...). No extra stream.
+- ``flow_image``: a plain ``[B, C, H, W]`` or ``[B, C, 1, H, W]`` latent from a
+  flow image model (Krea 2, MOSS Image, ...). No extra stream.
 
 This module holds the family registry (``MODEL_TYPES``, ``get_family``,
 ``check_model_type``, ``prepare_latent``, ``main_stream``) and re-exports the
-public names of the family modules: ``h3_video.py`` and ``image.py``.
+public names of the family modules: ``h3_video.py`` and ``flow_image.py``.
 """
 
 from __future__ import annotations
@@ -20,9 +20,9 @@ from __future__ import annotations
 import torch
 
 from .h3_video import H3VideoFamily, pack_h3, resolve_sigma_shifts, unpack_h3
-from .image import ImageFamily, require_flow_sampling
+from .flow_image import FlowImageFamily, require_flow_sampling
 
-_FAMILIES = {"h3_video": H3VideoFamily, "image": ImageFamily}
+_FAMILIES = {"h3_video": H3VideoFamily, "flow_image": FlowImageFamily}
 MODEL_TYPES = tuple(_FAMILIES)
 
 
@@ -74,7 +74,7 @@ def main_stream(value, model_type):
 __all__ = [
     "MODEL_TYPES",
     "H3VideoFamily",
-    "ImageFamily",
+    "FlowImageFamily",
     "get_family",
     "main_stream",
     "pack_h3",
