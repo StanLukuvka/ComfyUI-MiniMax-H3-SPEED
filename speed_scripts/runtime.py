@@ -3,7 +3,7 @@
 Each stage is one ``guider.sample()`` call. Between stages, carry the current
 state into the next size and continue from the aligned sigma. What the latent
 holds, and how its extra streams cross a stage, comes from the model family
-(``families.py``).
+(``families/``).
 """
 
 from __future__ import annotations

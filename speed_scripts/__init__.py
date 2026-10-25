@@ -3,10 +3,11 @@
 Package layout:
 - config.py — validated SPEED runtime configuration
 - planning.py — stage geometry, boundary scheduling, and node config builders
-- flow.py — transition-coordinate and audio-state math
+- flow.py — transition-coordinate math for stage changes
 - spectral.py — DCT primitives and spectral expansion
 - latent_class.py — generation-local I2V keyframe lifecycle
 - runtime.py — multi-stage SPEED execution
-- families.py — per-model latent handling (h3_video, image)
+- families/ — per-model latent handling package: __init__.py registry,
+  h3_video.py, image.py
 - harvest.py — native-sampler calibration math
 """
