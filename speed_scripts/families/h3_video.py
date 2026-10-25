@@ -9,6 +9,8 @@ audio-state math moved from ``speed_scripts/flow.py``.
 
 from __future__ import annotations
 
+import torch
+
 
 def time_shift_sigma(sigma, from_shift: float, to_shift: float):
     if from_shift <= 0.0 or to_shift <= 0.0:
@@ -155,6 +157,14 @@ class H3VideoFamily:
 
     def join(self, main, extra):
         return pack_h3(main, extra)
+
+    def main_stream(self, value):
+        """Best-effort ``[B, C, T, H, W]`` spatial stream for diagnostics, or ``None``."""
+        # Only the nested video/audio latent is H3; a plain 5-D tensor (e.g. Krea 2) is not.
+        if not getattr(value, "is_nested", False):
+            return None
+        value = next((s for s in value.unbind() if getattr(s, "ndim", 0) == 5), None)
+        return value if isinstance(value, torch.Tensor) else None
 
     def to_internal(self, public, sigma):
         # The H3 latent format is the identity, so the output is already in model space.

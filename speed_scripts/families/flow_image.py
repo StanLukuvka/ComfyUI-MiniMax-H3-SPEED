@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import torch
+
 
 def _model(guider):
     model = getattr(getattr(guider, "model_patcher", None), "model", None)
@@ -74,6 +76,14 @@ class FlowImageFamily:
 
     def join(self, main, extra):
         return main if self.frame_axis else main.squeeze(2)
+
+    def main_stream(self, value):
+        """Best-effort ``[B, C, T, H, W]`` spatial stream for diagnostics, or ``None``."""
+        if not isinstance(value, torch.Tensor) or getattr(value, "is_nested", False):
+            return None
+        if value.ndim == 4:
+            return value.unsqueeze(2)
+        return value if value.ndim == 5 else None
 
     def to_internal(self, public, sigma):
         # ComfyUI hands back process_latent_out(x / (1 - sigma)); undo both to get x.

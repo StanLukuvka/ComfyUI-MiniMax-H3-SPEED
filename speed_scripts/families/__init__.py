@@ -11,9 +11,8 @@ stream crosses a resolution change.
   flow image model (Krea 2, MOSS Image, ...). No extra stream.
 
 This module holds the family registry (``MODEL_TYPES``, ``get_family``,
-``check_model_type``, ``prepare_latent``, ``prepare_family``, ``main_stream``)
-and re-exports the public names of the family modules: ``h3_video.py`` and
-``flow_image.py``.
+``check_model_type``, ``prepare_latent``, ``prepare_family``) and re-exports
+the public names of the family modules: ``h3_video.py`` and ``flow_image.py``.
 """
 
 from __future__ import annotations
@@ -92,27 +91,11 @@ def prepare_family(model_type, guider, latent) -> PreparedLatent:
     return PreparedLatent(family=family, latent=latent, main=main, extra=extra)
 
 
-def main_stream(value, model_type):
-    """Best-effort ``[B, C, T, H, W]`` spatial stream for diagnostics, or ``None``."""
-    if model_type == "h3_video":
-        # Only the nested video/audio latent is H3; a plain 5-D tensor (e.g. Krea 2) is not.
-        if not getattr(value, "is_nested", False):
-            return None
-        value = next((s for s in value.unbind() if getattr(s, "ndim", 0) == 5), None)
-        return value if isinstance(value, torch.Tensor) else None
-    if not isinstance(value, torch.Tensor) or getattr(value, "is_nested", False):
-        return None
-    if value.ndim == 4:
-        return value.unsqueeze(2)
-    return value if value.ndim == 5 else None
-
-
 __all__ = [
     "MODEL_TYPES",
     "H3VideoFamily",
     "FlowImageFamily",
     "get_family",
-    "main_stream",
     "pack_h3",
     "PreparedLatent",
     "prepare_family",
