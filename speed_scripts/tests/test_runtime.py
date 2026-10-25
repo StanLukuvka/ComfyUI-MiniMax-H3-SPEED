@@ -19,6 +19,7 @@ from conftest import (
 )
 from speed_scripts import runtime, spectral
 from speed_scripts.config import SpeedConfig
+from speed_scripts.planning import plan_stages
 from speed_scripts.runtime import run_speed_pipeline
 
 QUARTERS = (.25, .5, .75, 1.0)
@@ -98,6 +99,14 @@ def test_delta_custom_places_boundaries_from_the_power_spectrum(scales, fit, ste
     for actual, wanted in zip(guider.sigma_calls, expected_stage_sigmas(sigmas, boundaries, scales), strict=True):
         assert actual == pytest.approx(wanted)
     assert tuple(out["samples"].unbind()[0].shape[-2:]) == hw
+
+
+def test_plan_stages_reads_thw_from_the_main_streams_last_axes():
+    plan = plan_stages(_cfg(QUARTERS, (3, 5, 8)), SIGMAS, (1, 1, 2, 8, 8))
+    assert plan.stage_shapes == ((2, 2, 2), (4, 4, 2), (6, 6, 2), (8, 8, 2))
+    assert plan.transition_steps == (3, 5, 8)
+    with pytest.raises(AttributeError):
+        plan.transition_steps = ()
 
 
 SIGMA_ONE_BOUNDARY = torch.tensor([1.0, 1.0, .5, 0.0])

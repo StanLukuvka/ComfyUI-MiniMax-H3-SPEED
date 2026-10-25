@@ -16,6 +16,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Changed
 
+- `run_speed_pipeline` now runs family first, then one plan: `families.prepare_family` (new `prepare_family` / `PreparedLatent`) splits the latent, `planning.plan_stages` (new `plan_stages` / `StagePlan`) computes the stage shapes and transition points, and the new `runtime.run_stages` runs the stage loop. No behaviour change (internal: pipeline runs family -> plan -> stages).
 - Renamed the `model_type` value `image` to `flow_image`, because only flow (CONST) image models are supported; the class behind it is now `FlowImageFamily` in `families/flow_image.py`. In the same change, `speed_scripts/families.py` became the `speed_scripts/families/` package with one file per family and the registry in `families/__init__.py`.
 - Renamed the nodes for the model-agnostic pack: `MiniMaxH3SPEEDSampler` → `SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` → `SPEEDSamplerManual`, `MiniMaxH3HarvestToConfig` → `SPEEDSigmaHarvest`, display names `SPEED — …`, category `sampling/speed`. The old IDs stay registered as deprecated subclasses and as node replacements, so saved workflows still load and can be swapped in one step. The example workflows use the new IDs.
 - `model_type` has no default anywhere: not in the widgets, the node functions, `run_speed_pipeline` or Harvest's `compute_residual`. A prompt without it fails validation instead of running as H3.

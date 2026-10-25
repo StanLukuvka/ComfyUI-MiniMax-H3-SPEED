@@ -1,8 +1,11 @@
 """Run SPEED across several resolution stages.
 
-Each stage is one ``guider.sample()`` call. Between stages, carry the current
-state into the next size and continue from the aligned sigma. What the latent
-holds, and how its extra streams cross a stage, comes from the model family
+``run_speed_pipeline`` runs three steps in order: ``families.prepare_family``
+(pick the family, split the empty latent), ``planning.plan_stages`` (stage
+sizes and transition points), then ``run_stages`` (the stage loop). Each stage
+is one ``guider.sample()`` call. Between stages, carry the current state into
+the next size and continue from the aligned sigma. What the latent holds, and
+how its extra streams cross a stage, comes from the model family
 (``families/``).
 """
 
@@ -13,10 +16,10 @@ import logging
 import torch
 
 from .config import SpeedConfig
-from .families import get_family, prepare_latent
+from .families import PreparedLatent, prepare_family
 from .flow import aligned_sigma, reentry_noise
 from .latent_class import LatentWalker
-from .planning import resolve_transition_steps, stage_resolution
+from .planning import StagePlan, plan_stages
 from .spectral import (
     dct2,
     dct_temporal,
@@ -160,30 +163,54 @@ def run_speed_pipeline(
     ``sampler`` is any ComfyUI SAMPLER. Each stage is its own
     ``guider.sample()`` call, so a multistep sampler's history starts fresh at
     every resolution change. ``model_type`` picks the family (see
-    ``families.MODEL_TYPES``).
+    ``families.MODEL_TYPES``). The body is three steps in order:
+    ``families.prepare_family``, ``planning.plan_stages``, then ``run_stages``.
     """
-    if "noise_mask" in latent:
-        raise ValueError("SPEED does not support noise masks")
-    family = get_family(model_type, guider)
-    latent = prepare_latent(guider, latent)
+    prepared = prepare_family(model_type, guider, latent)
+    plan = plan_stages(config, sigmas, prepared.main.shape)
+    return run_stages(
+        noise,
+        guider,
+        sigmas,
+        prepared,
+        config,
+        plan,
+        sampler=sampler,
+        disable_pbar=disable_pbar,
+        output_device=output_device,
+        preview_callback=preview_callback,
+        x0_output=x0_output,
+    )
 
-    full_main, full_extra = family.split(latent.get("samples"))
-    if torch.count_nonzero(full_main) or (full_extra is not None and torch.count_nonzero(full_extra)):
-        raise ValueError("SPEED requires an empty input latent")
-    if sigmas.ndim != 1 or len(sigmas) < 3:
-        raise ValueError("sigmas must be a one-dimensional schedule")
 
+def run_stages(
+    noise,
+    guider,
+    sigmas: torch.Tensor,
+    prepared: PreparedLatent,
+    config: SpeedConfig,
+    plan: StagePlan,
+    *,
+    sampler,
+    disable_pbar: bool = False,
+    output_device=None,
+    preview_callback=None,
+    x0_output=None,
+):
+    """Run the planned stages over the prepared latent.
+
+    ``prepared`` carries the family, the fitted latent dict and its main/extra
+    streams; ``plan`` carries the stage shapes and transition steps. Each stage
+    is one ``guider.sample()`` call; between stages the carried state grows to
+    the next size and continues from the aligned sigma.
+    """
+    family = prepared.family
+    latent = prepared.latent
+    full_main = prepared.main
+    full_extra = prepared.extra
     scales = config.scales
-    full_t, full_h, full_w = full_main.shape[-3:]
-    stage_shapes = [
-        stage_resolution(config, index, full_h, full_w, full_t)
-        for index in range(len(scales))
-    ]
-    transition_steps = resolve_transition_steps(config, sigmas, full_h, full_w)
-    if len(transition_steps) != len(scales) - 1:
-        raise ValueError("transition steps count must be n_scales - 1")
-    if any(not 0 < step < len(sigmas) - 1 for step in transition_steps):
-        raise ValueError("transition step must be inside the sigma schedule")
+    stage_shapes = plan.stage_shapes
+    transition_steps = plan.transition_steps
 
     working_sigmas = sigmas.clone()
     stage_h, stage_w, stage_t = stage_shapes[0]

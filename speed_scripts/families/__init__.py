@@ -11,11 +11,14 @@ stream crosses a resolution change.
   flow image model (Krea 2, MOSS Image, ...). No extra stream.
 
 This module holds the family registry (``MODEL_TYPES``, ``get_family``,
-``check_model_type``, ``prepare_latent``, ``main_stream``) and re-exports the
-public names of the family modules: ``h3_video.py`` and ``flow_image.py``.
+``check_model_type``, ``prepare_latent``, ``prepare_family``, ``main_stream``)
+and re-exports the public names of the family modules: ``h3_video.py`` and
+``flow_image.py``.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import torch
 
@@ -56,6 +59,39 @@ def get_family(model_type, guider):
     return _FAMILIES[check_model_type(model_type)](guider)
 
 
+@dataclass(frozen=True)
+class PreparedLatent:
+    """One family's view of the input latent, ready for planning and running.
+
+    ``latent`` is the dict after ``prepare_latent``; ``main`` and ``extra`` are
+    the streams from ``family.split`` (``extra`` is ``None`` when the family
+    has no extra stream).
+    """
+
+    family: H3VideoFamily | FlowImageFamily
+    latent: dict
+    main: torch.Tensor
+    extra: torch.Tensor | None
+
+
+def prepare_family(model_type, guider, latent) -> PreparedLatent:
+    """Pick the family and split the empty latent, in the runtime's old order.
+
+    Runs, in order: the noise-mask check, ``get_family``, ``prepare_latent``,
+    ``family.split``, and the empty-latent check. Same error messages as the
+    pre-split runtime.
+    """
+    if "noise_mask" in latent:
+        raise ValueError("SPEED does not support noise masks")
+    family = get_family(model_type, guider)
+    latent = prepare_latent(guider, latent)
+
+    main, extra = family.split(latent.get("samples"))
+    if torch.count_nonzero(main) or (extra is not None and torch.count_nonzero(extra)):
+        raise ValueError("SPEED requires an empty input latent")
+    return PreparedLatent(family=family, latent=latent, main=main, extra=extra)
+
+
 def main_stream(value, model_type):
     """Best-effort ``[B, C, T, H, W]`` spatial stream for diagnostics, or ``None``."""
     if model_type == "h3_video":
@@ -78,6 +114,8 @@ __all__ = [
     "get_family",
     "main_stream",
     "pack_h3",
+    "PreparedLatent",
+    "prepare_family",
     "prepare_latent",
     "require_flow_sampling",
     "resolve_sigma_shifts",
