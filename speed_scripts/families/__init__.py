@@ -1,18 +1,9 @@
 """Model families SPEED can run, picked with the nodes' ``model_type`` switch.
 
-A family says how its latent splits into the spatial stream SPEED resizes
-(always ``[B, C, T, H, W]`` here) and any extra stream it carries alongside,
-how to read a stage's output back into the sampler's state, and how the extra
-stream crosses a resolution change.
-
-- ``h3_video``: MiniMax-H3 nested video/audio latent. Audio is carried on its
-  own sigma clock.
-- ``flow_image``: a plain ``[B, C, H, W]`` or ``[B, C, 1, H, W]`` latent from a
-  flow image model (Krea 2, MOSS Image, ...). No extra stream.
-
-This module holds the family registry (``MODEL_TYPES``, ``get_family``,
-``check_model_type``, ``prepare_latent``, ``prepare_family``) and re-exports
-the public names of the family modules: ``h3_video.py`` and ``flow_image.py``.
+A family splits its latent into the spatial stream SPEED resizes (always
+``[B, C, T, H, W]`` here) and an optional extra stream, reads a stage's output
+back into sampler state, and carries the extra stream across a resolution
+change. This module holds the registry and re-exports the family modules.
 """
 
 from __future__ import annotations
@@ -60,12 +51,7 @@ def get_family(model_type, guider):
 
 @dataclass(frozen=True)
 class PreparedLatent:
-    """One family's view of the input latent, ready for planning and running.
-
-    ``latent`` is the dict after ``prepare_latent``; ``main`` and ``extra`` are
-    the streams from ``family.split`` (``extra`` is ``None`` when the family
-    has no extra stream).
-    """
+    """The family plus the fitted latent dict and its ``main``/``extra`` streams (``extra`` may be ``None``)."""
 
     family: H3VideoFamily | FlowImageFamily
     latent: dict
@@ -74,12 +60,7 @@ class PreparedLatent:
 
 
 def prepare_family(model_type, guider, latent) -> PreparedLatent:
-    """Pick the family and split the empty latent, in the runtime's old order.
-
-    Runs, in order: the noise-mask check, ``get_family``, ``prepare_latent``,
-    ``family.split``, and the empty-latent check. Same error messages as the
-    pre-split runtime.
-    """
+    """Pick the family, fit the latent and split it, checking it is empty and unmasked."""
     if "noise_mask" in latent:
         raise ValueError("SPEED does not support noise masks")
     family = get_family(model_type, guider)
