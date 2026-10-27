@@ -7,7 +7,7 @@ All notable changes to this project are documented here. New releases should be 
 ### Added
 
 - Added a `sampler` (SAMPLER) input to Automatic, Manual, and Sigma Harvest, fed by KSamplerSelect or any other SAMPLER node.
-- Added a required `model_type` switch (`h3_video`, `image`) to Automatic, Manual, and Sigma Harvest, with no default. `image` runs flow image models such as MOSS Image and Krea 2. Sampler and Harvest both reject non-flow models.
+- Added a required `model_type` switch (`h3_video`, `flow_image`) to Automatic, Manual, and Sigma Harvest, with no default. `flow_image` runs flow image models such as MOSS Image and Krea 2. Sampler and Harvest both reject non-flow models.
 - Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_krea2_SPEED.json`, and image-model timings (MOSS Image and Krea 2, `coupled_full_grid`, RTX 5070 Laptop) to `evidence/image_evidence/README.md`; split `evidence/` into `h3_evidence/` and `image_evidence/`.
 - Added continuous progress and preview reporting across the full SPEED run.
 - Replaced the three H3 example workflows (`video_minimax_h3_SPEED_SIGMA.json`, `_Sigma_Calculated.json`, `_Sigma_Manual.json`) with one flat `workflows/video_h3_SPEED.json`, laid out like the image examples: Harvest, Automatic and Manual on one set of loaders, with only Automatic active.
@@ -16,6 +16,9 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Changed
 
+- Harvest now picks its family with `families.get_family` like the samplers, instead of its own `check_model_type` + flow-sampling branch. `main_stream` moved from a `families` free function to a family method (`family.main_stream`), and `harvest.compute_residual` takes the family. An image model with EPS/v-prediction still errors the same way, now raised by `FlowImageFamily`'s constructor.
+- `run_speed_pipeline` now runs family first, then one plan: `families.prepare_family` (new `prepare_family` / `PreparedLatent`) splits the latent, `planning.plan_stages` (new `plan_stages` / `StagePlan`) computes the stage shapes and transition points, and the new `runtime.run_stages` runs the stage loop. No behaviour change (internal: pipeline runs family -> plan -> stages).
+- Renamed the `model_type` value `image` to `flow_image`, because only flow (CONST) image models are supported; the class behind it is now `FlowImageFamily` in `families/flow_image.py`. In the same change, `speed_scripts/families.py` became the `speed_scripts/families/` package with one file per family and the registry in `families/__init__.py`.
 - Renamed the nodes for the model-agnostic pack: `MiniMaxH3SPEEDSampler` → `SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` → `SPEEDSamplerManual`, `MiniMaxH3HarvestToConfig` → `SPEEDSigmaHarvest`, display names `SPEED — …`, category `sampling/speed`. The old IDs stay registered as deprecated subclasses and as node replacements, so saved workflows still load and can be swapped in one step. The example workflows use the new IDs.
 - `model_type` has no default anywhere: not in the widgets, the node functions, `run_speed_pipeline` or Harvest's `compute_residual`. A prompt without it fails validation instead of running as H3.
 - Automatic's `noise_amplitude` and `noise_decay_exponent` no longer default to H3's Euler fit (12.105 / 0.773). They start at 0, which stops with an error asking for a Harvest calibration. The H3 example workflow sets the H3 values explicitly.
@@ -35,7 +38,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Fixed
 
-- Sigma Harvest with `model_type h3_video` on a plain 5-D image latent (such as Krea 2's `[B,C,1,H,W]`) no longer calibrates silently; it returns the `no_captures` error that points at `model_type image`.
+- Sigma Harvest with `model_type h3_video` on a plain 5-D image latent (such as Krea 2's `[B,C,1,H,W]`) no longer calibrates silently; it returns the `no_captures` error that points at `model_type flow_image`.
 - `direct_coarse` now draws its transition fill noise on the CPU, as ComfyUI draws its own noise, so a seed gives the same image on every device. Before, it was drawn on the latent's device, so CPU and GPU (and possibly different GPUs) gave different images. This changes `direct_coarse` images for the same seed, often the whole composition, because the fill seeds detail the model builds on; speed is unchanged.
 - Fixed Automatic silently coercing invalid stage counts; only 2, 3, or 4 are accepted.
 - Fixed non-finite calibration A/beta values passing `SpeedConfig` validation.

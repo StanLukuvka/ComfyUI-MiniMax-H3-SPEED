@@ -11,14 +11,13 @@ import math
 import numpy as np
 import torch
 
-from .families import main_stream
 from .spectral import dct2
 
 
-def compute_residual(x_value, denoised_value, model_type) -> torch.Tensor | None:
+def compute_residual(x_value, denoised_value, family) -> torch.Tensor | None:
     """Return the spatial-stream residual ``x - denoised`` when both inputs are valid."""
-    x_main = main_stream(x_value, model_type)
-    denoised_main = main_stream(denoised_value, model_type)
+    x_main = family.main_stream(x_value)
+    denoised_main = family.main_stream(denoised_value)
     if x_main is None or denoised_main is None:
         return None
     return x_main - denoised_main

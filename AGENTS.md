@@ -11,7 +11,7 @@ Release-level invariants:
 - The three public node IDs are `SPEEDSampler`, `SPEEDSamplerManual` and `SPEEDSigmaHarvest`. The old IDs `MiniMaxH3SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` and `MiniMaxH3HarvestToConfig` stay registered as `DEPRECATED` subclasses, plus node replacements, so saved workflows still load. Keep both sets stable.
 - Euler remains the reference path for baked calibration and benchmark evidence.
 - All three nodes take a standard ComfyUI `SAMPLER` input (see Sampler architecture).
-- All three nodes take a required `model_type` switch (`h3_video`, `image`) with no default anywhere (widget, node signature, runtime, Harvest helpers); see Model families. A missing value fails validation; a mismatched one raises.
+- All three nodes take a required `model_type` switch (`h3_video`, `flow_image`) with no default anywhere (widget, node signature, runtime, Harvest helpers); see Model families. A missing value fails validation; a mismatched one raises.
 - Nothing model-specific is a default. Automatic's `noise_amplitude` / `noise_decay_exponent` start at 0 (unset, raises), and `SpeedConfig` has no baked A/beta/delta.
 - `direct_coarse` remains the default noise policy. `coupled_full_grid` remains available because its removal has not been shown to be safe; V2 makes no claim that it improves quality.
 - Internal `speed_scripts` APIs may break from V1 where required by the planner/runtime split; see `CHANGELOG.md` for migration details.
@@ -42,10 +42,10 @@ Any ComfyUI SAMPLER is accepted; there is no allowlist and no per-sampler adapte
 
 ## Model families
 
-`speed_scripts/families.py` holds one class per `model_type`; the runtime is family-agnostic. A family splits the latent into the spatial stream SPEED resizes (always `[B,C,T,H,W]` inside the runtime) and an optional extra stream, reads a stage's output back into sampler state (`to_internal`), and carries the extra stream across a resolution change (`carry_extra`).
+`speed_scripts/families/` is a package with one class per `model_type`: the registry and public re-exports live in `families/__init__.py` (`MODEL_TYPES`, `get_family`, `check_model_type`, `prepare_latent`), `families/h3_video.py` holds `H3VideoFamily` with its unpack/pack, sigma-shift and audio-carry helpers, and `families/flow_image.py` holds `FlowImageFamily` with `require_flow_sampling`. The runtime is family-agnostic. A family splits the latent into the spatial stream SPEED resizes (always `[B,C,T,H,W]` inside the runtime) and an optional extra stream, reads a stage's output back into sampler state (`to_internal`), carries the extra stream across a resolution change (`carry_extra`), and exposes the diagnostics view of a latent (`main_stream`, used by Harvest). Harvest picks its family with `get_family` like the samplers; it has no separate model-type path.
 
 - `h3_video` — nested video/audio latent; audio carried on its own sigma clock with the H3 shifts. Output is bit-identical to the pre-families runtime.
-- `image` — plain image latent from a CONST (flow) model. `to_internal` undoes the latent format's `process_latent_in` (Krea 2 uses Wan 2.1's mean/std), because ComfyUI returns `process_latent_out(x / (1 - sigma))`.
+- `flow_image` — plain image latent from a CONST (flow) model. `to_internal` undoes the latent format's `process_latent_in` (Krea 2 uses Wan 2.1's mean/std), because ComfyUI returns `process_latent_out(x / (1 - sigma))`.
 
 The model type is an explicit switch, never auto-detected; a mismatch raises with the setting to use. Add a model by adding a family, not by branching in the runtime.
 
@@ -60,8 +60,8 @@ The model type is an explicit switch, never auto-detected; a mismatch raises wit
 - Document a sampler as recommended only after a measured run; known-bad samplers go in the README.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SAMPLER`, `SIGMAS`, `LATENT`).
 - Automatic configs do not store placeholder transition indices or latent dimensions. `delta_custom` boundaries are computed from the live sigma schedule and live latent geometry at runtime; `transition_steps` is only meaningful in explicit/manual mode.
-- Stage geometry, transition-threshold math, Automatic config construction, and Manual schedule normalization live together in `speed_scripts/planning.py`.
-- `speed_scripts/runtime.py` owns execution rather than planning: preview timeline, spectral boundary application, stage calls, and output assembly. Latent layout and extra streams belong to the family. Coupled full-grid noise is transformed to spectral coefficients once per generation and reused at every transition.
+- Stage geometry, transition-threshold math, `plan_stages`, Automatic config construction, and Manual schedule normalization live together in `speed_scripts/planning.py`.
+- `speed_scripts/runtime.py` owns execution rather than planning: `run_speed_pipeline` runs family first, then one plan — `families.prepare_family` -> `planning.plan_stages` -> `run_stages` — with the preview timeline, spectral boundary application, stage calls, and output assembly in `run_stages`. Latent layout and extra streams belong to the family. Coupled full-grid noise is transformed to spectral coefficients once per generation and reused at every transition.
 - I2V latent lifecycle lives in `speed_scripts/latent_class.py` as one `LatentWalker`. It snapshots only keyframe latents, always resizes from pristine full resolution, restores them before the final stage and on failure, and never wraps or resizes `minimax_refs`. The walker is local to one `run_speed_pipeline()` call; it is not stored on the guider.
 - Sigma Harvest reduces each captured full-resolution residual to its CPU radial power profile inside the sampler callback; it does not retain a run's full residual tensors.
 - No random configuration, no silent randomization in config paths.

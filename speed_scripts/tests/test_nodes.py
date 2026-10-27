@@ -69,7 +69,7 @@ def test_package_registers_the_three_nodes_and_their_deprecated_ids():
 def test_model_type_is_required_with_no_default(node):
     cls = _node(node)
     kind, options = cls.INPUT_TYPES()["required"]["model_type"]
-    assert kind == ["h3_video", "image"] and "default" not in options
+    assert kind == ["h3_video", "flow_image"] and "default" not in options
     assert "optional" not in cls.INPUT_TYPES()
     params = inspect.signature(getattr(cls, cls.FUNCTION)).parameters
     assert params["model_type"].default is inspect.Parameter.empty

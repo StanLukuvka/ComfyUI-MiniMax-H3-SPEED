@@ -21,10 +21,8 @@ from speed_scripts.harvest import (
 )
 from speed_scripts.families import (
     MODEL_TYPES,
-    check_model_type,
-    main_stream,
+    get_family,
     prepare_latent,
-    require_flow_sampling,
 )
 from speed_scripts.planning import (
     activation_threshold,
@@ -106,7 +104,7 @@ class SPEEDSigmaHarvest:
                 ),
                 "model_type": (
                     list(MODEL_TYPES),
-                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
+                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. flow_image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
                 ),
             },
         }
@@ -123,12 +121,12 @@ class SPEEDSigmaHarvest:
     ):
 
         delta = float(kwargs.pop("Tolerance (Delta)", 0.005))
-        model_type = check_model_type(model_type)
+        # The same family path as the samplers: get_family validates model_type
+        # and FlowImageFamily's __init__ runs the flow-sampling check.
+        family = get_family(model_type, guider)
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
-        if model_type == "image":
-            require_flow_sampling(guider)
 
         callback_count = 0
         capture_count = 0
@@ -141,7 +139,7 @@ class SPEEDSigmaHarvest:
             """Turn one residual into a CPU frequency-power profile immediately."""
             nonlocal capture_count, first_residual_error, first_profile_error
             try:
-                residual = compute_residual(x_current, denoised_est, model_type)
+                residual = compute_residual(x_current, denoised_est, family)
             except Exception as exc:
                 if first_residual_error is None:
                     first_residual_error = exc
@@ -203,7 +201,7 @@ class SPEEDSigmaHarvest:
                 message = f"Residual capture failed: {first_residual_error}"
             elif callback_count:
                 hint = (
-                    "use model_type image for image models"
+                    "use model_type flow_image for image models"
                     if model_type == "h3_video"
                     else "use model_type h3_video for MiniMax-H3 video latents"
                 )
@@ -261,7 +259,7 @@ class SPEEDSigmaHarvest:
         r2 = float(fit["r_squared"])
         health = classify_fit_quality(fit)
 
-        main = main_stream(latent_tensor, model_type)
+        main = family.main_stream(latent_tensor)
         if main is None:
             H_full = W_full = None
         else:

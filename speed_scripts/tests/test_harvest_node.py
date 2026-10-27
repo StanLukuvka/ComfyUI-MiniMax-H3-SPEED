@@ -85,9 +85,9 @@ def _function_suffix_sampler(name):
         (StubSampler("res_multistep"), "res_multistep", "h3_video", _h3_latent),
         (_function_suffix_sampler("dpm_fast"), "dpm_fast", "h3_video", _h3_latent),
         (_ClassNamedSampler(), "_ClassNamedSampler", "h3_video", _h3_latent),
-        (StubSampler("euler"), "euler", "image", _image_latent),
+        (StubSampler("euler"), "euler", "flow_image", _image_latent),
     ],
-    ids=["euler", "res_multistep", "function_suffix", "class_name", "image"],
+    ids=["euler", "res_multistep", "function_suffix", "class_name", "flow_image"],
 )
 def test_harvest_runs_the_given_sampler_once_and_emits_its_calibration(sampler, name, model_type, latent):
     guider = HarvestGuider()
@@ -173,12 +173,12 @@ def _explode(error=RuntimeError):
          "spectral profile reduction failed"),
         # A latent that does not match model_type points at the right setting.
         ({}, None, {"latent": _image_latent()}, "no_captures",
-         "does not match model_type h3_video; use model_type image", None),
+         "does not match model_type h3_video; use model_type flow_image", None),
         # A plain 5-D latent (Krea 2's [B,C,1,H,W]) is not H3's nested video/audio latent.
         ({}, None, {"latent": {"samples": _red_noise(1, 4, 1, 16, 16)}}, "no_captures",
-         "does not match model_type h3_video; use model_type image", None),
-        ({}, None, {"model_type": "image"}, "no_captures",
-         "does not match model_type image; use model_type h3_video", None),
+         "does not match model_type h3_video; use model_type flow_image", None),
+        ({}, None, {"model_type": "flow_image"}, "no_captures",
+         "does not match model_type flow_image; use model_type h3_video", None),
     ],
     ids=["silent_sampler", "sampler_failed", "fit_failed", "residual_failed", "profile_failed",
          "image_latent_as_h3", "five_d_image_latent_as_h3", "h3_latent_as_image"],
@@ -208,7 +208,7 @@ def test_harvest_returns_an_error_json_instead_of_a_calibration(
         ({"delta": .01}, TypeError, "Unexpected Harvest option"),  # the removed Tolerance alias
         ({"model_type": "sdxl"}, ValueError, "model_type must be one of"),
         # The image path runs the same flow-model check as the sampler, before sampling.
-        ({"model_type": "image", "latent": _image_latent(),
+        ({"model_type": "flow_image", "latent": _image_latent(),
           "guider": HarvestGuider(sampling=model_sampling("EPS"))},
          ValueError, r"flow \(CONST\) models only; this model uses EPS"),
     ],
