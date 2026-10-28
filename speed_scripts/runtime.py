@@ -1,12 +1,8 @@
 """Run SPEED across several resolution stages.
 
-``run_speed_pipeline`` runs three steps in order: ``families.prepare_family``
-(pick the family, split the empty latent), ``planning.plan_stages`` (stage
-sizes and transition points), then ``run_stages`` (the stage loop). Each stage
-is one ``guider.sample()`` call. Between stages, carry the current state into
-the next size and continue from the aligned sigma. What the latent holds, and
-how its extra streams cross a stage, comes from the model family
-(``families/``).
+Each stage is one ``guider.sample()`` call. Between stages the state grows to
+the next size and continues from the aligned sigma. Latent layout comes from
+the model family.
 """
 
 from __future__ import annotations
@@ -44,14 +40,7 @@ def _build_preview_callback(guider, total_steps, x0_output):
 
 
 class _PreviewGuard:
-    """Run-wide preview-callback state shared by every stage callback.
-
-    The SPEED runtime builds one callback per stage, so any disable state
-    kept inside a single stage's closure would reset at the next stage
-    boundary. Holding it here keeps a failing preview callback disabled
-    for the rest of the run, and the warning fires once on the
-    enabled -> disabled transition instead of once per stage.
-    """
+    """Run-wide preview state, so a failing preview stays disabled across stages and warns once."""
 
     def __init__(self):
         self.disabled = False
@@ -158,13 +147,9 @@ def run_speed_pipeline(
     preview_callback=None,
     x0_output=None,
 ):
-    """Run the configured SPEED stages.
+    """Run ``prepare_family``, ``plan_stages``, then ``run_stages``.
 
-    ``sampler`` is any ComfyUI SAMPLER. Each stage is its own
-    ``guider.sample()`` call, so a multistep sampler's history starts fresh at
-    every resolution change. ``model_type`` picks the family (see
-    ``families.MODEL_TYPES``). The body is three steps in order:
-    ``families.prepare_family``, ``planning.plan_stages``, then ``run_stages``.
+    ``sampler`` is any ComfyUI SAMPLER. ``model_type`` picks the family.
     """
     prepared = prepare_family(model_type, guider, latent)
     plan = plan_stages(config, sigmas, prepared.main.shape)
@@ -197,13 +182,7 @@ def run_stages(
     preview_callback=None,
     x0_output=None,
 ):
-    """Run the planned stages over the prepared latent.
-
-    ``prepared`` carries the family, the fitted latent dict and its main/extra
-    streams; ``plan`` carries the stage shapes and transition steps. Each stage
-    is one ``guider.sample()`` call; between stages the carried state grows to
-    the next size and continues from the aligned sigma.
-    """
+    """Run the planned stages over the prepared latent."""
     family = prepared.family
     latent = prepared.latent
     full_main = prepared.main

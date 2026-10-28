@@ -87,12 +87,7 @@ def resolve_transition_steps(
 
 @dataclass(frozen=True)
 class StagePlan:
-    """Stage sizes and transition points for one SPEED run.
-
-    ``stage_shapes`` holds one ``(h, w, t)`` per scale (from
-    ``stage_resolution``); ``transition_steps`` is the sigma-schedule index of
-    each resolution change (from ``resolve_transition_steps``).
-    """
+    """One ``(h, w, t)`` per scale, and the sigma-schedule index of each resolution change."""
 
     stage_shapes: tuple[tuple[int, int, int], ...]
     transition_steps: tuple[int, ...]
@@ -101,9 +96,7 @@ class StagePlan:
 def plan_stages(config: SpeedConfig, sigmas, full_shape) -> StagePlan:
     """Plan every stage's ``(h, w, t)`` and the transition steps.
 
-    ``full_shape`` is the main stream's shape; ``T, H, W`` come from its last
-    three axes. Runs today's checks in today's order: the sigmas shape check,
-    then the two transition checks after the planning math.
+    ``T, H, W`` come from the last three axes of the main stream's ``full_shape``.
     """
     if sigmas.ndim != 1 or len(sigmas) < 3:
         raise ValueError("sigmas must be a one-dimensional schedule")
