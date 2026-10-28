@@ -1,53 +1,43 @@
-# SPEED Evidence: Image Models (`model_type = flow_image`)
+# SPEED Evidence: Night Ramen Stall (image models)
 
-One still per model: a ramen stall on a Tokyo side street at night, with a readable sign, a cook, two customers and a row of paper lanterns. The workflows are [`workflows/image_moss_SPEED.json`](../../workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](../../workflows/image_krea2_SPEED.json).
+Same prompt per model (a ramen stall on a Tokyo side street at night, in [prompt_moss.txt](prompt_moss.txt) and [prompt_krea2.txt](prompt_krea2.txt)), same seed per model, on one RTX 5070 Laptop (8 GB) with 30 GB RAM and ComfyUI 0.41.0. Images are shown at 768 px wide. The workflows are [`workflows/image_moss_SPEED.json`](../../workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](../../workflows/image_krea2_SPEED.json).
 
-**Machine:** RTX 5070 Laptop (8 GB) + 30 GB RAM, ComfyUI 0.41.0. Times are per queued prompt with the models already loaded, including the VAE decode. They are not comparable to the Modal L40S numbers in [h3_evidence](../h3_evidence/README.md).
+The prompt is built to show sampler damage: a dark street for colour shifts, a readable "RAMEN 400" sign for fine detail, and a row of lanterns, a cook and two customers, so composition changes are easy to see.
 
-All SPEED runs use `noise_policy = coupled_full_grid`, which uses the same seed noise as a plain run. So the plain image at the same seed is the reference.
+Settings: euler, `model_type = flow_image`, `noise_policy = coupled_full_grid`. That policy uses the same seed noise as a native run, so the native image at the same seed is the reference.
+
+Timing: each time is a ComfyUI queue-to-finish time with the models already loaded and the prompt encoded, including the VAE decode. These times are not comparable to the Modal L40S numbers in [h3_evidence](../h3_evidence/README.md). Krea 2's 13 GB model does not fit in 8 GB of VRAM, so its times vary by tens of seconds between runs; its native time comes from a run at seed 10291, and its native image is seed 291.
+
+> **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other supported samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
+
+Each model has its own calibration from one Sigma Harvest run on its prompt and seed.
 
 ## MOSS-Image
 
-`mossImage_sft_pruned_int8`, 1344×768, 20 steps, CFG 5, euler / sgm_uniform, seed 1. Harvest: `noise_amplitude 48.4075`, `noise_decay_exponent 1.0333`.
-
-<details><summary>Prompt</summary>
-
-```
-A candid photograph of a small ramen stall on a narrow Tokyo side street at night. An elderly cook with short grey hair, a white headband and a navy apron ladles broth into a bowl behind the wooden counter. Steam rises from three large silver pots on the stove behind him. A hand-painted wooden sign above the stall reads "RAMEN 400" in white letters. Exactly six plain paper lanterns with no writing on them hang in a row along the eave. Five of the lanterns are red, and the third lantern from the left is blue. Two customers sit on wooden stools at the counter with their backs to the camera. Wet cobblestones in the foreground reflect the lantern light. Medium-wide shot at eye level, with the cook centred and his face in sharp focus.
-```
-</details>
+`mossImage_sft_pruned_int8`, 1344×768, 20 steps, CFG 5, sgm_uniform scheduler, seed 1. Calibration: noise_amplitude 48.4075, noise_decay_exponent 1.0333 (r² 0.90, health good).
 
 | Mode | Time | Speedup | Image |
 |------|------|---------|-------|
-| Plain | 22 s | 1× | [![Plain](images/moss_plain.jpg)](images/moss_plain.jpg) |
-| Automatic, 2 stages, Δ 0.005 | 21 s | 1.07× | [![Automatic, 2 stages, Δ 0.005](images/moss_auto2_d005.jpg)](images/moss_auto2_d005.jpg) |
-| Automatic, 2 stages, Δ 0.05 | 18 s | 1.21× | [![Automatic, 2 stages, Δ 0.05](images/moss_auto2.jpg)](images/moss_auto2.jpg) |
-| Automatic, 3 stages, Δ 0.05 | 18 s | 1.26× | [![Automatic, 3 stages, Δ 0.05](images/moss_auto3.jpg)](images/moss_auto3.jpg) |
-| Automatic, 4 stages, Δ 0.05 | 18 s | 1.27× | [![Automatic, 4 stages, Δ 0.05](images/moss_auto4.jpg)](images/moss_auto4.jpg) |
-| Manual, 0.5× to step 10 of 20 | 14 s | **1.54×** | [![Manual, 0.5× to step 10 of 20](images/moss_manual.jpg)](images/moss_manual.jpg) |
+| Native | 22 s | 1× | ![MOSS native](images/moss_plain.jpg) |
+| 2-stage 0.5→1.0, Δ 0.005 | 21 s | 1.07× | ![MOSS 2-stage Δ 0.005](images/moss_auto2_d005.jpg) |
+| 2-stage 0.5→1.0, Δ 0.05 | 18 s | 1.21× | ![MOSS 2-stage Δ 0.05](images/moss_auto2.jpg) |
+| 3-stage 0.33→0.66→1.0, Δ 0.05 | 18 s | 1.26× | ![MOSS 3-stage Δ 0.05](images/moss_auto3.jpg) |
+| 4-stage 0.25→0.5→0.75→1.0, Δ 0.05 | 18 s | 1.27× | ![MOSS 4-stage Δ 0.05](images/moss_auto4.jpg) |
+| Manual 0.5→1.0, switch at step 10 of 20 | 14 s | 1.54× | ![MOSS manual](images/moss_manual.jpg) |
 
 ## Krea 2
 
-`krea2Raw_v10_full_fp8`, 1216×832, 52 steps, CFG 3.5, euler / simple, seed 291. Harvest: `noise_amplitude 9.7616`, `noise_decay_exponent 0.6308`.
-
-<details><summary>Prompt</summary>
-
-```
-masterpiece, best quality, candid 35mm film photograph, real person, natural skin texture: a small ramen stall on a narrow Tokyo side street at night. An elderly cook with short grey hair, a white headband and a navy apron ladles broth into a bowl behind the wooden counter, with steam rising from three large silver pots behind him. The wooden sign above the stall reads "RAMEN 400" in large, clear letters, and there is no other text. Exactly six plain paper lanterns hang in a row along the eave: five are red, and the third lantern from the left is blue. Two customers sit on wooden stools at the counter with their backs to the camera, and wet cobblestones in the foreground reflect the lantern light. Medium-wide shot at eye level. ramen stall, six paper lanterns, one blue lantern, elderly cook
-```
-</details>
+`krea2Raw_v10_full_fp8`, 1216×832, 52 steps, CFG 3.5, simple scheduler, seed 291. Calibration: noise_amplitude 9.7616, noise_decay_exponent 0.6308 (r² 0.63, health fair).
 
 | Mode | Time | Speedup | Image |
 |------|------|---------|-------|
-| Plain | 283 s | 1× | [![Plain](images/krea2_plain.jpg)](images/krea2_plain.jpg) |
-| Automatic, 2 stages, Δ 0.005 | 271 s | 1.04× | [![Automatic, 2 stages, Δ 0.005](images/krea2_auto2_d005.jpg)](images/krea2_auto2_d005.jpg) |
-| Automatic, 2 stages, Δ 0.05 | 226 s | 1.25× | [![Automatic, 2 stages, Δ 0.05](images/krea2_auto2.jpg)](images/krea2_auto2.jpg) |
-| Automatic, 3 stages, Δ 0.05 | 215 s | 1.31× | [![Automatic, 3 stages, Δ 0.05](images/krea2_auto3.jpg)](images/krea2_auto3.jpg) |
-| Automatic, 4 stages, Δ 0.05 | 252 s | 1.12× | [![Automatic, 4 stages, Δ 0.05](images/krea2_auto4.jpg)](images/krea2_auto4.jpg) |
-| Manual, 0.5× to step 26 of 52 | 183 s | **1.55×** | [![Manual, 0.5× to step 26 of 52](images/krea2_manual.jpg)](images/krea2_manual.jpg) |
+| Native | 283 s | 1× | ![Krea 2 native](images/krea2_plain.jpg) |
+| 2-stage 0.5→1.0, Δ 0.005 | 271 s | 1.04× | ![Krea 2 2-stage Δ 0.005](images/krea2_auto2_d005.jpg) |
+| 2-stage 0.5→1.0, Δ 0.05 | 226 s | 1.25× | ![Krea 2 2-stage Δ 0.05](images/krea2_auto2.jpg) |
+| 3-stage 0.33→0.66→1.0, Δ 0.05 | 215 s | 1.31× | ![Krea 2 3-stage Δ 0.05](images/krea2_auto3.jpg) |
+| 4-stage 0.25→0.5→0.75→1.0, Δ 0.05 | 252 s | 1.12× | ![Krea 2 4-stage Δ 0.05](images/krea2_auto4.jpg) |
+| Manual 0.5→1.0, switch at step 26 of 52 | 183 s | 1.55× | ![Krea 2 manual](images/krea2_manual.jpg) |
 
-## Summary
+Every run is clean, with no seams, banding or colour shifts, and keeps the sign legible. SPEED keeps the native image's scene, but small details such as the lantern count can change. At Δ 0.005 the low-resolution stage ends in the first few steps and saves little, so use Δ 0.05, or Manual with the switch at half the steps (about 1.55× on both models).
 
-- SPEED keeps the plain image's scene and sign. Small details such as the lantern count can change.
-- Every run was clean, with no seams, banding or colour shifts.
-- For images, use **Δ 0.05**, or Manual with the 0.5× stage ending at half the steps (about 1.55× on both models). At Δ 0.005 the low-resolution stage is too short to save much.
+H3 video evidence is in [h3_evidence](../h3_evidence/README.md).
