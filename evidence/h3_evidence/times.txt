@@ -1,21 +1,23 @@
-NATIVE
+Modal L40S (48 GB), warm: models loaded and prompt encoding cached by an untimed run first.
+Time = ComfyUI queue-to-finish, including the VAE decode.
+Two container sessions; native was timed in both (the renders are identical).
 
-571.49 Seconds
+Calibration (Sigma Harvest, euler): noise_amplitude=35.4213, noise_decay_exponent=1.0126
 
-(Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773
+Session 1
+NATIVE 276.2
+(Delta)=0.005
+2 stage 238.2
+3 stage 236.2
+4 stage 226.5
 
-2 stage 462.96
-3 stage 438.85
-4 stage 435.21
-
-(Delta)=0.010, noise_amplitude=12.436, noise_decay_exponent=0.786
-
-2 Stage 450.38
-3 Stage 409.83
-4 Stage 384.13
-
-(Delta)=0.050, noise_amplitude=6.920, noise_decay_exponent=0.766
-
-2 stage 278.44
-3 stage 262.32
-4 stage 237.57
+Session 2
+NATIVE 288.2
+(Delta)=0.01
+2 stage 238.2
+3 stage 226.2
+4 stage 224.2
+(Delta)=0.05
+2 stage 206.2
+3 stage 194.2
+4 stage 182.2

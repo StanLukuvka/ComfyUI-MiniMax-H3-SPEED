@@ -46,8 +46,11 @@ Harvest is still a native full-resolution pass; it does not run the SPEED chain.
 
 For base H3 with **Euler**, you can use the shipped reference values instead of running Harvest:
 
-- **Conservative (0.5%):** `Tolerance (Delta)=0.005, noise_amplitude=12.105, noise_decay_exponent=0.773` — `r² 0.70`
-- **Balanced (1%):** `Tolerance (Delta)=0.01, noise_amplitude=12.436, noise_decay_exponent=0.786` — faster, with near-parity results in the reference clip
+`noise_amplitude=35.4213, noise_decay_exponent=1.0126` (`r² 0.83`), with any `Tolerance (Delta)`:
+
+- **Conservative:** `Tolerance (Delta)=0.005`.
+- **Balanced:** `Tolerance (Delta)=0.01`, faster and still clean in the reference clip.
+- **Fast:** `Tolerance (Delta)=0.05`, the fastest, and also clean in the reference clip. Check dark scenes and low step counts (turbo LoRA) for colour pulses.
 
 See the [evidence section](evidence/h3_evidence/README.md) for examples of how these settings affect generation.
 
@@ -83,25 +86,25 @@ Every SPEED run was clean and as detailed as plain. With `noise_policy = coupled
 
 ## Speed improvements
 
-Same 10s 0.5 MP "world's most mediocre boss" office mug clip, same seed, corrected scheduler (post-PR-#37). Native Euler baseline: 571s.
+A 5 s 0.5 MP clip of a latte-art pour in a dark café, same seed for every run, on a Modal L40S. The scene is dark, with small printed lettering and fine texture, so colour pulses and detail loss would show. All runs use one Harvest calibration, `A35.4213 β1.0126`. Native Euler took 276 s in the Δ 0.005 session and 288 s in the Δ 0.01/0.05 session; each speedup is against the native time from its own session.
 
-These measurements use Euler and the calibration values shown in the table. They do not establish parity for the other samplers.
+These measurements use Euler. They do not establish parity for the other samplers.
 
-| Fit | Mode | Time | Speedup | Quality |
-|------|------|------|---------|---------|
-| Δ0.005 `A12.105 β0.773` | 2-stage | 463s | 1.23× | visually near-native in this clip |
-| Δ0.005 | 3-stage | 439s | 1.30× | visually near-native in this clip |
-| Δ0.005 | 4-stage | 435s | 1.31× | near-native; mild melt artifact |
-| Δ0.01 `A12.436 β0.786` | 2-stage | 450s | 1.27× | near parity |
-| Δ0.01 | 3-stage | 410s | 1.39× | cleanest mug-landing beat |
-| Δ0.01 | 4-stage | 384s | 1.49× | inconsistencies start appearing |
-| Δ0.05 `A6.920 β0.766` | 2-stage | 278s | 2.05× | noticeable artifacting |
-| Δ0.05 | 3-stage | 262s | 2.18× | very noticeable artifacting but still usable |
-| Δ0.05 | 4-stage | 238s | 2.41× | intense artifacting and halo effect beginning |
+| Δ | Mode | Time | Speedup |
+|------|------|------|---------|
+| 0.005 | 2-stage | 238s | 1.16× |
+| 0.005 | 3-stage | 236s | 1.17× |
+| 0.005 | 4-stage | 227s | 1.22× |
+| 0.01 | 2-stage | 238s | 1.21× |
+| 0.01 | 3-stage | 226s | 1.27× |
+| 0.01 | 4-stage | 224s | 1.29× |
+| 0.05 | 2-stage | 206s | 1.40× |
+| 0.05 | 3-stage | 194s | 1.48× |
+| 0.05 | 4-stage | 182s | 1.58× |
 
-See [evidence/h3_evidence/README.md](evidence/h3_evidence/README.md) for the full 10s GIFs (360p, 12fps).
+None of the ten clips has a colour flash. SPEED takes a different noise path, so the composition differs from native, but every run keeps the pour, the latte art and readable lettering. See [evidence/h3_evidence/README.md](evidence/h3_evidence/README.md) for the GIFs and links to the original MP4s.
 
-**Rule of thumb:** for quality-first runs, use `stages 3` at Δ0.005; for a balance of speed and quality, use `stages 2` at Δ0.01; for fast drafts, use `stages 4` at Δ0.05.
+**Rule of thumb:** use Δ0.005 for quality-first runs, Δ0.01 for a balance, and Δ0.05 for the most speed. More stages are faster at every Δ.
 
 ## Troubleshooting
 

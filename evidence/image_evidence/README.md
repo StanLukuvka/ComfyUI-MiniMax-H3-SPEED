@@ -2,7 +2,7 @@
 
 One still per model: a ramen stall on a Tokyo side street at night, with a readable sign, a cook, two customers and exactly six paper lanterns, the third one blue. The sign, the count and the one blue lantern make composition changes easy to see. Each prompt follows its model's prompting study (MOSS: plain prose, one sentence per element, no quality prefix; Krea 2: quality prefix, medium first, text clause, key concepts repeated at the end). The workflows are [`workflows/image_moss_SPEED.json`](../../workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](../../workflows/image_krea2_SPEED.json).
 
-**Machine:** RTX 5070 Laptop (8 GB) + 30 GB RAM, ComfyUI 0.41.0. Times are wall-clock per queued prompt with the models already loaded and the prompt encoded (sampling + VAE decode). Not comparable to the RTX 5080 numbers in [h3_evidence](../h3_evidence/README.md).
+**Machine:** RTX 5070 Laptop (8 GB) + 30 GB RAM, ComfyUI 0.41.0. Times are wall-clock per queued prompt with the models already loaded and the prompt encoded (sampling + VAE decode). Not comparable to the Modal L40S numbers in [h3_evidence](../h3_evidence/README.md).
 
 The `direct_coarse` rows draw their transition fill on the CPU, so they reproduce on any device.
 
