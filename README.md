@@ -71,6 +71,8 @@ Automatic and Manual return output and denoised LATENTs; Harvest returns calibra
 
 Set **`model_type = flow_image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Wire it like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). `model_type` has no default; set it on every SPEED node. A value that does not match the model and latent stops with an error.
 
+**Image-to-image.** Image workflows usually use KSampler, whose `denoise` widget runs img2img. SPEED is wired like SamplerCustomAdvanced, so the same setting moves to **BasicScheduler**'s `denoise`, and the `latent_image` comes from **VAEEncode** instead of an empty latent. The first stage starts from the encoded image shrunk to that stage's size, noised to the schedule's first sigma, as SamplerCustomAdvanced does at full size. A lower `denoise` starts the schedule at a lower sigma. Automatic skips any coarse stage whose boundary sigma is already above it, so at low `denoise` it runs fewer stages and saves less; when it skips every coarse stage it runs as plain full-size sampling. Manual keeps the stages you set.
+
 Example workflows: [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](workflows/image_krea2_SPEED.json). Each has Harvest, Automatic and Manual on one set of loaders, in Models, Conditioning, Sampling, SPEED and output groups; only Automatic is active, already set to that model's harvested values and `noise_policy = coupled_full_grid`.
 
 There is no shipped calibration for image models. Run Harvest with `model_type = flow_image` on your model and settings, and paste its values in. At Δ 0.005 the harvested boundary lands in the first few steps of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
@@ -119,9 +121,9 @@ None of the ten clips has a colour flash. SPEED takes a different noise path, so
 ## Current limitations
 
 - H3 batch size is currently **1**. Image models take any batch size.
-- `model_type flow_image` takes single images only (`[B,C,H,W]`, or `[B,C,1,H,W]` for 3-dimensional latent formats such as Krea 2's Wan 2.1 format) and needs a flow (CONST) model, in Harvest too. Other models, such as EPS or v-prediction checkpoints, are rejected with an error. img2img with a non-empty latent is not supported.
+- `model_type flow_image` takes single images only (`[B,C,H,W]`, or `[B,C,1,H,W]` for 3-dimensional latent formats such as Krea 2's Wan 2.1 format) and needs a flow (CONST) model, in Harvest too. Other models, such as EPS or v-prediction checkpoints, are rejected with an error.
 - `noise_mask` / masked denoising is not supported.
-- The `latent_image` must start empty (for H3, both the video and audio streams). SPEED's I2V support comes through MiniMax-H3 keyframe conditioning, which is resized and restored separately.
+- For `h3_video` the `latent_image` must start empty (both the video and audio streams). SPEED's I2V support comes through MiniMax-H3 keyframe conditioning, which is resized and restored separately.
 - SPEED expects the MiniMax-H3 nested latent layout: one video stream plus one audio stream.
 
 ## Advanced — you don't need this to use it
