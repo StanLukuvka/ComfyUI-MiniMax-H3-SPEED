@@ -17,18 +17,14 @@ A candid photograph of a small ramen stall on a narrow Tokyo side street at nigh
 ```
 </details>
 
-| Mode | Time | Speedup |
-|------|------|---------|
-| Plain | 22 s | 1× |
-| Automatic, 2 stages, Δ 0.005 | 21 s | 1.07× |
-| Automatic, 2 stages, Δ 0.05 | 18 s | 1.21× |
-| Automatic, 3 stages, Δ 0.05 | 18 s | 1.26× |
-| Automatic, 4 stages, Δ 0.05 | 18 s | 1.27× |
-| Manual, 0.5× to step 10 of 20 | 14 s | **1.54×** |
-
-| Plain 22 s | Automatic 3 stages Δ 0.05, 18 s | Manual to step 10, 14 s |
-|---|---|---|
-| ![MOSS plain](images/moss_plain.jpg) | ![MOSS auto 3](images/moss_auto3.jpg) | ![MOSS manual](images/moss_manual.jpg) |
+| Mode | Time | Speedup | Image |
+|------|------|---------|-------|
+| Plain | 22 s | 1× | [![Plain](images/moss_plain.jpg)](images/moss_plain.jpg) |
+| Automatic, 2 stages, Δ 0.005 | 21 s | 1.07× | [![Automatic, 2 stages, Δ 0.005](images/moss_auto2_d005.jpg)](images/moss_auto2_d005.jpg) |
+| Automatic, 2 stages, Δ 0.05 | 18 s | 1.21× | [![Automatic, 2 stages, Δ 0.05](images/moss_auto2.jpg)](images/moss_auto2.jpg) |
+| Automatic, 3 stages, Δ 0.05 | 18 s | 1.26× | [![Automatic, 3 stages, Δ 0.05](images/moss_auto3.jpg)](images/moss_auto3.jpg) |
+| Automatic, 4 stages, Δ 0.05 | 18 s | 1.27× | [![Automatic, 4 stages, Δ 0.05](images/moss_auto4.jpg)](images/moss_auto4.jpg) |
+| Manual, 0.5× to step 10 of 20 | 14 s | **1.54×** | [![Manual, 0.5× to step 10 of 20](images/moss_manual.jpg)](images/moss_manual.jpg) |
 
 ## Krea 2
 
@@ -41,20 +37,14 @@ masterpiece, best quality, candid 35mm film photograph, real person, natural ski
 ```
 </details>
 
-| Mode | Time | Speedup |
-|------|------|---------|
-| Plain | 283 s | 1× |
-| Automatic, 2 stages, Δ 0.005 | 271 s | 1.04× |
-| Automatic, 2 stages, Δ 0.05 | 226 s | 1.25× |
-| Automatic, 3 stages, Δ 0.05 | 215 s | 1.31× |
-| Automatic, 4 stages, Δ 0.05 | 252 s | 1.12× |
-| Manual, 0.5× to step 26 of 52 | 183 s | **1.55×** |
-
-The 13 GB Krea 2 model does not fit in 8 GB of VRAM, so its times vary by tens of seconds between runs. Treat its Automatic speedups as rough.
-
-| Plain 283 s | Automatic 3 stages Δ 0.05, 215 s | Manual to step 26, 183 s |
-|---|---|---|
-| ![Krea 2 plain](images/krea2_plain.jpg) | ![Krea 2 auto 3](images/krea2_auto3.jpg) | ![Krea 2 manual](images/krea2_manual.jpg) |
+| Mode | Time | Speedup | Image |
+|------|------|---------|-------|
+| Plain | 283 s | 1× | [![Plain](images/krea2_plain.jpg)](images/krea2_plain.jpg) |
+| Automatic, 2 stages, Δ 0.005 | 271 s | 1.04× | [![Automatic, 2 stages, Δ 0.005](images/krea2_auto2_d005.jpg)](images/krea2_auto2_d005.jpg) |
+| Automatic, 2 stages, Δ 0.05 | 226 s | 1.25× | [![Automatic, 2 stages, Δ 0.05](images/krea2_auto2.jpg)](images/krea2_auto2.jpg) |
+| Automatic, 3 stages, Δ 0.05 | 215 s | 1.31× | [![Automatic, 3 stages, Δ 0.05](images/krea2_auto3.jpg)](images/krea2_auto3.jpg) |
+| Automatic, 4 stages, Δ 0.05 | 252 s | 1.12× | [![Automatic, 4 stages, Δ 0.05](images/krea2_auto4.jpg)](images/krea2_auto4.jpg) |
+| Manual, 0.5× to step 26 of 52 | 183 s | **1.55×** | [![Manual, 0.5× to step 26 of 52](images/krea2_manual.jpg)](images/krea2_manual.jpg) |
 
 ## Summary
 
