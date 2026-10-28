@@ -71,7 +71,13 @@ Automatic and Manual return output and denoised LATENTs; Harvest returns calibra
 
 Set **`model_type = flow_image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Wire it like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). `model_type` has no default; set it on every SPEED node. A value that does not match the model and latent stops with an error.
 
-Example workflows: [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](workflows/image_krea2_SPEED.json). Each has Harvest, Automatic and Manual on one set of loaders, in Models, Conditioning, Sampling, SPEED and output groups; only Automatic is active, already set to that model's harvested values and `noise_policy = coupled_full_grid`.
+Example workflows. Each has Harvest, Automatic and Manual on one set of loaders, in Models, Conditioning, Sampling, SPEED and output groups. Only Automatic is active, already set to that model's harvested values.
+
+| Workflow | Model | `model_type` | Noise policy | Sampling | Automatic |
+|---|---|---|---|---|---|
+| [`video_h3_SPEED.json`](workflows/video_h3_SPEED.json) | MiniMax H3 | `h3_video` | `direct_coarse` | euler, simple, 20 steps | 3 stages, Δ 0.005, A 35.4213, β 1.0126 |
+| [`image_moss_SPEED.json`](workflows/image_moss_SPEED.json) | MOSS Image | `flow_image` | `coupled_full_grid` | euler, sgm_uniform, 20 steps | 3 stages, Δ 0.05, A 48.4075, β 1.0333 |
+| [`image_krea2_SPEED.json`](workflows/image_krea2_SPEED.json) | Krea 2 | `flow_image` | `coupled_full_grid` | euler, simple, 52 steps | 3 stages, Δ 0.05, A 9.7616, β 0.6308 |
 
 There is no shipped calibration for image models. Run Harvest with `model_type = flow_image` on your model and settings, and paste its values in. At Δ 0.005 the harvested boundary lands in the first few steps of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
 
