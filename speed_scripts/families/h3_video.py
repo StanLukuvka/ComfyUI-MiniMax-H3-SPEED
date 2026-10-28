@@ -1,10 +1,7 @@
 """MiniMax-H3 (``h3_video``) model family.
 
-The H3 latent is a nested video/audio pair: the video stream is the spatial
-stream SPEED resizes, and the audio stream is carried across resolution
-changes on its own sigma clock. This module holds the family class together
-with its unpack/pack helpers, the sigma-shift resolution, and the H3-only
-audio-state math moved from ``speed_scripts/flow.py``.
+The latent is a nested video/audio pair. SPEED resizes the video stream and
+carries the audio stream across resolution changes on its own sigma clock.
 """
 
 from __future__ import annotations

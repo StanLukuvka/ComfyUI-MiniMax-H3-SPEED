@@ -1,8 +1,7 @@
 """Transition-coordinate math for SPEED stage changes.
 
-``aligned_sigma`` maps a sigma across a resolution change; ``reentry_noise``
-rescales carried state back to noise at a stage's entry sigma. The H3-only
-audio-state math moved to ``speed_scripts/families/h3_video.py``.
+``aligned_sigma`` maps a sigma across a resolution change. ``reentry_noise``
+rescales carried state back to noise at a stage's entry sigma.
 """
 
 from __future__ import annotations

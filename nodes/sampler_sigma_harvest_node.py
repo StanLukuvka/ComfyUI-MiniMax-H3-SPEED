@@ -121,8 +121,7 @@ class SPEEDSigmaHarvest:
     ):
 
         delta = float(kwargs.pop("Tolerance (Delta)", 0.005))
-        # The same family path as the samplers: get_family validates model_type
-        # and FlowImageFamily's __init__ runs the flow-sampling check.
+        # get_family validates model_type and runs the family's own checks.
         family = get_family(model_type, guider)
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
@@ -271,8 +270,7 @@ class SPEEDSigmaHarvest:
         except Exception:
             sigmas_list = [float(sigmas[i]) for i in range(len(sigmas))]
 
-        # Automatic uses A, beta, and delta to calculate transition steps
-        # from the live sigma schedule.
+        # Automatic computes transition steps from A, beta, delta and the live sigmas.
         calibration = {
             "schema_version": 2,
             "noise_amplitude": A,
@@ -316,8 +314,7 @@ class SPEEDSigmaHarvest:
                 "Do not paste this calibration into Automatic: SPEED requires "
                 "positive finite noise_amplitude and noise_decay_exponent values."
             )
-        # For reference, show where this sigma schedule would place the
-        # 0.5x and 0.75x transitions.
+        # Show where this schedule would place the 0.5x and 0.75x transitions.
         if H_full is not None and W_full is not None and sigmas_list:
             try:
                 omega_max = min(H_full, W_full) / 2.0
@@ -339,8 +336,7 @@ class SPEEDSigmaHarvest:
 
         output_json = json.dumps(calibration)
 
-        # ComfyUI expects a LATENT dict, so put the sampler result back under
-        # "samples" before returning it.
+        # Return the sampler result as a LATENT dict.
         if result is not None:
             output_latent = latent_image.copy()
             output_latent["samples"] = result
