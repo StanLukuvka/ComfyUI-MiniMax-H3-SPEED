@@ -206,23 +206,27 @@ def flow_patcher(sampling=None, latent_dimensions=2):
 class OracleFlowGuider:
     """Mimics ComfyUI's CFGGuider.sample for a CONST flow model with an ideal denoiser.
 
-    The zero latent is not shifted, the start state is ``sigma0 * noise``, the
-    denoiser always predicts ``clean`` (low-passed to the stage size), and the
-    result goes through ``inverse_noise_scaling`` and ``process_latent_out``.
+    The zero latent is not shifted, a non-empty one goes through ``process_latent_in``,
+    the start state is ``sigma0 * noise + (1 - sigma0) * latent``, the denoiser
+    always predicts ``clean`` (low-passed to the stage size), and the result goes
+    through ``inverse_noise_scaling`` and ``process_latent_out``.
     """
 
     def __init__(self, clean, latent_dimensions=2):
         self.model_patcher = flow_patcher(latent_dimensions=latent_dimensions)
         self.clean = clean
-        self.starts, self.ends = [], []
+        self.starts, self.ends, self.latents, self.sigma_calls = [], [], [], []
         self.original_conds = None
 
     def sample(self, noise, latent_image, sampler, sigmas, callback=None, **kwargs):
         from speed_scripts.spectral import lowpass_dct
 
-        assert not torch.count_nonzero(latent_image)
+        self.latents.append(latent_image.clone())
+        self.sigma_calls.append([float(s) for s in sigmas])
+        if torch.count_nonzero(latent_image):
+            latent_image = self.model_patcher.model.process_latent_in(latent_image)
         s0, s1 = float(sigmas[0]), float(sigmas[-1])
-        x0 = s0 * noise
+        x0 = s0 * noise + (1.0 - s0) * latent_image
         clean = lowpass_dct(self.clean, tuple(noise.shape[-2:])).reshape(noise.shape)
         x1 = clean + (s1 / s0) * (x0 - clean)
         self.starts.append(x0)

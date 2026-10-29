@@ -6,6 +6,7 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Added
 
+- Added image-to-image for `model_type flow_image`: a VAE-encoded `latent_image` with BasicScheduler's `denoise` below 1 (KSampler's `denoise`) seeds the first stage with the image shrunk to that stage's size. Automatic skips coarse stages whose boundary the shortened schedule has already passed. `h3_video` still requires an empty latent. `StagePlan` gained a `scales` field for the stages that run.
 - Added a `sampler` (SAMPLER) input to Automatic, Manual, and Sigma Harvest, fed by KSamplerSelect or any other SAMPLER node.
 - Added a required `model_type` switch (`h3_video`, `flow_image`) to Automatic, Manual, and Sigma Harvest, with no default. `flow_image` runs flow image models such as MOSS Image and Krea 2. Sampler and Harvest both reject non-flow models.
 - Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_krea2_SPEED.json`, and image-model timings (MOSS Image and Krea 2, `coupled_full_grid`, RTX 5070 Laptop) to `evidence/image_evidence/README.md`; split `evidence/` into `h3_evidence/` and `image_evidence/`.
