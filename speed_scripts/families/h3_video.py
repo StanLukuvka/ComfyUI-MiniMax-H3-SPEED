@@ -145,6 +145,7 @@ class H3VideoFamily:
     """MiniMax-H3: resize the video stream, carry audio on its own sigma clock."""
 
     name = "h3_video"
+    accepts_source_latent = False
 
     def __init__(self, guider):
         self.video_shift, self.audio_shift, self.audio_scale = resolve_sigma_shifts(guider)

@@ -49,6 +49,8 @@ class FlowImageFamily:
     """
 
     name = "flow_image"
+    # Image-to-image: a VAE-encoded latent seeds the first stage, as SamplerCustomAdvanced does.
+    accepts_source_latent = True
 
     def __init__(self, guider):
         require_flow_sampling(guider)

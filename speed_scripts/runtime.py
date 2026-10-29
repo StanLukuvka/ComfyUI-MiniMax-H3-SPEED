@@ -101,6 +101,23 @@ def _coupled_transition(
     return idct_temporal(idct2(target_coefficients)).to(dtype=internal_main.dtype)
 
 
+def _downsample_source(full_main, target_thw):
+    """First-stage source latent: zeros for an empty latent, else the image low-passed to the stage size.
+
+    The DCT low-pass is rescaled to keep the mean, so the coarse image has the
+    same level as the full one; a per-channel affine latent format commutes with it.
+    """
+    target_t, target_h, target_w = target_thw
+    shape = full_main.shape[:-3] + (target_t, target_h, target_w)
+    if not torch.count_nonzero(full_main):
+        return full_main.new_zeros(shape)
+    if target_t != full_main.shape[-3]:
+        raise ValueError("SPEED image-to-image does not support temporal stage scales")
+    source_h, source_w = full_main.shape[-2:]
+    gain = ((target_h * target_w) / (source_h * source_w)) ** 0.5
+    return lowpass_dct(full_main, (target_h, target_w)) * gain
+
+
 def _expand_main(
     internal_main,
     *,
@@ -153,6 +170,13 @@ def run_speed_pipeline(
     """
     prepared = prepare_family(model_type, guider, latent)
     plan = plan_stages(config, sigmas, prepared.main.shape)
+    if len(plan.scales) < len(config.scales):
+        log.info(
+            "[SPEED] sigma schedule starts at %.4f, below the first %d stage threshold(s): running %d stage(s)",
+            float(sigmas[0]),
+            len(config.scales) - len(plan.scales),
+            len(plan.scales),
+        )
     return run_stages(
         noise,
         guider,
@@ -187,13 +211,13 @@ def run_stages(
     latent = prepared.latent
     full_main = prepared.main
     full_extra = prepared.extra
-    scales = config.scales
+    scales = plan.scales
     stage_shapes = plan.stage_shapes
     transition_steps = plan.transition_steps
 
     working_sigmas = sigmas.clone()
     stage_h, stage_w, stage_t = stage_shapes[0]
-    coarse_main = full_main.new_zeros(full_main.shape[:-3] + (stage_t, stage_h, stage_w))
+    coarse_main = _downsample_source(full_main, (stage_t, stage_h, stage_w))
     stage_start_latent = family.join(coarse_main, _maybe(torch.zeros_like, full_extra))
 
     full_noise_coefficients = None

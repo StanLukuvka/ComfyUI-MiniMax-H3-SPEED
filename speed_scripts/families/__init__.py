@@ -60,15 +60,19 @@ class PreparedLatent:
 
 
 def prepare_family(model_type, guider, latent) -> PreparedLatent:
-    """Pick the family, fit the latent and split it, checking it is empty and unmasked."""
+    """Pick the family, fit the latent and split it, checking it is unmasked.
+
+    Only a family with ``accepts_source_latent`` takes a non-empty latent (image-to-image).
+    """
     if "noise_mask" in latent:
         raise ValueError("SPEED does not support noise masks")
     family = get_family(model_type, guider)
     latent = prepare_latent(guider, latent)
 
     main, extra = family.split(latent.get("samples"))
-    if torch.count_nonzero(main) or (extra is not None and torch.count_nonzero(extra)):
-        raise ValueError("SPEED requires an empty input latent")
+    empty = not torch.count_nonzero(main) and (extra is None or not torch.count_nonzero(extra))
+    if not empty and not family.accepts_source_latent:
+        raise ValueError(f"model_type {family.name} requires an empty input latent")
     return PreparedLatent(family=family, latent=latent, main=main, extra=extra)
 
 
