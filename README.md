@@ -23,14 +23,14 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 2. Set **`model_type`**: `h3_video` for MiniMax-H3, `flow_image` for flow image models. It has no default.
 3. Fill in **`noise_amplitude`** and **`noise_decay_exponent`**. They describe how your model, sampler and schedule behave, and SPEED will not run without them: left at 0, the node stops with an error.
    - MiniMax-H3 with `euler`: use the reference values `noise_amplitude = 35.4213`, `noise_decay_exponent = 1.0126`.
-   - Anything else: run the **SPEED — Sigma Harvest** node once with the same sampler, schedule and size (see [Sigma Harvest](#which-node-do-i-need) below), and copy its two numbers.
+   - Anything else: run the **SPEED — Sigma Harvest** node once with the same sampler, schedule and size (see [Which node do I need?](#which-node-do-i-need) below), and copy its two numbers.
 4. Set **`stages`** (3 is the default) and **`Tolerance (Delta)`** (0.005 for video, 0.05 for images), then queue.
 
 The example workflows ship with these values already filled in.
 
 ## Which node do I need?
 
-**Automatic — Sampler**  
+**SPEED — Sampler** (Automatic)  
 Choose how many resolution stages you want:
 
 `2 = 0.5→1.0`  
@@ -39,21 +39,21 @@ Choose how many resolution stages you want:
 
 `Tolerance (Delta)` (Δ in this README), `noise_amplitude` and `noise_decay_exponent` decide at which step each resolution switch happens. A smaller Δ switches later: safer, but it saves less time. `noise_amplitude` and `noise_decay_exponent` have no defaults: no model's calibration is baked in. Paste them from Harvest, or for H3 with Euler use the reference values below.
 
-**Manual — Sampler (Step-Through)**  
+**SPEED — Sampler (Manual Step-Through)**  
 For experimenting. Start with Automatic; use Manual when you want to pick the switch points yourself. Set up to four `(goal, resolution)` pairs. For every stage except the last active one, `goal` is the step where that stage ends (or a 0–1 fraction of the schedule with `ratio_mode = ratio`), and `resolution` is its scale, such as `0.25` for quarter resolution. The last active stage always runs to the end of the schedule, so its goal only needs to be non-zero.
 
 Active resolutions must increase, and the last active resolution must be `1.0`. Set either value to `0` to skip a stage.
 
-**Sigma Harvest (Native Sampler)**  
-Run Harvest with your current workflow to measure the connected sampler at full resolution. Use the same sampler, sigma schedule, step count, and `Tolerance (Delta)` that you intend to use with SPEED. Its `calibration` output is text: connect it to a **Preview Any** (or other show-text) node to read it. Then keep the same sampler connected to Automatic and copy the report's `Tolerance (Delta)`, `noise_amplitude` (A) and `noise_decay_exponent` (β) into it.
+**SPEED — Sigma Harvest (Native Sampler)**  
+Run Harvest with your current workflow to measure the connected sampler at full resolution. Use the same sampler, sigma schedule, step count, and `Tolerance (Delta)` that you intend to use with SPEED. Its `calibration` output is a JSON string whose `report` field holds the readable lines, including a ready-made paste line: connect it to a **Preview Any** node to read it. Then keep the same sampler connected to Automatic and copy the report's `Tolerance (Delta)`, `noise_amplitude` (A) and `noise_decay_exponent` (β) into it.
 
-The report also gives `r²` and `health`, which say how well the measured curve fits. `good` or `fair` is usable; `weak` or `suspect` prints a warning, so re-run or check your inputs; `invalid` gives no values to paste.
+The report also gives `r²` and `health`, which say how well the measured curve fits. `good` or `fair` is usable. `weak` prints a warning: re-run or check your inputs before trusting it. `suspect` and `invalid` give no values to paste.
 
 Harvest takes as long as one normal full-resolution render; it does not run the SPEED chain. Re-run it when you materially change the checkpoint, sampler, LoRA/addons, scheduler, or step count.
 
 For base H3 with **Euler**, you can use the shipped reference values instead of running Harvest:
 
-`noise_amplitude=35.4213, noise_decay_exponent=1.0126` (`r² 0.83`), with any `Tolerance (Delta)`:
+`noise_amplitude = 35.4213`, `noise_decay_exponent = 1.0126` (fit `r² 0.83`). Pick a `Tolerance (Delta)`:
 
 - **Conservative:** `Tolerance (Delta)=0.005`.
 - **Balanced:** `Tolerance (Delta)=0.01`, faster and still clean in the reference clip.
@@ -72,7 +72,7 @@ Tested on the 5 s mug clip (turbo LoRA, 8 steps, 2 stages, 0.2 MP on an L40S and
 - **Broken:** `lms` and `ipndm_v` (halos and smearing). They also break without SPEED on a few-step schedule.
 - `heun`, `dpm_2` and `dpmpp_sde` run two model evaluations per step, so they take about 1.6× as long.
 
-Automatic and Manual return two LATENTs: use `output`. `denoised` is the model's last clean-image estimate, for debugging. Harvest returns its calibration text plus a diagnostic LATENT.
+Automatic and Manual return two LATENTs: use `output`. `denoised_output` is the model's last clean-image estimate, for debugging. Harvest returns its calibration text plus a diagnostic LATENT.
 
 ## Example workflows
 
