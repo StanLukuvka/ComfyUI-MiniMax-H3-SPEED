@@ -43,7 +43,7 @@ class SPEEDSampler:
                 ),
                 "sampler": (
                     "SAMPLER",
-                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Euler is the calibrated reference; other samplers work but their baked numbers are unmeasured."},
+                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Run Sigma Harvest with the same sampler; the shipped H3 reference values are Euler-only."},
                 ),
                 "sigmas": (
                     "SIGMAS",
