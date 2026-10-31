@@ -43,7 +43,7 @@ class SPEEDSamplerManual:
                 ),
                 "sampler": (
                     "SAMPLER",
-                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Euler is the calibrated reference; other samplers work but their baked numbers are unmeasured."},
+                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Any sampler works; Euler is the one SPEED was measured with."},
                 ),
                 "sigmas": (
                     "SIGMAS",
@@ -82,7 +82,7 @@ class SPEEDSamplerManual:
                         "default": 3,
                         "min": 0,
                         "max": 1000,
-                        "tooltip": "Where stage 1 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal is only a non-zero flag.",
+                        "tooltip": "Where stage 1 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
                     },
                 ),
                 "transition_resolution_1": (
@@ -100,7 +100,7 @@ class SPEEDSamplerManual:
                         "default": 5,
                         "min": 0,
                         "max": 1000,
-                        "tooltip": "Where stage 2 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal is only a non-zero flag.",
+                        "tooltip": "Where stage 2 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
                     },
                 ),
                 "transition_resolution_2": (
@@ -118,7 +118,7 @@ class SPEEDSamplerManual:
                         "default": 8,
                         "min": 0,
                         "max": 1000,
-                        "tooltip": "Where stage 3 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal is only a non-zero flag.",
+                        "tooltip": "Where stage 3 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
                     },
                 ),
                 "transition_resolution_3": (
@@ -136,7 +136,7 @@ class SPEEDSamplerManual:
                         "default": 15,
                         "min": 0,
                         "max": 1000,
-                        "tooltip": "Where stage 4 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal is only a non-zero flag.",
+                        "tooltip": "Where stage 4 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
                     },
                 ),
                 "transition_resolution_4": (

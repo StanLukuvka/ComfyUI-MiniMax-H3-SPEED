@@ -61,7 +61,7 @@ class SPEEDSigmaHarvest:
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")
     OUTPUT_TOOLTIPS = (
-        "Calibration JSON (noise_amplitude, noise_decay_exponent, delta, r2, health, report) to paste into the matching Automatic node. On failure, an error JSON.",
+        "Calibration JSON (noise_amplitude, noise_decay_exponent, delta, r2, health, report). Connect it to Preview Any to read it, then paste the values into the matching Automatic node. On failure, an error JSON.",
         "Latent from the native full-resolution pass, for inspection only. Not a SPEED result.",
     )
     FUNCTION = "harvest"
@@ -307,7 +307,7 @@ class SPEEDSigmaHarvest:
             lines.append(
                 f"Paste into SPEED Sampler (same sampler: {sampler_name}): "
                 f"Tolerance (Delta)={float(delta):.3f}, noise_amplitude={A:.4f}, "
-                f"noise_decay_exponent={beta:.4f} (transition_mode=delta_custom)"
+                f"noise_decay_exponent={beta:.4f}"
             )
         else:
             lines.append(
