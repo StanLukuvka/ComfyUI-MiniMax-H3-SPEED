@@ -22,7 +22,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 1. **Image models** (MOSS Image, Krea 2): swap your **KSampler** for **SPEED — KSampler**, using the same wiring as KSampler. See the [image_moss_SPEED](workflows/image_moss_SPEED.json) workflow as an example. **H3**: replace **SamplerCustomAdvanced** in your own workflow with **SPEED — Sampler Advanced**, using the same wiring, as in the [video_h3_SPEED](workflows/video_h3_SPEED.json) workflow.
 2. Set **`model_type`**: the list shows `h3_video` first; set `flow_image` for image models. A mismatch with the loaded model raises an error.
 3. Fill in **`noise_amplitude`** and **`noise_decay_exponent`**. They describe how your model, sampler and schedule behave, and SPEED will not run without them: left at 0, the node stops with an error.
-   - MiniMax-H3 with `euler`: use the reference values `noise_amplitude = 35.4213`, `noise_decay_exponent = 1.0126`.
+   - MiniMax-H3: as a reference, you can fill in our own values (measured with `euler`): `noise_amplitude = 35.4213`, `noise_decay_exponent = 1.0126`. However, it is highly recommended to run **Sigma Harvest** once to get numbers that fit your specific workflow.
    - Anything else: run a **Sigma Harvest** node once with the same sampler, schedule and size (see [Which node do I need?](#which-node-do-i-need) below), and copy its two numbers.
 4. Set **`stages`** (3 is the default) and **`Tolerance (Delta)`** (0.005 for video, 0.05 for images), then queue.
 
