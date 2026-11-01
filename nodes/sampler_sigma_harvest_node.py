@@ -19,7 +19,7 @@ class SPEEDSigmaHarvest:
         "(x - denoised) to P = A·|ω|^-beta and returns A/beta for Automatic. "
         "The calibration basis is the model's residual spectrum, separate from "
         "the clean-data spectrum in the SPEED paper. Set model_type to match "
-        "the SPEED Sampler."
+        "your SPEED sampler node."
     )
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")

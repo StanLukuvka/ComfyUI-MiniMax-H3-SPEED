@@ -27,7 +27,7 @@ class SPEEDSamplerManual:
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
     OUTPUT_TOOLTIPS = (
-        "Final latent at full resolution, as from SamplerCustomAdvanced.",
+        "Final latent at full resolution.",
         "Latent of the model's last clean-image (x0) estimate, as from SamplerCustomAdvanced.",
     )
     FUNCTION = "sample"

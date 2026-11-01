@@ -164,7 +164,7 @@ Sigma Harvest measures how the radial DCT power of the full-resolution **residua
 
 For each stage scale `s`, Automatic uses `ω = s·min(H,W)/2`, evaluates `P = A·ω^-β`, then computes `thr = 1/(1+√(Δ/(P·(1+P-Δ))))`. The first `sigmas[i] ≤ thr` becomes that stage boundary. The threshold is continuous; the actual boundary is quantized to your sigma schedule.
 
-Re-calibrate with the Harvest node if you change the checkpoint, sampler, or an addon that changes model behavior. Wire `noise`, `guider`, `sampler`, `sigmas`, `latent_image`, and `Tolerance (Delta)`; run the connected sampler at full resolution with the same sigma scheduler and step count you intend to use in SPEED; then connect the same sampler to Automatic and copy `Tolerance (Delta)`, `noise_amplitude` and `noise_decay_exponent`.
+Re-calibrate with the Harvest node if you change the checkpoint, sampler, or an addon that changes model behavior. On **SPEED — Sigma Harvest Advanced**, wire `noise`, `guider`, `sampler`, `sigmas` and `latent_image`; on **SPEED — KSampler Sigma Harvest**, wire `model`, `positive`, `negative` and `latent_image` and set `seed`, `steps`, `cfg`, `sampler_name` and `scheduler`. Set `Tolerance (Delta)` on either. Harvest runs the sampler at full resolution, so use the same sampler, scheduler and step count you intend to use with SPEED. Then use that sampler on Automatic and copy `Tolerance (Delta)`, `noise_amplitude` and `noise_decay_exponent`.
 
 For base H3, the reference values were harvested at 20 steps with the `simple` scheduler, as in the example workflow.
 

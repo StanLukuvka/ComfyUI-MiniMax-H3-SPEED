@@ -183,7 +183,7 @@ def run_harvest(
                 "harvest_failed",
                 f"Native {sampler_name} harvest failed: {exc}",
                 sampler_name=sampler_name,
-                fix="Check the same sampler runs in SamplerCustomAdvanced with these inputs.",
+                fix="Check the same sampler runs without SPEED (KSampler or SamplerCustomAdvanced) with these inputs.",
             ),
             latent_image,
         )
