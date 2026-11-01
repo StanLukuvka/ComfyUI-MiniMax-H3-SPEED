@@ -4,7 +4,7 @@ Same prompt per model (a ramen stall on a Tokyo side street at night, in [prompt
 
 The prompt is built to show sampler damage: a dark street for colour shifts, a readable "RAMEN 400" sign for fine detail, and a row of lanterns, a cook and two customers, so composition changes are easy to see.
 
-Settings: euler, CFGGuider, `model_type = flow_image`, SPEED runs with `noise_policy = coupled_full_grid` and seed_offset 10000. The model, size, steps, CFG, scheduler and seed are under each model. `coupled_full_grid` uses the same seed noise as a native run, so the native image at the same seed is the reference. The Δ is part of each mode, because each model has one table.
+Settings: euler, CFGGuider, the flow image family (now the KSampler nodes), SPEED runs with `noise_policy = coupled_full_grid` and seed_offset 10000. The model, size, steps, CFG, scheduler and seed are under each model. `coupled_full_grid` uses the same seed noise as a native run, so the native image at the same seed is the reference. The Δ is part of each mode, because each model has one table.
 
 Timing: each time is a ComfyUI queue-to-finish time with the models already loaded and the prompt encoded, including the VAE decode. Times are rounded to whole seconds; each speedup is computed from the unrounded times, so two rows can show the same time with different speedups. These times are not comparable to the Modal L40S numbers in [h3_evidence](../h3_evidence/README.md). Krea 2's 13 GB model does not fit in 8 GB of VRAM, so its times vary by tens of seconds between runs.
 
