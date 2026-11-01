@@ -5,8 +5,8 @@ return A, beta, and delta for the Automatic node. This measures the model's
 residual spectrum, not the clean-data spectrum from the SPEED paper.
 """
 
-from speed_scripts.families import MODEL_TYPES
 from speed_scripts.harvest import run_harvest
+from speed_scripts.node_widgets import MODEL_TYPE_WIDGET, SPEED_HARVEST_WIDGETS
 
 
 class SPEEDSigmaHarvest:
@@ -55,20 +55,8 @@ class SPEEDSigmaHarvest:
                     "LATENT",
                     {"tooltip": "Latent for the native full-resolution pass, at the size you will run SPEED at."},
                 ),
-                "Tolerance (Delta)": (
-                    "FLOAT",
-                    {
-                        "default": 0.005,
-                        "min": 1e-4,
-                        "max": 0.5,
-                        "step": 0.001,
-                        "tooltip": "The Delta the report computes transition boundaries for. It is written into the calibration and the paste line; the fit itself does not depend on it.",
-                    },
-                ),
-                "model_type": (
-                    list(MODEL_TYPES),
-                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. flow_image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
-                ),
+                **SPEED_HARVEST_WIDGETS,
+                "model_type": MODEL_TYPE_WIDGET,
             },
         }
 
@@ -100,7 +88,7 @@ NODE_CLASS_MAPPINGS = {
     "MiniMaxH3HarvestToConfig": MiniMaxH3HarvestToConfig,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "SPEEDSigmaHarvest": "SPEED — Sigma Harvest (Native Sampler)",
+    "SPEEDSigmaHarvest": "SPEED — Sigma Harvest Advanced",
     "MiniMaxH3HarvestToConfig": "MiniMax H3 SPEED — Sigma Harvest (Native Sampler) (deprecated)",
 }
 __all__ = [
