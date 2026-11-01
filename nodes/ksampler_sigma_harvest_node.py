@@ -7,7 +7,6 @@ from speed_scripts.harvest import run_harvest
 from speed_scripts.ksampler_inputs import build_ksampler_inputs
 from speed_scripts.node_widgets import (
     KSAMPLER_BASE_INPUTS,
-    MODEL_TYPE_WIDGET,
     SPEED_HARVEST_WIDGETS,
 )
 
@@ -20,17 +19,18 @@ class SPEEDKSamplerHarvest:
     RETURN_NAMES = SPEEDSigmaHarvest.RETURN_NAMES
     OUTPUT_TOOLTIPS = SPEEDSigmaHarvest.OUTPUT_TOOLTIPS
     FUNCTION = "harvest"
+    # The node decides the model family: the KSampler nodes run flow image models.
+    MODEL_TYPE = "flow_image"
     CATEGORY = "sampling/speed/diagnostics"
     OUTPUT_NODE = False
 
     @classmethod
     def INPUT_TYPES(cls):
         # KSampler base inputs without denoise (Harvest always calibrates on
-        # the full schedule), then model_type, then the Harvest widgets; key
-        # order is the public contract.
+        # the full schedule), then the Harvest widgets; key order is the
+        # public contract.
         required = dict(KSAMPLER_BASE_INPUTS)
         del required["denoise"]
-        required["model_type"] = MODEL_TYPE_WIDGET
         required.update(SPEED_HARVEST_WIDGETS)
         return {"required": required}
 
@@ -45,7 +45,6 @@ class SPEEDKSamplerHarvest:
         positive,
         negative,
         latent_image,
-        model_type,
         **kwargs,
     ):
         delta = float(kwargs.pop("Tolerance (Delta)", 0.005))
@@ -58,7 +57,7 @@ class SPEEDKSamplerHarvest:
         noise, guider, sampler, sigmas = build_ksampler_inputs(
             model, seed, steps, cfg, sampler_name, scheduler, positive, negative, denoise=1.0
         )
-        return run_harvest(noise, guider, sampler, sigmas, latent_image, model_type, delta)
+        return run_harvest(noise, guider, sampler, sigmas, latent_image, self.MODEL_TYPE, delta)
 
 
 NODE_CLASS_MAPPINGS = {

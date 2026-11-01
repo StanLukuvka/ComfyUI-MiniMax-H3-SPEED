@@ -6,7 +6,7 @@ residual spectrum, not the clean-data spectrum from the SPEED paper.
 """
 
 from speed_scripts.harvest import run_harvest
-from speed_scripts.node_widgets import MODEL_TYPE_WIDGET, SPEED_HARVEST_WIDGETS
+from speed_scripts.node_widgets import SPEED_HARVEST_WIDGETS
 
 
 class SPEEDSigmaHarvest:
@@ -18,8 +18,7 @@ class SPEEDSigmaHarvest:
         "or denoising behavior changes. It fits the residual spectrum "
         "(x - denoised) to P = A·|ω|^-beta and returns A/beta for Automatic. "
         "The calibration basis is the model's residual spectrum, separate from "
-        "the clean-data spectrum in the SPEED paper. Set model_type to match "
-        "your SPEED sampler node."
+        "the clean-data spectrum in the SPEED paper."
     )
     RETURN_TYPES = ("STRING", "LATENT")
     RETURN_NAMES = ("calibration", "diagnostic_latent")
@@ -28,6 +27,8 @@ class SPEEDSigmaHarvest:
         "Latent from the native full-resolution pass, for inspection only. Not a SPEED result.",
     )
     FUNCTION = "harvest"
+    # The node decides the model family: the Advanced nodes run MiniMax-H3.
+    MODEL_TYPE = "h3_video"
     CATEGORY = "sampling/speed/diagnostics"
     OUTPUT_NODE = False
 
@@ -56,7 +57,6 @@ class SPEEDSigmaHarvest:
                     {"tooltip": "Latent for the native full-resolution pass, at the size you will run SPEED at."},
                 ),
                 **SPEED_HARVEST_WIDGETS,
-                "model_type": MODEL_TYPE_WIDGET,
             },
         }
 
@@ -67,7 +67,6 @@ class SPEEDSigmaHarvest:
         sampler,
         sigmas,
         latent_image,
-        model_type,
         **kwargs,
     ):
 
@@ -75,7 +74,7 @@ class SPEEDSigmaHarvest:
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
             raise TypeError(f"Unexpected Harvest option(s): {unexpected}")
-        return run_harvest(noise, guider, sampler, sigmas, latent_image, model_type, delta)
+        return run_harvest(noise, guider, sampler, sigmas, latent_image, self.MODEL_TYPE, delta)
 
 class MiniMaxH3HarvestToConfig(SPEEDSigmaHarvest):
     """Deprecated ID for ``SPEEDSigmaHarvest``, kept so saved workflows still load."""

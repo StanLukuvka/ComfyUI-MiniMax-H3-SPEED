@@ -1,4 +1,4 @@
-"""Automatic SPEED sampler for the h3_video and flow_image model types."""
+"""Automatic SPEED sampler (SamplerCustomAdvanced style) for MiniMax-H3."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import comfy.utils
 
 from speed_scripts.node_widgets import (
     ADVANCED_BASE_INPUTS,
-    MODEL_TYPE_WIDGET,
     SAMPLER_INPUT_AUTOMATIC,
     SPEED_AUTOMATIC_WIDGETS,
 )
@@ -33,6 +32,8 @@ class SPEEDSampler:
     )
     FUNCTION = "sample"
     CATEGORY = "sampling/speed"
+    # The node decides the model family: the Advanced nodes run MiniMax-H3.
+    MODEL_TYPE = "h3_video"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -46,7 +47,6 @@ class SPEEDSampler:
             "latent_image": ADVANCED_BASE_INPUTS["latent_image"],
         }
         required.update(SPEED_AUTOMATIC_WIDGETS)
-        required["model_type"] = MODEL_TYPE_WIDGET
         return {"required": required}
 
     def sample(
@@ -56,7 +56,6 @@ class SPEEDSampler:
         sampler,
         sigmas,
         latent_image,
-        model_type,
         noise_amplitude,
         noise_decay_exponent,
         stages=3,
@@ -91,7 +90,7 @@ class SPEEDSampler:
             latent_image,
             config,
             sampler=sampler,
-            model_type=model_type,
+            model_type=self.MODEL_TYPE,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
         )
 

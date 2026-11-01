@@ -35,7 +35,7 @@ def require_flow_sampling(guider):
         (comfy.model_sampling.IMG_TO_IMG_FLOW, comfy.model_sampling.IMG_TO_IMG_VELOCITY),
     ):
         raise ValueError(
-            "model_type flow_image supports flow (CONST) models only; "
+            "SPEED KSampler nodes support flow (CONST) models only; "
             f"this model uses {_sampling_name(sampling)}"
         )
 
@@ -49,6 +49,7 @@ class FlowImageFamily:
     """
 
     name = "flow_image"
+    nodes = "SPEED KSampler nodes"
     # Image-to-image: a VAE-encoded latent seeds the first stage, as SamplerCustomAdvanced does.
     accepts_source_latent = True
 
@@ -60,7 +61,7 @@ class FlowImageFamily:
 
     def split(self, samples):
         if getattr(samples, "is_nested", False):
-            raise ValueError("model_type flow_image got a nested video/audio latent; use model_type h3_video")
+            raise ValueError(f"{self.nodes} got a nested video/audio latent; use SPEED Advanced nodes for MiniMax-H3")
         single_frame = samples.ndim == 5 and samples.shape[2] == 1
         if samples.ndim == 4 and not self.frame_axis:
             return samples.unsqueeze(2), None
@@ -68,12 +69,12 @@ class FlowImageFamily:
             return samples, None
         if single_frame:
             raise ValueError(
-                "model_type flow_image got a [B,C,1,H,W] latent, but this model's latent format "
+                f"{self.nodes} got a [B,C,1,H,W] latent, but this model's latent format "
                 "is 2-dimensional and takes [B,C,H,W]; use an image empty-latent node"
             )
         expected = "[B,C,1,H,W]" if self.frame_axis else "[B,C,H,W]"
         raise ValueError(
-            f"model_type flow_image expects a {expected} latent for this model; got {list(samples.shape)}"
+            f"{self.nodes} expect a {expected} latent for this model; got {list(samples.shape)}"
         )
 
     def join(self, main, extra):

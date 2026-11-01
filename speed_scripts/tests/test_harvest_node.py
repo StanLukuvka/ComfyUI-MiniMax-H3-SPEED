@@ -58,9 +58,11 @@ def _image_latent():
     return {"samples": _red_noise(1, 4, 16, 16)}
 
 
-def _harvest(guider=None, sampler=None, latent=None, **kwargs):
-    kwargs.setdefault("model_type", "h3_video")
-    return harvest_module.SPEEDSigmaHarvest().harvest(
+def _harvest(guider=None, sampler=None, latent=None, model_type="h3_video", **kwargs):
+    node = harvest_module.SPEEDSigmaHarvest()
+    # The node is H3-only; overriding its family exercises run_harvest's other paths.
+    node.MODEL_TYPE = model_type
+    return node.harvest(
         noise=EchoNoise(),
         guider=guider or HarvestGuider(),
         sampler=sampler or StubSampler(),
@@ -174,14 +176,14 @@ def _explode(error=RuntimeError):
         ({"compute_residual": _explode()}, None, {}, "no_captures", "Residual capture failed: bad", "residual capture failed"),
         ({"radial_dct_power": _explode()}, None, {}, "no_spectral_profiles", "Spectral profile reduction failed: bad",
          "spectral profile reduction failed"),
-        # A latent that does not match model_type points at the right setting.
+        # A latent that does not fit the node points at the right nodes.
         ({}, None, {"latent": _image_latent()}, "no_captures",
-         "does not match model_type h3_video; use model_type flow_image", None),
+         "does not fit SPEED Advanced nodes; use SPEED KSampler nodes", None),
         # A plain 5-D latent (Krea 2's [B,C,1,H,W]) is not H3's nested video/audio latent.
         ({}, None, {"latent": {"samples": _red_noise(1, 4, 1, 16, 16)}}, "no_captures",
-         "does not match model_type h3_video; use model_type flow_image", None),
+         "does not fit SPEED Advanced nodes; use SPEED KSampler nodes", None),
         ({}, None, {"model_type": "flow_image"}, "no_captures",
-         "does not match model_type flow_image; use model_type h3_video", None),
+         "does not fit SPEED KSampler nodes; use SPEED Advanced nodes", None),
     ],
     ids=["silent_sampler", "sampler_failed", "fit_failed", "residual_failed", "profile_failed",
          "image_latent_as_h3", "five_d_image_latent_as_h3", "h3_latent_as_image"],
@@ -243,12 +245,12 @@ def test_ksampler_harvest_passes_the_built_inputs_into_run_harvest(monkeypatch):
     monkeypatch.setattr(ksampler_harvest_module, "run_harvest", fake_run_harvest)
 
     result = ksampler_harvest_module.SPEEDKSamplerHarvest().harvest(
-        model, 7, 20, 8.0, "euler", "normal", positive, negative, latent, "h3_video",
+        model, 7, 20, 8.0, "euler", "normal", positive, negative, latent,
         **{"Tolerance (Delta)": 0.012},
     )
 
     # The KSampler widgets are built into (noise, guider, sampler, sigmas) with
     # denoise=1.0 (Harvest has no denoise widget), then handed to run_harvest.
     assert built == [(model, 7, 20, 8.0, "euler", "normal", positive, negative, 1.0)]
-    assert recorded == [(noise, guider, sampler, sigmas, latent, "h3_video", 0.012)]
+    assert recorded == [(noise, guider, sampler, sigmas, latent, "flow_image", 0.012)]
     assert result == ("calibration-json", latent)

@@ -6,7 +6,6 @@ import comfy.utils
 
 from speed_scripts.node_widgets import (
     ADVANCED_BASE_INPUTS,
-    MODEL_TYPE_WIDGET,
     SAMPLER_INPUT_MANUAL,
     SPEED_MANUAL_WIDGETS,
 )
@@ -32,6 +31,8 @@ class SPEEDSamplerManual:
     )
     FUNCTION = "sample"
     CATEGORY = "sampling/speed"
+    # The node decides the model family: the Advanced nodes run MiniMax-H3.
+    MODEL_TYPE = "h3_video"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -45,7 +46,6 @@ class SPEEDSamplerManual:
             "latent_image": ADVANCED_BASE_INPUTS["latent_image"],
         }
         required.update(SPEED_MANUAL_WIDGETS)
-        required["model_type"] = MODEL_TYPE_WIDGET
         return {"required": required}
 
     def sample(
@@ -55,7 +55,6 @@ class SPEEDSamplerManual:
         sampler,
         sigmas,
         latent_image,
-        model_type,
         noise_policy="direct_coarse",
         seed_offset=10000,
         ratio_mode="steps",
@@ -88,7 +87,7 @@ class SPEEDSamplerManual:
             latent_image,
             config,
             sampler=sampler,
-            model_type=model_type,
+            model_type=self.MODEL_TYPE,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
         )
 

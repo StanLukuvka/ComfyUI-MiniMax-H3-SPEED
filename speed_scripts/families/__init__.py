@@ -1,4 +1,4 @@
-"""Model families SPEED can run, picked with the nodes' ``model_type`` switch.
+"""Model families SPEED can run; each node class fixes its family with ``MODEL_TYPE``.
 
 A family splits its latent into the spatial stream SPEED resizes (always
 ``[B, C, T, H, W]`` here) and an optional extra stream, reads a stage's output
@@ -38,14 +38,14 @@ def prepare_latent(guider, latent):
 
 
 def check_model_type(model_type):
-    """Raise unless ``model_type`` is one of the supported switch values."""
+    """Raise unless ``model_type`` names a known family."""
     if model_type not in _FAMILIES:
         raise ValueError(f"model_type must be one of {MODEL_TYPES}; got {model_type!r}")
     return model_type
 
 
 def get_family(model_type, guider):
-    """Build the family for the node's ``model_type`` switch."""
+    """Build the family for a node's ``MODEL_TYPE``."""
     return _FAMILIES[check_model_type(model_type)](guider)
 
 
@@ -72,7 +72,7 @@ def prepare_family(model_type, guider, latent) -> PreparedLatent:
     main, extra = family.split(latent.get("samples"))
     empty = not torch.count_nonzero(main) and (extra is None or not torch.count_nonzero(extra))
     if not empty and not family.accepts_source_latent:
-        raise ValueError(f"model_type {family.name} requires an empty input latent")
+        raise ValueError(f"{family.nodes} require an empty input latent")
     return PreparedLatent(family=family, latent=latent, main=main, extra=extra)
 
 

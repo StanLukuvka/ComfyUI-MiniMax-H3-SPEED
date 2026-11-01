@@ -12,11 +12,10 @@ from typing import Any
 import comfy.samplers
 
 from speed_scripts.config import RATIO_MODES
-from speed_scripts.families import MODEL_TYPES
 
 # KSampler base inputs, identical to ComfyUI's nodes.py KSampler (same order,
 # defaults, ranges and tooltips). The KSampler-style SPEED nodes append
-# model_type and their mode's SPEED widgets after these.
+# their mode's SPEED widgets after these.
 KSAMPLER_BASE_INPUTS: dict[str, tuple[Any, dict[str, Any]]] = {
     "model": ("MODEL", {"tooltip": "The model used for denoising the input latent."}),
     "seed": ("INT", {
@@ -86,12 +85,6 @@ SAMPLER_INPUT_AUTOMATIC: tuple[str, dict[str, Any]] = (
 SAMPLER_INPUT_MANUAL: tuple[str, dict[str, Any]] = (
     "SAMPLER",
     {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Any sampler works; Euler is the one SPEED was measured with."},
-)
-
-# SPEED model_type widget (strictly required, no default).
-MODEL_TYPE_WIDGET: tuple[list[str], dict[str, Any]] = (
-    list(MODEL_TYPES),
-    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. flow_image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
 )
 
 # Automatic mode widgets.

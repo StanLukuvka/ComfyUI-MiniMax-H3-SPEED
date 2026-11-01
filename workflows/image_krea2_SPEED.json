@@ -272,7 +272,6 @@
         3.5,
         "euler",
         "simple",
-        "flow_image",
         0.05
       ],
       "widgets_values_named": {
@@ -282,7 +281,6 @@
         "cfg": 3.5,
         "sampler_name": "euler",
         "scheduler": "simple",
-        "model_type": "flow_image",
         "Tolerance (Delta)": 0.05
       }
     },
@@ -387,7 +385,6 @@
         "euler",
         "simple",
         1.0,
-        "flow_image",
         3,
         "coupled_full_grid",
         0.05,
@@ -403,7 +400,6 @@
         "sampler_name": "euler",
         "scheduler": "simple",
         "denoise": 1.0,
-        "model_type": "flow_image",
         "stages": 3,
         "noise_policy": "coupled_full_grid",
         "Tolerance (Delta)": 0.05,
@@ -557,7 +553,6 @@
         "euler",
         "simple",
         1.0,
-        "flow_image",
         "coupled_full_grid",
         10000,
         "steps",
@@ -578,7 +573,6 @@
         "sampler_name": "euler",
         "scheduler": "simple",
         "denoise": 1.0,
-        "model_type": "flow_image",
         "noise_policy": "coupled_full_grid",
         "seed_offset": 10000,
         "ratio_mode": "steps",
@@ -692,10 +686,10 @@
       "title": "Note: Krea 2",
       "properties": {},
       "widgets_values": [
-        "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / simple).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
+        "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / simple).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
       ],
       "widgets_values_named": {
-        "text": "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / simple).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
+        "text": "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / simple).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
       },
       "color": "#222",
       "bgcolor": "#000"

@@ -193,14 +193,14 @@ def run_harvest(
             message = f"Residual capture failed: {first_residual_error}"
         elif callback_count:
             hint = (
-                "use model_type flow_image for image models"
+                "use SPEED KSampler nodes for image models"
                 if model_type == "h3_video"
-                else "use model_type h3_video for MiniMax-H3 video latents"
+                else "use SPEED Advanced nodes for MiniMax-H3 video latents"
             )
             message = (
                 f"No per-step residual snapshots recorded. The sampler callback fired "
-                f"{callback_count} times, but its latent does not match model_type "
-                f"{model_type}; {hint}."
+                f"{callback_count} times, but its latent does not fit "
+                f"{family.nodes}; {hint}."
             )
         else:
             message = "No per-step residual snapshots recorded. The native sampler callback did not fire — check ComfyUI setup."
