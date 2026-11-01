@@ -77,12 +77,14 @@ See the [evidence section](evidence/h3_evidence/README.md) for examples of how t
 
 The Advanced nodes take a normal ComfyUI `SAMPLER` input, so connect **KSamplerSelect** (or any other SAMPLER node); the KSampler nodes pick the sampler by name, as KSampler does. Each SPEED stage is its own sampler call, so multistep samplers start their history fresh at every resolution change. Euler is the reference: the shipped calibration and benchmark evidence are Euler-derived, so re-run Harvest with the sampler you use.
 
-Tested on the 5 s mug clip (turbo LoRA, 8 steps, 2 stages, 0.2 MP on an L40S and 0.4 MP locally):
+Most samplers work. The ones that don't, on H3:
 
-- **Same shot plan as Euler, sharpest:** `euler`, `heun`, `dpm_2`, `dpmpp_2m`, `res_multistep`, `uni_pc`, `ipndm`, `gradient_estimation`.
-- **Work, softer and with different staging** (they inject noise every step): `euler_ancestral`, `dpmpp_2m_sde`, `dpmpp_3m_sde`, `dpmpp_sde`, `er_sde`. `deis` also works but is softer.
-- **Broken:** `lms` and `ipndm_v` (halos and smearing). They also break without SPEED on a few-step schedule.
-- `heun`, `dpm_2` and `dpmpp_sde` run two model evaluations per step, so they take about 1.6× as long.
+- `dpm_fast`, `dpm_adaptive`: never finish denoising on H3, with or without SPEED.
+- `*_cfg_pp` except the Euler ones: need a negative prompt, so use **CFGGuider**, not BasicGuider.
+- `uni_pc`, `uni_pc_bh2`: break when a stage gets only one step. Use 2 stages, or more steps.
+- SDE samplers work but give a different shot from Euler at the same seed.
+
+Give every stage at least 2 steps. The full list is in [docs/samplers.md](docs/samplers.md). `heun`, `dpm_2` and `dpmpp_sde` run two model evaluations per step, so they take about 1.6× as long.
 
 Automatic and Manual return two LATENTs: use `output`. `denoised_output` is the model's last clean-image estimate, for debugging. Harvest returns its calibration text plus a diagnostic LATENT.
 
