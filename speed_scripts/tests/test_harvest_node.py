@@ -9,6 +9,8 @@ import torch
 from conftest import EchoNoise, H3Model, NestedTensor, Patcher, StubSampler, model_sampling
 
 harvest_module = importlib.import_module("sampler_sigma_harvest_node")
+# The execution body lives in run_harvest here; the nodes only unpack and delegate.
+harvest_core = importlib.import_module("speed_scripts.harvest")
 
 
 class HarvestGuider:
@@ -117,7 +119,7 @@ def test_harvest_runs_the_given_sampler_once_and_emits_its_calibration(sampler, 
 
 def test_harvest_reduces_each_residual_inside_the_callback(monkeypatch):
     reduced = []
-    original = harvest_module.radial_dct_power
+    original = harvest_core.radial_dct_power
 
     def recording(residual):
         reduced.append(residual.shape)
@@ -126,7 +128,7 @@ def test_harvest_reduces_each_residual_inside_the_callback(monkeypatch):
     def check(step):
         assert len(reduced) == step + 1  # reduced before the sampler's next step
 
-    monkeypatch.setattr(harvest_module, "radial_dct_power", recording)
+    monkeypatch.setattr(harvest_core, "radial_dct_power", recording)
     text, _ = _harvest(HarvestGuider(on_step=check))
     assert "error" not in json.loads(text)
     assert len(reduced) == 19
@@ -144,7 +146,7 @@ def test_harvest_reduces_each_residual_inside_the_callback(monkeypatch):
 )
 def test_fit_health_decides_whether_the_report_is_paste_ready(monkeypatch, beta, r2, health, paste_ready):
     monkeypatch.setattr(
-        harvest_module, "fit_power_law", lambda *args: {"A": 1.0, "beta": beta, "r_squared": r2, "n_bins": 8}
+        harvest_core, "fit_power_law", lambda *args: {"A": 1.0, "beta": beta, "r_squared": r2, "n_bins": 8}
     )
     calibration = json.loads(_harvest()[0])
     assert calibration["health"] == health
@@ -190,8 +192,8 @@ def test_harvest_returns_an_error_json_instead_of_a_calibration(
     if patch is None:
         guider.sample = _explode()
     for name, replacement in (patch or {}).items():
-        monkeypatch.setattr(harvest_module, name, replacement)
-    with caplog.at_level("WARNING", logger=harvest_module.__name__):
+        monkeypatch.setattr(harvest_core, name, replacement)
+    with caplog.at_level("WARNING", logger=harvest_core.__name__):
         text, diagnostic = _harvest(guider, StubSampler("dpm_2"), **inputs)
 
     result = json.loads(text)
