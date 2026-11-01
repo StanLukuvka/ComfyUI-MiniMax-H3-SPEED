@@ -1,4 +1,4 @@
-"""The three nodes: registration, inputs and defaults, configs, schedules, and rejected inputs."""
+"""The six nodes: registration, inputs and defaults, configs, schedules, and rejected inputs."""
 
 import importlib
 import importlib.util
@@ -13,6 +13,9 @@ from conftest import EchoGuider, EchoNoise, StubSampler, expected_stage_sigmas, 
 AUTOMATIC = ("sampler_node", "SPEEDSampler")
 MANUAL = ("sampler_node_manual", "SPEEDSamplerManual")
 HARVEST = ("sampler_sigma_harvest_node", "SPEEDSigmaHarvest")
+KSAMPLER_AUTOMATIC = ("ksampler_node", "SPEEDKSampler")
+KSAMPLER_MANUAL = ("ksampler_node_manual", "SPEEDKSamplerManual")
+KSAMPLER_HARVEST = ("ksampler_sigma_harvest_node", "SPEEDKSamplerHarvest")
 # Old IDs from when the pack was H3-only, kept as deprecated subclasses.
 DEPRECATED = {
     "MiniMaxH3SPEEDSampler": AUTOMATIC,
@@ -23,6 +26,9 @@ DISPLAY_NAMES = {
     "SPEEDSampler": "SPEED — Sampler Advanced",
     "SPEEDSamplerManual": "SPEED — Sampler Advanced (Manual)",
     "SPEEDSigmaHarvest": "SPEED — Sigma Harvest Advanced",
+    "SPEEDKSampler": "SPEED — KSampler",
+    "SPEEDKSamplerManual": "SPEED — KSampler (Manual)",
+    "SPEEDKSamplerHarvest": "SPEED — KSampler Sigma Harvest",
 }
 # A test calibration (H3's Euler fit); the node itself has no default.
 FIT = {"noise_amplitude": 12.105, "noise_decay_exponent": 0.773}
@@ -52,13 +58,13 @@ def _node(module_and_class):
     return getattr(importlib.import_module(module_name), class_name)
 
 
-def test_package_registers_the_three_nodes_and_their_deprecated_ids():
+def test_package_registers_the_six_nodes_and_their_deprecated_ids():
     spec = importlib.util.spec_from_file_location(
         "speed_pack_test", Path(__file__).resolve().parents[2] / "__init__.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    current = {AUTOMATIC[1], MANUAL[1], HARVEST[1]}
+    current = {AUTOMATIC[1], MANUAL[1], HARVEST[1], KSAMPLER_AUTOMATIC[1], KSAMPLER_MANUAL[1], KSAMPLER_HARVEST[1]}
     assert set(module.NODE_CLASS_MAPPINGS) == current | set(DEPRECATED)
     assert set(module.NODE_DISPLAY_NAME_MAPPINGS) == set(module.NODE_CLASS_MAPPINGS)
     for name in current:
@@ -81,12 +87,13 @@ def test_pack_registers_nodes_when_comfyui_owns_the_nodes_name(monkeypatch):
     monkeypatch.setitem(sys.modules, "nodes", ModuleType("nodes"))
     for name in (
         "sampler_node", "sampler_node_manual", "sampler_sigma_harvest_node",
+        "ksampler_node", "ksampler_node_manual", "ksampler_sigma_harvest_node",
         "nodes.common", "speed_scripts.node_widgets",
     ):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
     # The pack imports the node modules by bare name after its sys.path setup.
-    for module_name, node_id in (AUTOMATIC, MANUAL, HARVEST):
+    for module_name, node_id in (AUTOMATIC, MANUAL, HARVEST, KSAMPLER_AUTOMATIC, KSAMPLER_MANUAL, KSAMPLER_HARVEST):
         assert node_id in importlib.import_module(module_name).NODE_CLASS_MAPPINGS
 
     spec = importlib.util.spec_from_file_location(
@@ -94,7 +101,7 @@ def test_pack_registers_nodes_when_comfyui_owns_the_nodes_name(monkeypatch):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    current = {AUTOMATIC[1], MANUAL[1], HARVEST[1]}
+    current = {AUTOMATIC[1], MANUAL[1], HARVEST[1], KSAMPLER_AUTOMATIC[1], KSAMPLER_MANUAL[1], KSAMPLER_HARVEST[1]}
     assert set(module.NODE_CLASS_MAPPINGS) == current | set(DEPRECATED)
 
 

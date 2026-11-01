@@ -9,6 +9,7 @@ import torch
 from conftest import EchoNoise, H3Model, NestedTensor, Patcher, StubSampler, model_sampling
 
 harvest_module = importlib.import_module("sampler_sigma_harvest_node")
+ksampler_harvest_module = importlib.import_module("ksampler_sigma_harvest_node")
 # The execution body lives in run_harvest here; the nodes only unpack and delegate.
 harvest_core = importlib.import_module("speed_scripts.harvest")
 
@@ -221,3 +222,33 @@ def test_harvest_rejects_bad_inputs(inputs, error, match):
     with pytest.raises(error, match=match):
         _harvest(guider, **inputs)
     assert guider.samplers == []
+
+
+def test_ksampler_harvest_passes_the_built_inputs_into_run_harvest(monkeypatch):
+    noise, guider, sampler, sigmas = object(), object(), object(), object()
+    model, positive, negative = object(), object(), object()
+    latent = _h3_latent()
+    built = []
+    recorded = []
+
+    def fake_build(model, seed, steps, cfg, sampler_name, scheduler, positive, negative, denoise=1.0):
+        built.append((model, seed, steps, cfg, sampler_name, scheduler, positive, negative, denoise))
+        return noise, guider, sampler, sigmas
+
+    def fake_run_harvest(noise, guider, sampler, sigmas, latent_image, model_type, delta=0.005, **kwargs):
+        recorded.append((noise, guider, sampler, sigmas, latent_image, model_type, delta))
+        return ("calibration-json", latent)
+
+    monkeypatch.setattr(ksampler_harvest_module, "build_ksampler_inputs", fake_build)
+    monkeypatch.setattr(ksampler_harvest_module, "run_harvest", fake_run_harvest)
+
+    result = ksampler_harvest_module.SPEEDKSamplerHarvest().harvest(
+        model, 7, 20, 8.0, "euler", "normal", positive, negative, latent, "h3_video",
+        **{"Tolerance (Delta)": 0.012},
+    )
+
+    # The KSampler widgets are built into (noise, guider, sampler, sigmas) with
+    # denoise=1.0 (Harvest has no denoise widget), then handed to run_harvest.
+    assert built == [(model, 7, 20, 8.0, "euler", "normal", positive, negative, 1.0)]
+    assert recorded == [(noise, guider, sampler, sigmas, latent, "h3_video", 0.012)]
+    assert result == ("calibration-json", latent)
