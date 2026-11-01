@@ -8,7 +8,7 @@ Settings: euler, CFGGuider, `model_type = flow_image`, SPEED runs with `noise_po
 
 Timing: each time is a ComfyUI queue-to-finish time with the models already loaded and the prompt encoded, including the VAE decode. Times are rounded to whole seconds; each speedup is computed from the unrounded times, so two rows can show the same time with different speedups. These times are not comparable to the Modal L40S numbers in [h3_evidence](../h3_evidence/README.md). Krea 2's 13 GB model does not fit in 8 GB of VRAM, so its times vary by tens of seconds between runs.
 
-> **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other supported samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
+> **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
 
 Native is full-resolution Euler (SamplerCustomAdvanced, no SPEED). Each model has its own calibration from one Sigma Harvest run on its prompt and seed. The SPEED runs used the Advanced nodes. The linked workflows now use the KSampler nodes, which give pixel-identical images with the same values (checked on MOSS Image and on a Krea 2 fine-tune).
 

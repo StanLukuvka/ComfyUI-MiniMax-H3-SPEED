@@ -10,7 +10,7 @@ Timing: an untimed Sigma Harvest run first loaded the models and cached the prom
 
 Native is full-resolution Euler (SamplerCustomAdvanced, no SPEED): **276.2 s** and **288.2 s** in the two sessions.
 
-> **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other supported samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
+> **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
 
 All three groups use one calibration from a Sigma Harvest run on this prompt and seed: noise_amplitude 35.4213, noise_decay_exponent 1.0126 (r² 0.83, health good).
 

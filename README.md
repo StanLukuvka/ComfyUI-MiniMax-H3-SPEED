@@ -19,7 +19,7 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 
 ## Quick start
 
-1. **Image models** (MOSS Image, Krea 2): swap your **KSampler** for **SPEED — KSampler** and keep the same wiring — `model`, `positive`, `negative`, `latent_image` — as in [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json). **Video (MiniMax-H3)**: use the Advanced nodes as in [`workflows/video_h3_SPEED.json`](workflows/video_h3_SPEED.json), or replace **SamplerCustomAdvanced** in your own workflow with **SPEED — Sampler Advanced** and connect the same `noise`, `guider`, `sampler`, `sigmas` and `latent_image` inputs (from **RandomNoise**, **CFGGuider** (or BasicGuider), **KSamplerSelect** and **BasicScheduler**).
+1. **Image models** (MOSS Image, Krea 2): swap your **KSampler** for **SPEED — KSampler**, using the same wiring as KSampler. See the [image_moss_SPEED](workflows/image_moss_SPEED.json) workflow as an example. **H3**: replace **SamplerCustomAdvanced** in your own workflow with **SPEED — Sampler Advanced**, using the same wiring, as in the [video_h3_SPEED](workflows/video_h3_SPEED.json) workflow.
 2. Set **`model_type`**: the list shows `h3_video` first; set `flow_image` for image models. A mismatch with the loaded model raises an error.
 3. Fill in **`noise_amplitude`** and **`noise_decay_exponent`**. They describe how your model, sampler and schedule behave, and SPEED will not run without them: left at 0, the node stops with an error.
    - MiniMax-H3 with `euler`: use the reference values `noise_amplitude = 35.4213`, `noise_decay_exponent = 1.0126`.
