@@ -1,8 +1,8 @@
 {
   "id": "043ce89b-edf0-4ed3-817b-eebf01c53dc0",
   "revision": 0,
-  "last_node_id": 25,
-  "last_link_id": 39,
+  "last_node_id": 28,
+  "last_link_id": 51,
   "nodes": [
     {
       "id": 1,
@@ -24,8 +24,9 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            3,
-            6
+            40,
+            44,
+            48
           ]
         }
       ],
@@ -147,7 +148,9 @@
           "name": "CONDITIONING",
           "type": "CONDITIONING",
           "links": [
-            4
+            41,
+            45,
+            49
           ]
         }
       ],
@@ -162,186 +165,6 @@
       ],
       "widgets_values_named": {
         "text": "masterpiece, best quality, candid 35mm film photograph, real person, natural skin texture: a small ramen stall on a narrow Tokyo side street at night. An elderly cook with short grey hair, a white headband and a navy apron ladles broth into a bowl behind the wooden counter, with steam rising from three large silver pots behind him. The wooden sign above the stall reads \"RAMEN 400\" in large, clear letters, and there is no other text. Exactly six plain paper lanterns hang in a row along the eave: five are red, and the third lantern from the left is blue. Two customers sit on wooden stools at the counter with their backs to the camera, and wet cobblestones in the foreground reflect the lantern light. Medium-wide shot at eye level. ramen stall, six paper lanterns, one blue lantern, elderly cook"
-      }
-    },
-    {
-      "id": 6,
-      "type": "CFGGuider",
-      "pos": [
-        1050,
-        90
-      ],
-      "size": [
-        300,
-        98
-      ],
-      "flags": {},
-      "order": 10,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 3
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 4
-        },
-        {
-          "name": "negative",
-          "type": "CONDITIONING",
-          "link": 38
-        }
-      ],
-      "outputs": [
-        {
-          "name": "GUIDER",
-          "type": "GUIDER",
-          "links": [
-            8,
-            14,
-            22
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "CFGGuider"
-      },
-      "widgets_values": [
-        3.5
-      ],
-      "widgets_values_named": {
-        "cfg": 3.5
-      }
-    },
-    {
-      "id": 7,
-      "type": "RandomNoise",
-      "pos": [
-        1050,
-        268
-      ],
-      "size": [
-        300,
-        82
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "NOISE",
-          "type": "NOISE",
-          "links": [
-            7,
-            13,
-            21
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "RandomNoise"
-      },
-      "widgets_values": [
-        291,
-        "fixed"
-      ],
-      "widgets_values_named": {
-        "noise_seed": 291,
-        "control_after_generate": "fixed"
-      }
-    },
-    {
-      "id": 8,
-      "type": "KSamplerSelect",
-      "pos": [
-        1050,
-        430
-      ],
-      "size": [
-        300,
-        58
-      ],
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "SAMPLER",
-          "type": "SAMPLER",
-          "links": [
-            9,
-            15,
-            23
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "KSamplerSelect"
-      },
-      "widgets_values": [
-        "euler"
-      ],
-      "widgets_values_named": {
-        "sampler_name": "euler"
-      }
-    },
-    {
-      "id": 9,
-      "type": "BasicScheduler",
-      "pos": [
-        1050,
-        568
-      ],
-      "size": [
-        300,
-        106
-      ],
-      "flags": {},
-      "order": 7,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 6
-        }
-      ],
-      "outputs": [
-        {
-          "name": "SIGMAS",
-          "type": "SIGMAS",
-          "links": [
-            10,
-            16,
-            24
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "BasicScheduler"
-      },
-      "widgets_values": [
-        "simple",
-        52,
-        1
-      ],
-      "widgets_values_named": {
-        "scheduler": "simple",
-        "steps": 52,
-        "denoise": 1
       }
     },
     {
@@ -364,9 +187,9 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            11,
-            17,
-            25
+            43,
+            47,
+            51
           ]
         }
       ],
@@ -387,8 +210,8 @@
       }
     },
     {
-      "id": 11,
-      "type": "SPEEDSigmaHarvest",
+      "id": 26,
+      "type": "SPEEDKSamplerHarvest",
       "pos": [
         1450,
         90
@@ -402,29 +225,24 @@
       "mode": 2,
       "inputs": [
         {
-          "name": "noise",
-          "type": "NOISE",
-          "link": 7
+          "name": "model",
+          "type": "MODEL",
+          "link": 40
         },
         {
-          "name": "guider",
-          "type": "GUIDER",
-          "link": 8
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 41
         },
         {
-          "name": "sampler",
-          "type": "SAMPLER",
-          "link": 9
-        },
-        {
-          "name": "sigmas",
-          "type": "SIGMAS",
-          "link": 10
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 42
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 11
+          "link": 43
         }
       ],
       "outputs": [
@@ -445,15 +263,27 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "SPEEDSigmaHarvest"
+        "Node name for S&R": "SPEEDKSamplerHarvest"
       },
       "widgets_values": [
-        0.05,
-        "flow_image"
+        291,
+        "fixed",
+        52,
+        3.5,
+        "euler",
+        "simple",
+        "flow_image",
+        0.05
       ],
       "widgets_values_named": {
-        "Tolerance (Delta)": 0.05,
-        "model_type": "flow_image"
+        "seed": 291,
+        "control_after_generate": "fixed",
+        "steps": 52,
+        "cfg": 3.5,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "model_type": "flow_image",
+        "Tolerance (Delta)": 0.05
       }
     },
     {
@@ -494,8 +324,8 @@
       "widgets_values_named": {}
     },
     {
-      "id": 13,
-      "type": "SPEEDSampler",
+      "id": 27,
+      "type": "SPEEDKSampler",
       "pos": [
         1450,
         470
@@ -509,29 +339,24 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "noise",
-          "type": "NOISE",
-          "link": 13
+          "name": "model",
+          "type": "MODEL",
+          "link": 44
         },
         {
-          "name": "guider",
-          "type": "GUIDER",
-          "link": 14
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 45
         },
         {
-          "name": "sampler",
-          "type": "SAMPLER",
-          "link": 15
-        },
-        {
-          "name": "sigmas",
-          "type": "SIGMAS",
-          "link": 16
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 46
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 17
+          "link": 47
         }
       ],
       "outputs": [
@@ -552,25 +377,39 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "SPEEDSampler"
+        "Node name for S&R": "SPEEDKSampler"
       },
       "widgets_values": [
+        291,
+        "fixed",
+        52,
+        3.5,
+        "euler",
+        "simple",
+        1.0,
+        "flow_image",
         3,
         "coupled_full_grid",
         0.05,
         9.7616,
         0.6308,
-        10000,
-        "flow_image"
+        10000
       ],
       "widgets_values_named": {
+        "seed": 291,
+        "control_after_generate": "fixed",
+        "steps": 52,
+        "cfg": 3.5,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1.0,
+        "model_type": "flow_image",
         "stages": 3,
         "noise_policy": "coupled_full_grid",
         "Tolerance (Delta)": 0.05,
         "noise_amplitude": 9.7616,
         "noise_decay_exponent": 0.6308,
-        "seed_offset": 10000,
-        "model_type": "flow_image"
+        "seed_offset": 10000
       }
     },
     {
@@ -655,8 +494,8 @@
       }
     },
     {
-      "id": 16,
-      "type": "SPEEDSamplerManual",
+      "id": 28,
+      "type": "SPEEDKSamplerManual",
       "pos": [
         1450,
         850
@@ -670,29 +509,24 @@
       "mode": 2,
       "inputs": [
         {
-          "name": "noise",
-          "type": "NOISE",
-          "link": 21
+          "name": "model",
+          "type": "MODEL",
+          "link": 48
         },
         {
-          "name": "guider",
-          "type": "GUIDER",
-          "link": 22
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 49
         },
         {
-          "name": "sampler",
-          "type": "SAMPLER",
-          "link": 23
-        },
-        {
-          "name": "sigmas",
-          "type": "SIGMAS",
-          "link": 24
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 50
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 25
+          "link": 51
         }
       ],
       "outputs": [
@@ -713,9 +547,17 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "SPEEDSamplerManual"
+        "Node name for S&R": "SPEEDKSamplerManual"
       },
       "widgets_values": [
+        291,
+        "fixed",
+        52,
+        3.5,
+        "euler",
+        "simple",
+        1.0,
+        "flow_image",
         "coupled_full_grid",
         10000,
         "steps",
@@ -726,10 +568,17 @@
         0,
         0,
         0,
-        0,
-        "flow_image"
+        0
       ],
       "widgets_values_named": {
+        "seed": 291,
+        "control_after_generate": "fixed",
+        "steps": 52,
+        "cfg": 3.5,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1.0,
+        "model_type": "flow_image",
         "noise_policy": "coupled_full_grid",
         "seed_offset": 10000,
         "ratio_mode": "steps",
@@ -740,8 +589,7 @@
         "transition_goal_3": 0,
         "transition_resolution_3": 0,
         "transition_goal_4": 0,
-        "transition_resolution_4": 0,
-        "model_type": "flow_image"
+        "transition_resolution_4": 0
       }
     },
     {
@@ -844,10 +692,10 @@
       "title": "Note: Krea 2",
       "properties": {},
       "widgets_values": [
-        "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
+        "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / simple).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
       ],
       "widgets_values_named": {
-        "text": "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
+        "text": "## Krea 2 (raw)\n\nCanonical Krea 2 settings: 52 steps, CFG 3.5, euler / simple, empty negative, 1216x832, fp8 weights. Prompt: quality prefix, medium first, text clause, key concepts repeated at the end.\n\nRTX 5070 Laptop: native 283 s, Automatic (3 stages, \u0394 0.05) 215 s, Manual (0.5x to step 26) 183 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / simple).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 26 of 52, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -878,7 +726,9 @@
           "name": "CONDITIONING",
           "type": "CONDITIONING",
           "links": [
-            38
+            42,
+            46,
+            50
           ]
         }
       ],
@@ -906,120 +756,16 @@
       "CLIP"
     ],
     [
-      3,
-      1,
-      0,
-      6,
-      0,
-      "MODEL"
-    ],
-    [
-      4,
-      4,
-      0,
-      6,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      6,
-      1,
-      0,
-      9,
-      0,
-      "MODEL"
-    ],
-    [
-      7,
-      7,
-      0,
-      11,
-      0,
-      "NOISE"
-    ],
-    [
-      8,
-      6,
-      0,
-      11,
-      1,
-      "GUIDER"
-    ],
-    [
-      9,
-      8,
-      0,
-      11,
-      2,
-      "SAMPLER"
-    ],
-    [
-      10,
-      9,
-      0,
-      11,
-      3,
-      "SIGMAS"
-    ],
-    [
-      11,
-      10,
-      0,
-      11,
-      4,
-      "LATENT"
-    ],
-    [
       12,
-      11,
+      26,
       0,
       12,
       0,
       "STRING"
     ],
     [
-      13,
-      7,
-      0,
-      13,
-      0,
-      "NOISE"
-    ],
-    [
-      14,
-      6,
-      0,
-      13,
-      1,
-      "GUIDER"
-    ],
-    [
-      15,
-      8,
-      0,
-      13,
-      2,
-      "SAMPLER"
-    ],
-    [
-      16,
-      9,
-      0,
-      13,
-      3,
-      "SIGMAS"
-    ],
-    [
-      17,
-      10,
-      0,
-      13,
-      4,
-      "LATENT"
-    ],
-    [
       18,
-      13,
+      27,
       0,
       14,
       0,
@@ -1042,48 +788,8 @@
       "IMAGE"
     ],
     [
-      21,
-      7,
-      0,
-      16,
-      0,
-      "NOISE"
-    ],
-    [
-      22,
-      6,
-      0,
-      16,
-      1,
-      "GUIDER"
-    ],
-    [
-      23,
-      8,
-      0,
-      16,
-      2,
-      "SAMPLER"
-    ],
-    [
-      24,
-      9,
-      0,
-      16,
-      3,
-      "SIGMAS"
-    ],
-    [
-      25,
-      10,
-      0,
-      16,
-      4,
-      "LATENT"
-    ],
-    [
       26,
-      16,
+      28,
       0,
       17,
       0,
@@ -1106,20 +812,108 @@
       "IMAGE"
     ],
     [
-      38,
-      24,
-      0,
-      6,
-      2,
-      "CONDITIONING"
-    ],
-    [
       39,
       2,
       0,
       24,
       0,
       "CLIP"
+    ],
+    [
+      40,
+      1,
+      0,
+      26,
+      0,
+      "MODEL"
+    ],
+    [
+      41,
+      4,
+      0,
+      26,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      42,
+      24,
+      0,
+      26,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      43,
+      10,
+      0,
+      26,
+      3,
+      "LATENT"
+    ],
+    [
+      44,
+      1,
+      0,
+      27,
+      0,
+      "MODEL"
+    ],
+    [
+      45,
+      4,
+      0,
+      27,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      46,
+      24,
+      0,
+      27,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      47,
+      10,
+      0,
+      27,
+      3,
+      "LATENT"
+    ],
+    [
+      48,
+      1,
+      0,
+      28,
+      0,
+      "MODEL"
+    ],
+    [
+      49,
+      4,
+      0,
+      28,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      50,
+      24,
+      0,
+      28,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      51,
+      10,
+      0,
+      28,
+      3,
+      "LATENT"
     ]
   ],
   "groups": [
@@ -1201,6 +995,8 @@
   },
   "version": 0.4,
   "seed_widgets": {
-    "7": 0
+    "26": 0,
+    "27": 0,
+    "28": 0
   }
 }
