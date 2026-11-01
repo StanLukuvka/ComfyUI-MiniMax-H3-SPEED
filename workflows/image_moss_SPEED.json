@@ -1,8 +1,8 @@
 {
   "id": "e3626a97-0650-4e18-889e-2eeab0ce5942",
   "revision": 0,
-  "last_node_id": 23,
-  "last_link_id": 38,
+  "last_node_id": 26,
+  "last_link_id": 50,
   "nodes": [
     {
       "id": 1,
@@ -24,8 +24,7 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            1,
-            7
+            1
           ]
         }
       ],
@@ -147,7 +146,9 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            4
+            39,
+            43,
+            47
           ]
         }
       ],
@@ -196,7 +197,9 @@
           "name": "CONDITIONING",
           "type": "CONDITIONING",
           "links": [
-            5
+            40,
+            44,
+            48
           ]
         }
       ],
@@ -239,7 +242,9 @@
           "name": "CONDITIONING",
           "type": "CONDITIONING",
           "links": [
-            6
+            41,
+            45,
+            49
           ]
         }
       ],
@@ -254,186 +259,6 @@
       ],
       "widgets_values_named": {
         "text": ""
-      }
-    },
-    {
-      "id": 7,
-      "type": "CFGGuider",
-      "pos": [
-        1050,
-        90
-      ],
-      "size": [
-        300,
-        98
-      ],
-      "flags": {},
-      "order": 11,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 4
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 5
-        },
-        {
-          "name": "negative",
-          "type": "CONDITIONING",
-          "link": 6
-        }
-      ],
-      "outputs": [
-        {
-          "name": "GUIDER",
-          "type": "GUIDER",
-          "links": [
-            9,
-            15,
-            23
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "CFGGuider"
-      },
-      "widgets_values": [
-        5
-      ],
-      "widgets_values_named": {
-        "cfg": 5
-      }
-    },
-    {
-      "id": 8,
-      "type": "RandomNoise",
-      "pos": [
-        1050,
-        268
-      ],
-      "size": [
-        300,
-        82
-      ],
-      "flags": {},
-      "order": 3,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "NOISE",
-          "type": "NOISE",
-          "links": [
-            8,
-            14,
-            22
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "RandomNoise"
-      },
-      "widgets_values": [
-        1,
-        "fixed"
-      ],
-      "widgets_values_named": {
-        "noise_seed": 1,
-        "control_after_generate": "fixed"
-      }
-    },
-    {
-      "id": 9,
-      "type": "KSamplerSelect",
-      "pos": [
-        1050,
-        430
-      ],
-      "size": [
-        300,
-        58
-      ],
-      "flags": {},
-      "order": 4,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "SAMPLER",
-          "type": "SAMPLER",
-          "links": [
-            10,
-            16,
-            24
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "KSamplerSelect"
-      },
-      "widgets_values": [
-        "euler"
-      ],
-      "widgets_values_named": {
-        "sampler_name": "euler"
-      }
-    },
-    {
-      "id": 10,
-      "type": "BasicScheduler",
-      "pos": [
-        1050,
-        568
-      ],
-      "size": [
-        300,
-        106
-      ],
-      "flags": {},
-      "order": 8,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 7
-        }
-      ],
-      "outputs": [
-        {
-          "name": "SIGMAS",
-          "type": "SIGMAS",
-          "links": [
-            11,
-            17,
-            25
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.41.0",
-        "Node name for S&R": "BasicScheduler"
-      },
-      "widgets_values": [
-        "sgm_uniform",
-        20,
-        1
-      ],
-      "widgets_values_named": {
-        "scheduler": "sgm_uniform",
-        "steps": 20,
-        "denoise": 1
       }
     },
     {
@@ -456,9 +281,9 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            12,
-            18,
-            26
+            42,
+            46,
+            50
           ]
         }
       ],
@@ -479,8 +304,8 @@
       }
     },
     {
-      "id": 12,
-      "type": "SPEEDSigmaHarvest",
+      "id": 24,
+      "type": "SPEEDKSamplerHarvest",
       "pos": [
         1450,
         90
@@ -494,29 +319,24 @@
       "mode": 2,
       "inputs": [
         {
-          "name": "noise",
-          "type": "NOISE",
-          "link": 8
+          "name": "model",
+          "type": "MODEL",
+          "link": 39
         },
         {
-          "name": "guider",
-          "type": "GUIDER",
-          "link": 9
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 40
         },
         {
-          "name": "sampler",
-          "type": "SAMPLER",
-          "link": 10
-        },
-        {
-          "name": "sigmas",
-          "type": "SIGMAS",
-          "link": 11
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 41
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 12
+          "link": 42
         }
       ],
       "outputs": [
@@ -537,15 +357,27 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "SPEEDSigmaHarvest"
+        "Node name for S&R": "SPEEDKSamplerHarvest"
       },
       "widgets_values": [
-        0.05,
-        "flow_image"
+        1,
+        "fixed",
+        20,
+        5,
+        "euler",
+        "sgm_uniform",
+        "flow_image",
+        0.05
       ],
       "widgets_values_named": {
-        "Tolerance (Delta)": 0.05,
-        "model_type": "flow_image"
+        "seed": 1,
+        "control_after_generate": "fixed",
+        "steps": 20,
+        "cfg": 5,
+        "sampler_name": "euler",
+        "scheduler": "sgm_uniform",
+        "model_type": "flow_image",
+        "Tolerance (Delta)": 0.05
       }
     },
     {
@@ -586,8 +418,8 @@
       "widgets_values_named": {}
     },
     {
-      "id": 14,
-      "type": "SPEEDSampler",
+      "id": 25,
+      "type": "SPEEDKSampler",
       "pos": [
         1450,
         470
@@ -601,29 +433,24 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "noise",
-          "type": "NOISE",
-          "link": 14
+          "name": "model",
+          "type": "MODEL",
+          "link": 43
         },
         {
-          "name": "guider",
-          "type": "GUIDER",
-          "link": 15
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 44
         },
         {
-          "name": "sampler",
-          "type": "SAMPLER",
-          "link": 16
-        },
-        {
-          "name": "sigmas",
-          "type": "SIGMAS",
-          "link": 17
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 45
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 18
+          "link": 46
         }
       ],
       "outputs": [
@@ -644,25 +471,39 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "SPEEDSampler"
+        "Node name for S&R": "SPEEDKSampler"
       },
       "widgets_values": [
+        1,
+        "fixed",
+        20,
+        5,
+        "euler",
+        "sgm_uniform",
+        1.0,
+        "flow_image",
         3,
         "coupled_full_grid",
         0.05,
         48.4075,
         1.0333,
-        10000,
-        "flow_image"
+        10000
       ],
       "widgets_values_named": {
+        "seed": 1,
+        "control_after_generate": "fixed",
+        "steps": 20,
+        "cfg": 5,
+        "sampler_name": "euler",
+        "scheduler": "sgm_uniform",
+        "denoise": 1.0,
+        "model_type": "flow_image",
         "stages": 3,
         "noise_policy": "coupled_full_grid",
         "Tolerance (Delta)": 0.05,
         "noise_amplitude": 48.4075,
         "noise_decay_exponent": 1.0333,
-        "seed_offset": 10000,
-        "model_type": "flow_image"
+        "seed_offset": 10000
       }
     },
     {
@@ -747,8 +588,8 @@
       }
     },
     {
-      "id": 17,
-      "type": "SPEEDSamplerManual",
+      "id": 26,
+      "type": "SPEEDKSamplerManual",
       "pos": [
         1450,
         850
@@ -762,29 +603,24 @@
       "mode": 2,
       "inputs": [
         {
-          "name": "noise",
-          "type": "NOISE",
-          "link": 22
+          "name": "model",
+          "type": "MODEL",
+          "link": 47
         },
         {
-          "name": "guider",
-          "type": "GUIDER",
-          "link": 23
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 48
         },
         {
-          "name": "sampler",
-          "type": "SAMPLER",
-          "link": 24
-        },
-        {
-          "name": "sigmas",
-          "type": "SIGMAS",
-          "link": 25
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 49
         },
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 26
+          "link": 50
         }
       ],
       "outputs": [
@@ -805,9 +641,17 @@
       "properties": {
         "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
-        "Node name for S&R": "SPEEDSamplerManual"
+        "Node name for S&R": "SPEEDKSamplerManual"
       },
       "widgets_values": [
+        1,
+        "fixed",
+        20,
+        5,
+        "euler",
+        "sgm_uniform",
+        1.0,
+        "flow_image",
         "coupled_full_grid",
         10000,
         "steps",
@@ -818,10 +662,17 @@
         0,
         0,
         0,
-        0,
-        "flow_image"
+        0
       ],
       "widgets_values_named": {
+        "seed": 1,
+        "control_after_generate": "fixed",
+        "steps": 20,
+        "cfg": 5,
+        "sampler_name": "euler",
+        "scheduler": "sgm_uniform",
+        "denoise": 1.0,
+        "model_type": "flow_image",
         "noise_policy": "coupled_full_grid",
         "seed_offset": 10000,
         "ratio_mode": "steps",
@@ -832,8 +683,7 @@
         "transition_goal_3": 0,
         "transition_resolution_3": 0,
         "transition_goal_4": 0,
-        "transition_resolution_4": 0,
-        "model_type": "flow_image"
+        "transition_resolution_4": 0
       }
     },
     {
@@ -936,10 +786,10 @@
       "title": "Note: MOSS-Image",
       "properties": {},
       "widgets_values": [
-        "## MOSS-Image\n\nSettings from the MOSS prompting study: 20 steps, CFG 5, euler / sgm_uniform, SLG (uncond skip, layer 22, 0-1), empty negative, 1344x768. Prompt: prose, one sentence per element, no quality prefix.\n\nRTX 5070 Laptop: native 22 s, Automatic (3 stages, \u0394 0.05) 18 s, Manual (0.5x to step 10) 14 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 10 of 20, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
+        "## MOSS-Image\n\nSettings from the MOSS prompting study: 20 steps, CFG 5, euler / sgm_uniform, SLG (uncond skip, layer 22, 0-1), empty negative, 1344x768. Prompt: prose, one sentence per element, no quality prefix.\n\nRTX 5070 Laptop: native 22 s, Automatic (3 stages, \u0394 0.05) 18 s, Manual (0.5x to step 10) 14 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / sgm_uniform).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 10 of 20, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
       ],
       "widgets_values_named": {
-        "text": "## MOSS-Image\n\nSettings from the MOSS prompting study: 20 steps, CFG 5, euler / sgm_uniform, SLG (uncond skip, layer 22, 0-1), empty negative, 1344x768. Prompt: prose, one sentence per element, no quality prefix.\n\nRTX 5070 Laptop: native 22 s, Automatic (3 stages, \u0394 0.05) 18 s, Manual (0.5x to step 10) 14 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The sampler input comes from KSamplerSelect (euler).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 10 of 20, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
+        "text": "## MOSS-Image\n\nSettings from the MOSS prompting study: 20 steps, CFG 5, euler / sgm_uniform, SLG (uncond skip, layer 22, 0-1), empty negative, 1344x768. Prompt: prose, one sentence per element, no quality prefix.\n\nRTX 5070 Laptop: native 22 s, Automatic (3 stages, \u0394 0.05) 18 s, Manual (0.5x to step 10) 14 s.\n\n## SPEED on an image model\n\nAll SPEED nodes here have **model_type = flow_image** and **noise_policy = coupled_full_grid**. The SPEED nodes are KSampler-style: model, positive and negative are wired in directly, and the sampler and scheduler are widgets (euler / sgm_uniform).\n\n1. **Harvest** (muted): unmute it, run once, and read the report. Paste `noise_amplitude` and\n   `noise_decay_exponent` into the Automatic node. The values already in it were harvested from this\n   prompt and seed on an RTX 5070 Laptop.\n2. **SPEED Automatic** (active): stage boundaries come from the Harvest fit and `Tolerance (Delta)`.\n   At \u0394 0.005 the low-resolution stage ends in the first steps, so it saves little; \u0394 0.05 is the\n   useful setting for images.\n3. **SPEED Manual** (muted): fixed boundary, half resolution to step 10 of 20, then full resolution.\n   Unmute it and mute Automatic to use it instead.\n\n`coupled_full_grid` draws the noise from the seed as SamplerCustomAdvanced does, so SPEED keeps a native\nrun's composition at the same seed; small details such as an object count can still change.\n"
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -971,128 +821,16 @@
       "CLIP"
     ],
     [
-      4,
-      4,
-      0,
-      7,
-      0,
-      "MODEL"
-    ],
-    [
-      5,
-      5,
-      0,
-      7,
-      1,
-      "CONDITIONING"
-    ],
-    [
-      6,
-      6,
-      0,
-      7,
-      2,
-      "CONDITIONING"
-    ],
-    [
-      7,
-      1,
-      0,
-      10,
-      0,
-      "MODEL"
-    ],
-    [
-      8,
-      8,
-      0,
-      12,
-      0,
-      "NOISE"
-    ],
-    [
-      9,
-      7,
-      0,
-      12,
-      1,
-      "GUIDER"
-    ],
-    [
-      10,
-      9,
-      0,
-      12,
-      2,
-      "SAMPLER"
-    ],
-    [
-      11,
-      10,
-      0,
-      12,
-      3,
-      "SIGMAS"
-    ],
-    [
-      12,
-      11,
-      0,
-      12,
-      4,
-      "LATENT"
-    ],
-    [
       13,
-      12,
+      24,
       0,
       13,
       0,
       "STRING"
     ],
     [
-      14,
-      8,
-      0,
-      14,
-      0,
-      "NOISE"
-    ],
-    [
-      15,
-      7,
-      0,
-      14,
-      1,
-      "GUIDER"
-    ],
-    [
-      16,
-      9,
-      0,
-      14,
-      2,
-      "SAMPLER"
-    ],
-    [
-      17,
-      10,
-      0,
-      14,
-      3,
-      "SIGMAS"
-    ],
-    [
-      18,
-      11,
-      0,
-      14,
-      4,
-      "LATENT"
-    ],
-    [
       19,
-      14,
+      25,
       0,
       15,
       0,
@@ -1115,48 +853,8 @@
       "IMAGE"
     ],
     [
-      22,
-      8,
-      0,
-      17,
-      0,
-      "NOISE"
-    ],
-    [
-      23,
-      7,
-      0,
-      17,
-      1,
-      "GUIDER"
-    ],
-    [
-      24,
-      9,
-      0,
-      17,
-      2,
-      "SAMPLER"
-    ],
-    [
-      25,
-      10,
-      0,
-      17,
-      3,
-      "SIGMAS"
-    ],
-    [
-      26,
-      11,
-      0,
-      17,
-      4,
-      "LATENT"
-    ],
-    [
       27,
-      17,
+      26,
       0,
       18,
       0,
@@ -1177,6 +875,102 @@
       19,
       0,
       "IMAGE"
+    ],
+    [
+      39,
+      4,
+      0,
+      24,
+      0,
+      "MODEL"
+    ],
+    [
+      40,
+      5,
+      0,
+      24,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      41,
+      6,
+      0,
+      24,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      42,
+      11,
+      0,
+      24,
+      3,
+      "LATENT"
+    ],
+    [
+      43,
+      4,
+      0,
+      25,
+      0,
+      "MODEL"
+    ],
+    [
+      44,
+      5,
+      0,
+      25,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      45,
+      6,
+      0,
+      25,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      46,
+      11,
+      0,
+      25,
+      3,
+      "LATENT"
+    ],
+    [
+      47,
+      4,
+      0,
+      26,
+      0,
+      "MODEL"
+    ],
+    [
+      48,
+      5,
+      0,
+      26,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      49,
+      6,
+      0,
+      26,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      50,
+      11,
+      0,
+      26,
+      3,
+      "LATENT"
     ]
   ],
   "groups": [
@@ -1258,6 +1052,8 @@
   },
   "version": 0.4,
   "seed_widgets": {
-    "8": 0
+    "24": 0,
+    "25": 0,
+    "26": 0
   }
 }

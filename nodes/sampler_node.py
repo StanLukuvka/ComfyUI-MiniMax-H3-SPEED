@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import comfy.utils
 
-from speed_scripts.families import MODEL_TYPES
+from speed_scripts.node_widgets import (
+    ADVANCED_BASE_INPUTS,
+    MODEL_TYPE_WIDGET,
+    SAMPLER_INPUT_AUTOMATIC,
+    SPEED_AUTOMATIC_WIDGETS,
+)
 from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import build_automatic_speed_config
 
@@ -23,7 +28,7 @@ class SPEEDSampler:
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
     OUTPUT_TOOLTIPS = (
-        "Final latent at full resolution, as from SamplerCustomAdvanced.",
+        "Final latent at full resolution.",
         "Latent of the model's last clean-image (x0) estimate, as from SamplerCustomAdvanced.",
     )
     FUNCTION = "sample"
@@ -31,91 +36,18 @@ class SPEEDSampler:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "noise": (
-                    "NOISE",
-                    {"tooltip": "Noise source, same as SamplerCustomAdvanced (e.g. RandomNoise). Its seed also seeds the sampler."},
-                ),
-                "guider": (
-                    "GUIDER",
-                    {"tooltip": "Guider, same as SamplerCustomAdvanced (e.g. CFGGuider, BasicGuider)."},
-                ),
-                "sampler": (
-                    "SAMPLER",
-                    {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Run Sigma Harvest with the same sampler; the shipped H3 reference values are Euler-only."},
-                ),
-                "sigmas": (
-                    "SIGMAS",
-                    {"tooltip": "Sigma schedule, same as SamplerCustomAdvanced. Stage boundaries are placed on this schedule."},
-                ),
-                "latent_image": (
-                    "LATENT",
-                    {"tooltip": "Latent to sample, same as SamplerCustomAdvanced. The final stage runs at this full size."},
-                ),
-                "stages": (
-                    "INT",
-                    {
-                        "default": 3,
-                        "min": 2,
-                        "max": 4,
-                        "tooltip": "Number of progressive-resolution stages (2-4). 2 = 0.5x then full; 3 = 1/3x, 2/3x, full; 4 = 0.25x, 0.5x, 0.75x, full.",
-                    },
-                ),
-                "noise_policy": (
-                    ["direct_coarse", "coupled_full_grid"],
-                    {
-                        "default": "direct_coarse",
-                        "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed. On H3 video it saved only 5-10%, against 15-30% for direct_coarse.",
-                    },
-                ),
-                "Tolerance (Delta)": (
-                    "FLOAT",
-                    {
-                        "default": 0.005,
-                        "min": 1e-4,
-                        "max": 0.5,
-                        "step": 0.001,
-                        "tooltip": "Delta: how much error is accepted when a stage switches to a higher resolution. Smaller = more conservative, later transitions, smaller saving. Boundaries come from the power-spectrum fit (noise_amplitude, noise_decay_exponent). For images, 0.05 is the useful setting.",
-                    },
-                ),
-                "noise_amplitude": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 1e6,
-                        "step": 0.0001,
-                        "round": 0.0001,
-                        "tooltip": "A in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule. There is no default: 0 means not set and stops with an error.",
-                    },
-                ),
-                "noise_decay_exponent": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 10.0,
-                        "step": 0.0001,
-                        "round": 0.0001,
-                        "tooltip": "beta in the fitted power spectrum P = A*|w|^-beta. Paste the value from Sigma Harvest for your model, sampler and schedule. There is no default: 0 means not set and stops with an error.",
-                    },
-                ),
-                "seed_offset": (
-                    "INT",
-                    {
-                        "default": 10000,
-                        "min": 0,
-                        "max": 2**31 - 1,
-                        "tooltip": "direct_coarse only: salts the seed of the high-frequency fill drawn at each resolution transition (seed + seed_offset + stage index). Ignored by coupled_full_grid. Does not change the first stage's noise or the sampler seed. Leave at 10000 unless you want a different fill pattern for the same seed.",
-                    },
-                ),
-                "model_type": (
-                    list(MODEL_TYPES),
-                    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. flow_image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
-                ),
-            },
+        # Widget definitions live in speed_scripts/node_widgets.py; the key order is the
+        # public contract (saved workflows store widget values by position).
+        required = {
+            "noise": ADVANCED_BASE_INPUTS["noise"],
+            "guider": ADVANCED_BASE_INPUTS["guider"],
+            "sampler": SAMPLER_INPUT_AUTOMATIC,
+            "sigmas": ADVANCED_BASE_INPUTS["sigmas"],
+            "latent_image": ADVANCED_BASE_INPUTS["latent_image"],
         }
+        required.update(SPEED_AUTOMATIC_WIDGETS)
+        required["model_type"] = MODEL_TYPE_WIDGET
+        return {"required": required}
 
     def sample(
         self,
@@ -175,7 +107,7 @@ NODE_CLASS_MAPPINGS = {
     "MiniMaxH3SPEEDSampler": MiniMaxH3SPEEDSampler,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "SPEEDSampler": "SPEED — Sampler",
+    "SPEEDSampler": "SPEED — Sampler Advanced",
     "MiniMaxH3SPEEDSampler": "MiniMax H3 SPEED — Sampler (deprecated)",
 }
 

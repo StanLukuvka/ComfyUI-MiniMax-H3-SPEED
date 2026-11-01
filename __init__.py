@@ -29,11 +29,14 @@ def _register(_mod, _name):
     print("Registered %-28s %s" % (_name, ", ".join(sorted(_mappings)) or "(nothing exported)"))
 
 
-# The pack exposes exactly these three node modules.
+# The pack exposes exactly these six node modules.
 _NODE_MODULES = (
     "sampler_node",
     "sampler_node_manual",
     "sampler_sigma_harvest_node",
+    "ksampler_node",
+    "ksampler_node_manual",
+    "ksampler_sigma_harvest_node",
 )
 
 for _name in _NODE_MODULES:

@@ -10,7 +10,7 @@ Timing: each time is a ComfyUI queue-to-finish time with the models already load
 
 > **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other supported samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
 
-Native is full-resolution Euler (SamplerCustomAdvanced, no SPEED). Each model has its own calibration from one Sigma Harvest run on its prompt and seed.
+Native is full-resolution Euler (SamplerCustomAdvanced, no SPEED). Each model has its own calibration from one Sigma Harvest run on its prompt and seed. The SPEED runs used the Advanced nodes. The linked workflows now use the KSampler nodes, which give pixel-identical images with the same values (checked on MOSS Image and on a Krea 2 fine-tune).
 
 ## MOSS-Image
 
