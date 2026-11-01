@@ -32,8 +32,8 @@ The example workflows ship with these values already filled in.
 
 The pack has six nodes in two families:
 
-- **KSampler family** — a drop-in for ComfyUI's **KSampler**, for flow image models such as MOSS Image and Krea 2. You give it `model`, `positive`, `negative` and `latent_image`, and it builds the noise, guider, sampler and sigma schedule itself.
-- **Advanced family** — wired like **SamplerCustomAdvanced**: you feed in `noise`, `guider`, `sampler` and `sigmas`. The H3 video workflow uses these.
+- **KSampler family** — a drop-in for ComfyUI's **KSampler**, for flow image models such as MOSS Image and Krea 2. Wire it the same way as KSampler.
+- **Advanced family** — wired like **SamplerCustomAdvanced**. The H3 video workflow uses these.
 
 | Family | Automatic | Manual | Harvest |
 |---|---|---|---|
@@ -164,7 +164,7 @@ Sigma Harvest measures how the radial DCT power of the full-resolution **residua
 
 For each stage scale `s`, Automatic uses `ω = s·min(H,W)/2`, evaluates `P = A·ω^-β`, then computes `thr = 1/(1+√(Δ/(P·(1+P-Δ))))`. The first `sigmas[i] ≤ thr` becomes that stage boundary. The threshold is continuous; the actual boundary is quantized to your sigma schedule.
 
-Re-calibrate with the Harvest node if you change the checkpoint, sampler, or an addon that changes model behavior. On **SPEED — Sigma Harvest Advanced**, wire `noise`, `guider`, `sampler`, `sigmas` and `latent_image`; on **SPEED — KSampler Sigma Harvest**, wire `model`, `positive`, `negative` and `latent_image` and set `seed`, `steps`, `cfg`, `sampler_name` and `scheduler`. Set `Tolerance (Delta)` on either. Harvest runs the sampler at full resolution, so use the same sampler, scheduler and step count you intend to use with SPEED. Then use that sampler on Automatic and copy `Tolerance (Delta)`, `noise_amplitude` and `noise_decay_exponent`.
+Re-calibrate with the Harvest node if you change the checkpoint, sampler, or an addon that changes model behavior. Wire it like the sampler node it matches. Harvest runs the sampler at full resolution, so use the same sampler, scheduler and step count you intend to use with SPEED. Then use that sampler on Automatic and copy `Tolerance (Delta)`, `noise_amplitude` and `noise_decay_exponent`.
 
 For base H3, the reference values were harvested at 20 steps with the `simple` scheduler, as in the example workflow.
 
