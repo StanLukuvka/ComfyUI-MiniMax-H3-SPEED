@@ -40,6 +40,14 @@ def install_comfy_stubs():
 
     model_sampling = ModuleType("comfy.model_sampling")
 
+    # comfy.samplers: the node schemas read the KSampler combo lists from it
+    # (speed_scripts/node_widgets.py); the builder surface is mocked per-test where needed.
+    samplers = ModuleType("comfy.samplers")
+    samplers.KSampler = type("KSampler", (), {
+        "SAMPLERS": ["euler", "euler_ancestral", "heun", "dpm_2", "uni_pc"],
+        "SCHEDULERS": ["normal", "karras", "simple", "beta"],
+    })
+
     def _sampling_class(name, bases=()):
         cls = type(name, bases, {"__module__": "comfy.model_sampling"})
         setattr(model_sampling, name, cls)
@@ -53,7 +61,7 @@ def install_comfy_stubs():
     _sampling_class("ModelSamplingAV", (_sampling_class("ModelSamplingDiscreteFlow"),))
 
     comfy = ModuleType("comfy")
-    for mod in (utils, nested_tensor, sample, model_sampling):
+    for mod in (utils, nested_tensor, sample, model_sampling, samplers):
         name = mod.__name__.split(".")[1]
         setattr(comfy, name, mod)
         sys.modules[mod.__name__] = mod
