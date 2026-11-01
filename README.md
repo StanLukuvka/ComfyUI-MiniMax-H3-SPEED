@@ -19,18 +19,30 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 
 ## Quick start
 
-1. Load the example [`workflows/video_h3_SPEED.json`](workflows/video_h3_SPEED.json), or replace **SamplerCustomAdvanced** in your own workflow with **SPEED — Sampler** and connect the same `noise`, `guider`, `sampler`, `sigmas` and `latent_image` inputs. If you use the all-in-one `KSampler`, first split it into ComfyUI's advanced sampling nodes: **RandomNoise**, **CFGGuider** (or BasicGuider), **KSamplerSelect**, **BasicScheduler** and an empty latent.
-2. Set **`model_type`**: `h3_video` for MiniMax-H3, `flow_image` for flow image models. It has no default.
+1. **Image models** (MOSS Image, Krea 2): swap your **KSampler** for **SPEED — KSampler** and keep the same wiring — `model`, `positive`, `negative`, `latent_image` — as in [`workflows/image_moss_SPEED.json`](workflows/image_moss_SPEED.json). **Video (MiniMax-H3)**: use the Advanced nodes as in [`workflows/video_h3_SPEED.json`](workflows/video_h3_SPEED.json), or replace **SamplerCustomAdvanced** in your own workflow with **SPEED — Sampler Advanced** and connect the same `noise`, `guider`, `sampler`, `sigmas` and `latent_image` inputs (from **RandomNoise**, **CFGGuider** (or BasicGuider), **KSamplerSelect** and **BasicScheduler**).
+2. Set **`model_type`**: the list shows `h3_video` first; set `flow_image` for image models. A mismatch with the loaded model raises an error.
 3. Fill in **`noise_amplitude`** and **`noise_decay_exponent`**. They describe how your model, sampler and schedule behave, and SPEED will not run without them: left at 0, the node stops with an error.
    - MiniMax-H3 with `euler`: use the reference values `noise_amplitude = 35.4213`, `noise_decay_exponent = 1.0126`.
-   - Anything else: run the **SPEED — Sigma Harvest** node once with the same sampler, schedule and size (see [Which node do I need?](#which-node-do-i-need) below), and copy its two numbers.
+   - Anything else: run a **Sigma Harvest** node once with the same sampler, schedule and size (see [Which node do I need?](#which-node-do-i-need) below), and copy its two numbers.
 4. Set **`stages`** (3 is the default) and **`Tolerance (Delta)`** (0.005 for video, 0.05 for images), then queue.
 
 The example workflows ship with these values already filled in.
 
 ## Which node do I need?
 
-**SPEED — Sampler** (Automatic)  
+The pack has six nodes in two families:
+
+- **KSampler family** — a drop-in for ComfyUI's **KSampler**, for flow image models such as MOSS Image and Krea 2. You give it `model`, `positive`, `negative` and `latent_image`, and it builds the noise, guider, sampler and sigma schedule itself.
+- **Advanced family** — wired like **SamplerCustomAdvanced**: you feed in `noise`, `guider`, `sampler` and `sigmas`. The H3 video workflow uses these.
+
+| Family | Automatic | Manual | Harvest |
+|---|---|---|---|
+| KSampler | **SPEED — KSampler** | **SPEED — KSampler (Manual)** | **SPEED — KSampler Sigma Harvest** |
+| Advanced | **SPEED — Sampler Advanced** | **SPEED — Sampler Advanced (Manual)** | **SPEED — Sigma Harvest Advanced** |
+
+On the KSampler nodes the widgets come in KSampler's order — `seed`, `steps`, `cfg`, `sampler_name`, `scheduler`, `denoise` — then `model_type`, then the SPEED widgets of that mode. **SPEED — KSampler Sigma Harvest** has no `denoise`: it always calibrates on the full schedule. The node IDs of the Advanced family are unchanged, so workflows saved with them still load.
+
+**Automatic** (**SPEED — KSampler** / **SPEED — Sampler Advanced**)  
 Choose how many resolution stages you want:
 
 `2 = 0.5→1.0`  
@@ -39,13 +51,13 @@ Choose how many resolution stages you want:
 
 `Tolerance (Delta)` (Δ in this README), `noise_amplitude` and `noise_decay_exponent` decide at which step each resolution switch happens. A smaller Δ switches later: safer, but it saves less time. `noise_amplitude` and `noise_decay_exponent` have no defaults: no model's calibration is baked in. Paste them from Harvest, or for H3 with Euler use the reference values below.
 
-**SPEED — Sampler (Manual Step-Through)**  
+**Manual** (**SPEED — KSampler (Manual)** / **SPEED — Sampler Advanced (Manual)**)  
 For experimenting. Start with Automatic; use Manual when you want to pick the switch points yourself. Set up to four `(goal, resolution)` pairs. For every stage except the last active one, `goal` is the step where that stage ends (or a 0–1 fraction of the schedule with `ratio_mode = ratio`), and `resolution` is its scale, such as `0.25` for quarter resolution. The last active stage always runs to the end of the schedule, so its goal only needs to be non-zero.
 
 Active resolutions must increase, and the last active resolution must be `1.0`. Set either value to `0` to skip a stage.
 
-**SPEED — Sigma Harvest (Native Sampler)**  
-Run Harvest with your current workflow to measure the connected sampler at full resolution. Use the same sampler, sigma schedule, step count, and `Tolerance (Delta)` that you intend to use with SPEED. Its `calibration` output is a JSON string whose `report` field holds the readable lines, including a ready-made paste line: connect it to a **Preview Any** node to read it. Then keep the same sampler connected to Automatic and copy the report's `Tolerance (Delta)`, `noise_amplitude` (A) and `noise_decay_exponent` (β) into it.
+**Harvest** (**SPEED — KSampler Sigma Harvest** / **SPEED — Sigma Harvest Advanced**)  
+Run Harvest with your current workflow to measure the sampler at full resolution — the sampler you connect on the Advanced nodes, or the `sampler_name` you pick on the KSampler node. Use the same sampler, sigma schedule, step count, and `Tolerance (Delta)` that you intend to use with SPEED. Its `calibration` output is a JSON string whose `report` field holds the readable lines, including a ready-made paste line: connect it to a **Preview Any** node to read it. Then use the same sampler with Automatic and copy the report's `Tolerance (Delta)`, `noise_amplitude` (A) and `noise_decay_exponent` (β) into it.
 
 The report also gives `r²` and `health`, which say how well the measured curve fits. `good` or `fair` is usable. `weak` prints a warning: re-run or check your inputs before trusting it. `suspect` and `invalid` give no values to paste.
 
@@ -63,7 +75,7 @@ See the [evidence section](evidence/h3_evidence/README.md) for examples of how t
 
 ## Samplers
 
-SPEED takes a normal ComfyUI `SAMPLER` input, so connect **KSamplerSelect** (or any other SAMPLER node). Each SPEED stage is its own sampler call, so multistep samplers start their history fresh at every resolution change. Euler is the reference: the shipped calibration and benchmark evidence are Euler-derived, so re-run Harvest with the sampler you use.
+The Advanced nodes take a normal ComfyUI `SAMPLER` input, so connect **KSamplerSelect** (or any other SAMPLER node); the KSampler nodes pick the sampler by name, as KSampler does. Each SPEED stage is its own sampler call, so multistep samplers start their history fresh at every resolution change. Euler is the reference: the shipped calibration and benchmark evidence are Euler-derived, so re-run Harvest with the sampler you use.
 
 Tested on the 5 s mug clip (turbo LoRA, 8 steps, 2 stages, 0.2 MP on an L40S and 0.4 MP locally):
 
@@ -76,7 +88,7 @@ Automatic and Manual return two LATENTs: use `output`. `denoised_output` is the 
 
 ## Example workflows
 
-Each example workflow has Harvest, Automatic and Manual on one set of loaders, in Models, Conditioning, Sampling, SPEED and output groups. Only Automatic is active, already set to that model's harvested values.
+Each example workflow has Harvest, Automatic and Manual on one set of loaders, in Models, Conditioning, Sampling, SPEED and output groups. Only Automatic is active, already set to that model's harvested values. The image workflows use the KSampler nodes; the H3 video workflow uses the Advanced nodes.
 
 `noise_policy` decides where the extra detail comes from at each switch. `coupled_full_grid` takes it from the same seeded noise a plain SamplerCustomAdvanced run uses, so it keeps that run's composition at the same seed. `direct_coarse` (the default) draws its own, so the picture differs from a plain run.
 
@@ -88,11 +100,11 @@ Each example workflow has Harvest, Automatic and Manual on one set of loaders, i
 
 ## Image models
 
-Set **`model_type = flow_image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Wire it like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). `model_type` has no default; set it on every SPEED node. A value that does not match the model and latent stops with an error.
+Set **`model_type = flow_image`** on the SPEED node (and on Harvest) to run a flow image model such as MOSS Image or Krea 2. Swap your **KSampler** for **SPEED — KSampler** with the same wiring, or wire the Advanced nodes like SamplerCustomAdvanced, with an empty latent (`EmptyLatentImage` works: SPEED fits it to the model's channels like SamplerCustomAdvanced does). The `model_type` list shows `h3_video` first; set `flow_image` on every SPEED node. A value that does not match the model and latent stops with an error.
 
 The image workflows' calibrations were harvested for their own prompt, seed and settings. For your model and settings, run Harvest with `model_type = flow_image` and paste its values in. At Δ 0.005 the harvested boundary lands in the first few steps of an image schedule, so it saves little; use **Δ 0.05**, or Manual with the 0.5× stage ending near half the steps.
 
-**Image-to-image.** Image workflows usually use KSampler, whose `denoise` widget runs img2img. SPEED is wired like SamplerCustomAdvanced, so the same setting moves to **BasicScheduler**'s `denoise`, and the `latent_image` comes from **VAEEncode** instead of an empty latent. The first stage starts from the encoded image shrunk to that stage's size, noised to the schedule's first sigma, as SamplerCustomAdvanced does at full size. A lower `denoise` starts the schedule at a lower sigma. Automatic skips any coarse stage whose boundary sigma is already above it, so at low `denoise` it runs fewer stages and saves less; when it skips every coarse stage it runs as plain full-size sampling. Manual keeps the stages you set. Run Harvest on an empty latent at `denoise` 1, as for text-to-image: an encoded image changes the residuals it measures.
+**Image-to-image.** On **SPEED — KSampler**, `denoise` builds the schedule exactly like ComfyUI's KSampler (the same denoise slicing), and the `latent_image` comes from **VAEEncode** instead of an empty latent. On the Advanced nodes the denoise comes from the sigmas you feed in: set it on **BasicScheduler**. The first stage starts from the encoded image shrunk to that stage's size, noised to the schedule's first sigma, as SamplerCustomAdvanced does at full size. A lower `denoise` starts the schedule at a lower sigma. Automatic skips any coarse stage whose boundary sigma is already above it, so at low `denoise` it runs fewer stages and saves less; when it skips every coarse stage it runs as plain full-size sampling. Manual keeps the stages you set. Run Harvest on an empty latent, as for text-to-image (the KSampler Harvest has no `denoise`; it always runs the full schedule): an encoded image changes the residuals it measures.
 
 RTX 5070 Laptop, a ramen stall at night as a still ([evidence](evidence/image_evidence/README.md)); speedups use the unrounded times:
 
@@ -170,7 +182,9 @@ For the Manual node, `ratio_mode = steps` treats each goal as a global step inde
 
 V2 updates the SPEED nodes and reworks several parts of the implementation.
 
-The biggest change is **sampler support**. SPEED is no longer tied to Euler: every node takes a normal ComfyUI `SAMPLER` input, the same as SamplerCustomAdvanced. See [Samplers](#samplers) for what was tested.
+The biggest change is **sampler support**. SPEED is no longer tied to Euler: the Advanced nodes take a normal ComfyUI `SAMPLER` input, the same as SamplerCustomAdvanced, and the KSampler nodes pick the sampler by name, as KSampler does. See [Samplers](#samplers) for what was tested.
+
+There are now **six nodes in two families**. The KSampler family (**SPEED — KSampler**, **SPEED — KSampler (Manual)**, **SPEED — KSampler Sigma Harvest**) is a drop-in for ComfyUI's KSampler: same widgets, same wiring. The Advanced family is the old node set with new display names; their IDs are unchanged.
 
 **Sigma Harvest is now sampler-aware**, so its calibration reflects the sampler you are actually using.
 
