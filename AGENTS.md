@@ -4,9 +4,11 @@ Rules for working on this pack. Usage, reference A/beta values and per-sampler r
 
 ## Public contract (do not break)
 
-- Three nodes: `SPEEDSampler` (Automatic), `SPEEDSamplerManual` and `SPEEDSigmaHarvest`. The old IDs `MiniMaxH3SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` and `MiniMaxH3HarvestToConfig` stay registered as `DEPRECATED` subclasses with node replacements, so saved workflows still load. Keep both sets stable.
-- All three nodes take a standard ComfyUI `SAMPLER` input. Any sampler is accepted: no allowlist, no per-sampler adapter. Each stage is its own `guider.sample()` call.
-- All three take a required `model_type` (`h3_video`, `flow_image`) with no default anywhere: widget, node signature, runtime or Harvest helpers. A missing value fails validation and a mismatched one raises.
+- Six nodes in two families. Advanced nodes take native `NOISE`/`GUIDER`/`SAMPLER`/`SIGMAS` inputs: `SPEEDSampler` (Automatic), `SPEEDSamplerManual` and `SPEEDSigmaHarvest`. KSampler nodes take KSampler widgets (seed, steps, cfg, sampler_name, scheduler, positive/negative) and build those inputs with `speed_scripts/ksampler_inputs.py`: `SPEEDKSampler`, `SPEEDKSamplerManual` and `SPEEDKSamplerHarvest`. The old IDs `MiniMaxH3SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` and `MiniMaxH3HarvestToConfig` stay registered as `DEPRECATED` subclasses with node replacements, so saved workflows still load. Keep all these IDs stable, and keep the Advanced nodes' `INPUT_TYPES` order unchanged, because saved workflows store widget values by position.
+- KSampler nodes delegate to the Advanced code paths (`SPEEDSampler.sample`, `run_harvest`) and add no sampling logic of their own. With the same values they must give identical output to an Advanced node fed `RandomNoise`, `CFGGuider`, `KSamplerSelect` and `BasicScheduler`.
+- Any sampler is accepted: no allowlist, no per-sampler adapter. Each stage is its own `guider.sample()` call.
+- All six take a required `model_type` (`h3_video`, `flow_image`) with no default anywhere: widget, node signature, runtime or Harvest helpers. A missing value fails validation and a mismatched one raises.
+- Node modules import shared code from the `speed_scripts` package, never `from nodes.…`: inside ComfyUI, `nodes` is ComfyUI's own module.
 - Nothing model-specific is a default. Automatic's `noise_amplitude` and `noise_decay_exponent` start at 0 (unset, raises), and `SpeedConfig` has no baked A/beta/delta.
 - `direct_coarse` is the default noise policy. Keep `coupled_full_grid` available.
 - Workflows use native ComfyUI widget slugs (`NOISE`, `GUIDER`, `SAMPLER`, `SIGMAS`, `LATENT`).
@@ -17,7 +19,7 @@ Rules for working on this pack. Usage, reference A/beta values and per-sampler r
 - `speed_scripts/planning.py`: stage geometry, transition-threshold math, `plan_stages`, Automatic config construction and Manual schedule normalization.
 - `speed_scripts/runtime.py`: execution only. `run_speed_pipeline` runs `families.prepare_family` -> `planning.plan_stages` -> `run_stages`. Coupled full-grid noise is transformed to spectral coefficients once per generation.
 - `speed_scripts/latent_class.py`: `LatentWalker`, local to one `run_speed_pipeline()` call and never stored on the guider. It snapshots only keyframe latents, always resizes from the pristine full-resolution copy, restores them before the final stage and on failure, and never wraps or resizes `minimax_refs`.
-- Harvest (`nodes/sampler_sigma_harvest_node.py`, `speed_scripts/harvest.py`) runs the connected native sampler, not the SPEED pipeline. It picks its family with `get_family` like the samplers. It reduces each residual to a CPU radial power profile inside the callback and keeps no full residual tensors.
+- Harvest (`nodes/sampler_sigma_harvest_node.py`, `nodes/ksampler_sigma_harvest_node.py`, `speed_scripts/harvest.py`) runs the connected native sampler, not the SPEED pipeline. It picks its family with `get_family` like the samplers. It reduces each residual to a CPU radial power profile inside the callback and keeps no full residual tensors.
 - Automatic configs store no placeholder transition indices or latent sizes. `delta_custom` boundaries come from the live sigmas and latent at runtime. `transition_steps` is only for explicit/Manual mode.
 
 ## Rules
