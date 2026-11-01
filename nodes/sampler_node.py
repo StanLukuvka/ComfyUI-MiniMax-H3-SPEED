@@ -17,12 +17,9 @@ class SPEEDSampler:
     """Progressive-resolution SPEED sampling with automatic stage placement."""
 
     DESCRIPTION = (
-        "Automatic SPEED sampler — pick stages (2, 3, or 4) and go. "
-        "Starts cheap at low resolution, then upsamples when the detail "
-        "matters. Set Tolerance (0.5% = 0.005) to trade blur for speed. "
-        "Needs noise_amplitude and noise_decay_exponent from the Sigma Harvest "
-        "node for your model; re-run Harvest if you change checkpoint, LoRA/addons, "
-        "sampler, or another factor that materially changes the denoising trajectory."
+        "Progressive-resolution sampler: starts at low resolution and switches up "
+        "as detail matters. Needs noise_amplitude and noise_decay_exponent from "
+        "Sigma Harvest."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")

@@ -17,11 +17,8 @@ class SPEEDSamplerManual:
     """Progressive-resolution SPEED sampling with user-defined stage boundaries."""
 
     DESCRIPTION = (
-        "Manual SPEED sampler — set up to four (goal, resolution) pairs by hand. "
-        "For every stage except the last active one, goal marks where that stage "
-        "ends and resolution is its scale (0.25 = quarter). The final active stage "
-        "always runs to the end of the sigma schedule. Set goal or resolution to 0 "
-        "to skip a stage. Use this to copy known schedules or test custom ladders."
+        "Manual SPEED sampler. The last active stage runs to the end of the "
+        "schedule; set goal or resolution to 0 to skip a stage."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")

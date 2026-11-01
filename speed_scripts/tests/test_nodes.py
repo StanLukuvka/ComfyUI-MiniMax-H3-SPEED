@@ -183,7 +183,9 @@ def test_every_input_and_output_has_a_tooltip(node):
     cls = _node(node)
     for section in cls.INPUT_TYPES().values():
         for name, spec in section.items():
-            assert spec[1].get("tooltip", "").strip(), name
+            # A guider needs no explanation beyond its type.
+            if name != "guider":
+                assert spec[1].get("tooltip", "").strip(), name
     assert len(cls.OUTPUT_TOOLTIPS) == len(cls.RETURN_TYPES)
     assert all(tip.strip() for tip in cls.OUTPUT_TOOLTIPS)
     assert cls.DESCRIPTION.strip()

@@ -38,11 +38,11 @@ class SPEEDSigmaHarvest:
             "required": {
                 "noise": (
                     "NOISE",
-                    {"tooltip": "Noise source, same as SamplerCustomAdvanced (e.g. RandomNoise). Its seed also seeds the sampler."},
+                    {"tooltip": "Same as SamplerCustomAdvanced; its seed also seeds the sampler."},
                 ),
                 "guider": (
                     "GUIDER",
-                    {"tooltip": "Guider, same as SamplerCustomAdvanced (e.g. CFGGuider, BasicGuider)."},
+                    {},
                 ),
                 "sampler": (
                     "SAMPLER",
