@@ -1,4 +1,4 @@
-# ComfyUI MiniMax-H3 SPEED Sampler
+# ComfyUI SPEED Sampler
 
 > [!WARNING]
 > **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0).
@@ -18,7 +18,7 @@ Make video and image generation faster without retraining.
 
 ```bash
 cd ComfyUI/custom_nodes/
-git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
+git clone https://github.com/StanLukuvka/ComfyUI-SPEED.git
 # restart ComfyUI
 ```
 
