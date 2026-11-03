@@ -57,6 +57,7 @@ V2 updates the SPEED nodes and reworks several parts of the implementation.
 
 ### Fixed
 
+- Edit models (Flux 3 Klein and others that take `reference_latents`) no longer crop or zoom at coarse stages. Their reference images share the image's position grid from 0, so a coarse stage saw only the reference's top-left corner. The KSampler nodes now scale `reference_latents` with each stage and restore them for the last one. MiniMax-H3 references still stay at full resolution.
 - Sigma Harvest Advanced on a plain 5-D image latent (such as Krea 2's `[B,C,1,H,W]`) no longer calibrates silently; it returns the `no_captures` error that points at the KSampler nodes.
 - `direct_coarse` now draws its transition fill noise on the CPU, as ComfyUI draws its own noise, so a seed gives the same image on every device. Before, it was drawn on the latent's device, so CPU and GPU (and possibly different GPUs) gave different images. This changes `direct_coarse` images for the same seed, often the whole composition, because the fill seeds detail the model builds on; speed is unchanged.
 - Fixed Automatic silently coercing invalid stage counts; only 2, 3, or 4 are accepted.
