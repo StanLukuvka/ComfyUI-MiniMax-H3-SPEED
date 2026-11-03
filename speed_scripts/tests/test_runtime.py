@@ -313,6 +313,27 @@ def test_image_run_fits_a_generic_empty_latent_to_the_model_first(monkeypatch):
     assert out["samples"].shape == (1, 4, 8, 8)
 
 
+
+def test_edit_model_reference_latents_scale_with_each_stage_and_are_restored():
+    # Edit models lay reference_latents on the image's position grid from 0, so a
+    # coarse stage that kept them full size would only see their top-left corner.
+    guider = OracleFlowGuider(torch.zeros(1, 4, 12, 12))
+    references = [torch.rand(1, 4, 12, 12), torch.rand(1, 4, 6, 12)]
+    guider.original_conds = {"positive": [{"reference_latents": list(references)}], "negative": []}
+    held = guider.original_conds["positive"][0]["reference_latents"]
+    seen = []
+    sample = guider.sample
+
+    def recording_sample(*args, **kwargs):
+        seen.append([tuple(latent.shape[-2:]) for latent in held])
+        return sample(*args, **kwargs)
+
+    guider.sample = recording_sample
+    _run(_cfg((1 / 3, 2 / 3, 1.0)), guider, latent=image_latent((1, 4, 12, 12)), model_type="flow_image")
+
+    assert seen == [[(4, 4), (2, 4)], [(8, 8), (4, 8)], [(12, 12), (6, 12)]]
+    assert all(latent is original for latent, original in zip(held, references))
+
 # A small fit whose two coarse thresholds sit at about 0.916 and 0.862 on an 8x8 latent.
 _I2I_FIT = dict(delta=.05, noise_amplitude=2.0, noise_decay_exponent=1.0)
 

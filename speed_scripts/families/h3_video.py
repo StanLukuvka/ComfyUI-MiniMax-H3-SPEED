@@ -148,6 +148,7 @@ class H3VideoFamily:
     name = "h3_video"
     nodes = "SPEED Advanced nodes"
     accepts_source_latent = False
+    scales_reference_latents = False
 
     def __init__(self, guider):
         self.video_shift, self.audio_shift, self.audio_scale = resolve_sigma_shifts(guider)
