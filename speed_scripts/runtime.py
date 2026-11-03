@@ -243,7 +243,8 @@ def run_stages(
         stock_callback = _build_preview_callback(guider, global_total, x0_output)
     preview_guard = _PreviewGuard()
 
-    walker = LatentWalker(guider)
+    reference_hw = tuple(full_main.shape[-2:]) if family.scales_reference_latents else None
+    walker = LatentWalker(guider, reference_hw)
     global_start = 0
     global_done = 0
 
