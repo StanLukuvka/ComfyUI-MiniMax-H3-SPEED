@@ -1,4 +1,4 @@
-# AGENTS.md — ComfyUI-MiniMax-H3-SPEED-Sampler
+# AGENTS.md — ComfyUI SPEED Sampler
 
 Rules for working on this pack. Usage, reference A/beta values and per-sampler results: `README.md`. Migration notes: `CHANGELOG.md`.
 

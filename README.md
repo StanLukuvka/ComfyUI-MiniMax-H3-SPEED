@@ -1,4 +1,4 @@
-# ComfyUI MiniMax-H3 SPEED Sampler
+# ComfyUI SPEED Sampler
 
 > [!WARNING]
 > **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0).
