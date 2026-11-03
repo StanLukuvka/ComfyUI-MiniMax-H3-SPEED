@@ -18,7 +18,7 @@ Make video and image generation faster without retraining.
 
 ```bash
 cd ComfyUI/custom_nodes/
-git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
+git clone https://github.com/StanLukuvka/ComfyUI-SPEED.git
 # restart ComfyUI
 ```
 

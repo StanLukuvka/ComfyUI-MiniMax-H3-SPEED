@@ -355,7 +355,7 @@
       ],
       "title": "1. Harvest (calibrate once; unmute with Ctrl+M)",
       "properties": {
-        "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
+        "aux_id": "StanLukuvka/ComfyUI-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
         "Node name for S&R": "SPEEDKSamplerHarvest"
       },
@@ -467,7 +467,7 @@
       ],
       "title": "2. SPEED Automatic",
       "properties": {
-        "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
+        "aux_id": "StanLukuvka/ComfyUI-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
         "Node name for S&R": "SPEEDKSampler"
       },
@@ -635,7 +635,7 @@
       ],
       "title": "3. SPEED Manual (alternative to 2)",
       "properties": {
-        "aux_id": "StanLukuvka/ComfyUI-MiniMax-H3-SPEED",
+        "aux_id": "StanLukuvka/ComfyUI-SPEED",
         "ver": "4e3ddaf6f259697a5081e2cb9490196b482aa7fc",
         "Node name for S&R": "SPEEDKSamplerManual"
       },
