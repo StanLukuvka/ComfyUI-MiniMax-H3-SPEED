@@ -4,6 +4,19 @@ All notable changes to this project are documented here. New releases should be 
 
 ## [2.0.0] - Unreleased
 
+### Highlights
+
+V2 updates the SPEED nodes and reworks several parts of the implementation.
+
+- **Sampler support:** SPEED is no longer tied to Euler. See the README's Samplers section.
+- **Six nodes in two families**; see the README's "Which node do I need?".
+- **Sigma Harvest is sampler-aware**, so its calibration reflects the sampler you are actually using.
+- **Automatic planning path rewritten:** stale code removed, and stage transitions are simpler to calculate. Automatic and Manual now share the same planning code instead of maintaining separate versions of the same logic.
+- **Tighter I2V handling:** keyframe latents are always resized from their original full-resolution copy instead of repeatedly resizing an already-resized tensor. TL;DR: I2V probably no longer gets progressively blurrier every time SPEED changes resolution.
+- **One generation:** progress and previews now behave like one generation instead of several unrelated sampler calls.
+- **Sigma Harvest uses much less memory.** V1 kept every full-resolution residual tensor until the native pass finished and only analysed them afterwards. V2 converts each residual into a small radial power profile as soon as the callback receives it, then discards the large tensor.
+- **Both noise policies kept:** `direct_coarse` is still the default. I am not convinced `coupled_full_grid` is doing anything useful anymore, but I also cannot confirm that removing it would not make some cases worse, so I left it in. V2 at least avoids recomputing the same full-grid DCT at every transition.
+
 ### Added
 
 - Added three KSampler-style nodes: `SPEEDKSampler` (`SPEED — KSampler`), `SPEEDKSamplerManual` (`SPEED — KSampler (Manual)`) and `SPEEDKSamplerHarvest` (`SPEED — KSampler Sigma Harvest`). They take `model`, conditioning and a `latent_image` like ComfyUI's KSampler and build the noise, CFG guider, sampler and sigma schedule internally (`speed_scripts/ksampler_inputs.build_ksampler_inputs`), with KSampler's penultimate-sigma discard and denoise slicing, then run the same SPEED pipeline as the Advanced nodes. `SPEEDKSampler` and `SPEEDKSamplerManual` return the latent unchanged when `denoise` leaves fewer than two sigmas, as KSampler does. `SPEEDKSamplerHarvest` has no `denoise` widget: it always calibrates on the full schedule (`denoise` 1.0).
