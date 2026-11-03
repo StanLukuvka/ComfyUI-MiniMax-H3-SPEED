@@ -13,6 +13,9 @@ Make video and image generation faster without retraining.
 - **Runs on:** MiniMax-H3 video and flow image models (MOSS Image, Krea 2).
 - H3 audio always stays at full resolution.
 
+> [!NOTE]
+> SPEED isn't a new acceleration method developed for this node pack. It's based on the Stanford paper [*Spectral Progressive Diffusion for Efficient Image and Video Generation*](https://arxiv.org/abs/2605.18736) by Howard Xiao, Brian Chao, Lior Yariv and Gordon Wetzstein (2026). This pack is an independent ComfyUI implementation; see [Citation](#citation).
+
 
 ## Installation
 
@@ -208,6 +211,19 @@ For each stage scale `s`, Automatic uses `ω = s·min(H,W)/2`, evaluates `P = A�
 - Leave `seed_offset` at 10000 unless you specifically want a different `direct_coarse` fill pattern for the same seed.
 
 </details>
+
+## Citation
+
+If you use SPEED in research, cite the original paper:
+
+```bibtex
+@article{xiao2026speed,
+  title   = {Spectral Progressive Diffusion for Efficient Image and Video Generation},
+  author  = {Xiao, Howard and Chao, Brian and Yariv, Lior and Wetzstein, Gordon},
+  journal = {arXiv preprint arXiv:2605.18736},
+  year    = {2026}
+}
+```
 
 ## Changelog
 
