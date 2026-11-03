@@ -209,6 +209,10 @@ For each stage scale `s`, Automatic uses `ω = s·min(H,W)/2`, evaluates `P = A�
 
 </details>
 
+## Changelog
+
+See **[CHANGELOG.md](CHANGELOG.md)** for the detailed API-level changes from the point where I started tracking them.
+
 ## License
 
 **PolyForm Noncommercial 1.0.0** — see [LICENSE.md](LICENSE.md). Noncommercial use only.
