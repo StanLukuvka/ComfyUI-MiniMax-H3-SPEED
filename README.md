@@ -34,6 +34,49 @@ git clone https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED.git
 > [!TIP]
 > **MiniMax-H3 reference values** (measured with `euler`): `noise_amplitude = 35.4213`, `noise_decay_exponent = 1.0126`. You can fill these in as a start. However, it is highly recommended to run **Sigma Harvest** once to get numbers that fit your specific workflow.
 
+## Evidence
+
+Same seed and prompt for every run, so native and SPEED can be compared directly. All results use Euler.
+
+### MiniMax-H3 video
+
+| Native | SPEED, 4 stages, Δ 0.05 (1.58×) |
+|---|---|
+| ![Native](evidence/h3_evidence/gifs/NATIVE.gif) | ![SPEED 4-stage Δ 0.05](evidence/h3_evidence/gifs/0.05_4_stage.gif) |
+
+- **Clip:** a 5 s 0.5 MP latte-art pour in a dark café, Modal L40S.
+- **Calibration:** one Harvest run (A 35.4213, β 1.0126).
+- **Native:** 276 s in the Δ 0.005 session and 288 s in the Δ 0.01/0.05 session; each speedup is against its own session.
+
+| Δ | 2 stages | 3 stages | 4 stages |
+|---|---|---|---|
+| 0.005 | 238 s (1.16×) | 236 s (1.17×) | 227 s (1.22×) |
+| 0.01 | 238 s (1.21×) | 226 s (1.27×) | 224 s (1.29×) |
+| 0.05 | 206 s (1.40×) | 194 s (1.48×) | **182 s (1.58×)** |
+
+- None of the ten clips has a colour flash; every run keeps the pour, the latte art and readable lettering.
+- All ten GIFs and the original MP4s: [evidence/h3_evidence](evidence/h3_evidence/README.md).
+
+> [!TIP]
+> **Rule of thumb:** use Δ 0.005 for quality-first runs, Δ 0.01 for a balance, and Δ 0.05 for the most speed.
+
+### Image stills (MOSS Image, Krea 2)
+
+| MOSS Image, native | MOSS Image, SPEED Automatic (1.26×) |
+|---|---|
+| ![Native](evidence/image_evidence/images/moss_plain.jpg) | ![SPEED Automatic](evidence/image_evidence/images/moss_auto3.jpg) |
+
+- **Scene:** a ramen stall at night as a still, RTX 5070 Laptop; speedups use the unrounded times.
+
+| Model | Native | Automatic 3 stages, Δ 0.05 | Manual, 0.5× to half the steps |
+|---|---|---|---|
+| MOSS Image, 1344×768, 20 steps, CFG 5 | 22 s | 18 s (1.26×) | 14 s (1.54×) |
+| Krea 2 (raw, fp8), 1216×832, 52 steps, CFG 3.5 | 283 s | 215 s (1.31×) | 183 s (1.55×) |
+
+- Every SPEED run was clean and as detailed as native.
+- `coupled_full_grid` keeps the native composition at the same seed; small details such as an object count can change.
+- All runs, including Krea 2 and every stage count: [evidence/image_evidence](evidence/image_evidence/README.md).
+
 ## Which node do I need?
 
 The pack has six nodes in two families:
@@ -93,7 +136,7 @@ For base H3 with **Euler**, you can use the shipped reference values instead of 
 | Balanced | `0.01` | Faster, and still clean in the reference clip. |
 | Fast | `0.05` | The fastest, and also clean in the reference clip. Check dark scenes and low step counts (turbo LoRA) for colour pulses. |
 
-See the [evidence section](evidence/h3_evidence/README.md) for examples of how these settings affect generation.
+See [Evidence](#evidence) for examples of how these settings affect generation.
 
 ## Samplers
 
@@ -138,36 +181,6 @@ Most samplers work. The ones that don't, on H3:
 - The first stage starts from the encoded image shrunk to that stage's size.
 - Automatic skips coarse stages the shortened schedule has already passed, so a low `denoise` saves less, while Manual keeps your stages.
 - Run Harvest on an empty latent: an encoded image changes what it measures.
-
-### Image timings
-
-RTX 5070 Laptop, a ramen stall at night as a still ([evidence](evidence/image_evidence/README.md)); speedups use the unrounded times:
-
-| Model | Native | Automatic 3 stages, Δ 0.05 | Manual, 0.5× to half the steps |
-|---|---|---|---|
-| MOSS Image, 1344×768, 20 steps, CFG 5 | 22 s | 18 s (1.26×) | 14 s (1.54×) |
-| Krea 2 (raw, fp8), 1216×832, 52 steps, CFG 3.5 | 283 s | 215 s (1.31×) | 183 s (1.55×) |
-
-- Every SPEED run was clean and as detailed as native.
-- `coupled_full_grid` keeps the native composition at the same seed; small details such as an object count can change.
-
-## Speed improvements
-
-- **Clip:** a 5 s 0.5 MP latte-art pour in a dark café, same seed, Modal L40S, Euler only.
-- **Calibration:** one Harvest run (A 35.4213, β 1.0126).
-- **Native:** 276 s in the Δ 0.005 session and 288 s in the Δ 0.01/0.05 session; each speedup is against its own session.
-
-| Δ | 2 stages | 3 stages | 4 stages |
-|---|---|---|---|
-| 0.005 | 238 s (1.16×) | 236 s (1.17×) | 227 s (1.22×) |
-| 0.01 | 238 s (1.21×) | 226 s (1.27×) | 224 s (1.29×) |
-| 0.05 | 206 s (1.40×) | 194 s (1.48×) | **182 s (1.58×)** |
-
-- None of the ten clips has a colour flash; every run keeps the pour, the latte art and readable lettering.
-- See [evidence/h3_evidence/README.md](evidence/h3_evidence/README.md) for the GIFs and links to the original MP4s.
-
-> [!TIP]
-> **Rule of thumb:** use Δ 0.005 for quality-first runs, Δ 0.01 for a balance, and Δ 0.05 for the most speed.
 
 ## Troubleshooting
 
