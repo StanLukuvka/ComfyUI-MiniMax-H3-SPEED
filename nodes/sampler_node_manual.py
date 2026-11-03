@@ -1,81 +1,57 @@
-"""Manual MiniMax-H3 SPEED sampler with an explicit stage schedule."""
+"""Manual SPEED sampler with an explicit stage schedule."""
 
 from __future__ import annotations
 
 import comfy.utils
 
-from speed_scripts.config import RATIO_MODES
-from speed_scripts.h3_runtime import run_speed_pipeline
+from speed_scripts.node_widgets import (
+    ADVANCED_BASE_INPUTS,
+    SAMPLER_INPUT_MANUAL,
+    SPEED_MANUAL_WIDGETS,
+)
+from speed_scripts.runtime import run_speed_pipeline
 from speed_scripts.planning import build_manual_speed_config
-from speed_scripts.sampler_support import SUPPORTED_SPEED_SAMPLERS
 
 
-class MiniMaxH3SPEEDSamplerManual:
+class SPEEDSamplerManual:
     """Progressive-resolution SPEED sampling with user-defined stage boundaries."""
 
     DESCRIPTION = (
-        "Manual SPEED sampler — set up to four (goal, resolution) pairs by hand. "
-        "For every stage except the last active one, goal marks where that stage "
-        "ends and resolution is its scale (0.25 = quarter). The final active stage "
-        "always runs to the end of the sigma schedule. Set goal or resolution to 0 "
-        "to skip a stage. Use this to copy known schedules or test custom ladders."
+        "Manual SPEED sampler. The last active stage runs to the end of the "
+        "schedule; set goal or resolution to 0 to skip a stage."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
+    OUTPUT_TOOLTIPS = (
+        "Final latent at full resolution.",
+        "Latent of the model's last clean-image (x0) estimate, as from SamplerCustomAdvanced.",
+    )
     FUNCTION = "sample"
-    CATEGORY = "sampling/minimax_h3_speed"
+    CATEGORY = "sampling/speed"
+    # The node decides the model family: the Advanced nodes run MiniMax-H3.
+    MODEL_TYPE = "h3_video"
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "noise": ("NOISE",),
-                "guider": ("GUIDER",),
-                "sigmas": ("SIGMAS",),
-                "latent_image": ("LATENT",),
-                "noise_policy": (
-                    ["direct_coarse", "coupled_full_grid"],
-                    {"default": "direct_coarse"},
-                ),
-                "seed_offset": (
-                    "INT",
-                    {"default": 10000, "min": 0, "max": 2**31 - 1},
-                ),
-                "ratio_mode": (list(RATIO_MODES), {"default": "steps"}),
-                "transition_goal_1": ("FLOAT", {"default": 3, "min": 0, "max": 1000}),
-                "transition_resolution_1": (
-                    "FLOAT",
-                    {"default": 0.25, "min": 0, "max": 1},
-                ),
-                "transition_goal_2": ("FLOAT", {"default": 5, "min": 0, "max": 1000}),
-                "transition_resolution_2": (
-                    "FLOAT",
-                    {"default": 0.5, "min": 0, "max": 1},
-                ),
-                "transition_goal_3": ("FLOAT", {"default": 8, "min": 0, "max": 1000}),
-                "transition_resolution_3": (
-                    "FLOAT",
-                    {"default": 0.75, "min": 0, "max": 1},
-                ),
-                "transition_goal_4": ("FLOAT", {"default": 15, "min": 0, "max": 1000}),
-                "transition_resolution_4": (
-                    "FLOAT",
-                    {"default": 1.0, "min": 0, "max": 1},
-                ),
-                "sampler_name": (
-                    list(SUPPORTED_SPEED_SAMPLERS),
-                    {"default": "euler"},
-                ),
-            },
+        # Widget definitions live in speed_scripts/node_widgets.py; the key order is the
+        # public contract (saved workflows store widget values by position).
+        required = {
+            "noise": ADVANCED_BASE_INPUTS["noise"],
+            "guider": ADVANCED_BASE_INPUTS["guider"],
+            "sampler": SAMPLER_INPUT_MANUAL,
+            "sigmas": ADVANCED_BASE_INPUTS["sigmas"],
+            "latent_image": ADVANCED_BASE_INPUTS["latent_image"],
         }
+        required.update(SPEED_MANUAL_WIDGETS)
+        return {"required": required}
 
     def sample(
         self,
         noise,
         guider,
+        sampler,
         sigmas,
         latent_image,
-        sampler_name,
         noise_policy="direct_coarse",
         seed_offset=10000,
         ratio_mode="steps",
@@ -107,18 +83,30 @@ class MiniMaxH3SPEEDSamplerManual:
             sigmas,
             latent_image,
             config,
-            sampler_name=sampler_name,
+            sampler=sampler,
+            model_type=self.MODEL_TYPE,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
         )
 
 
-NODE_CLASS_MAPPINGS = {"MiniMaxH3SPEEDSamplerManual": MiniMaxH3SPEEDSamplerManual}
+class MiniMaxH3SPEEDSamplerManual(SPEEDSamplerManual):
+    """Deprecated ID for ``SPEEDSamplerManual``, kept so saved workflows still load."""
+
+    DEPRECATED = True
+
+
+NODE_CLASS_MAPPINGS = {
+    "SPEEDSamplerManual": SPEEDSamplerManual,
+    "MiniMaxH3SPEEDSamplerManual": MiniMaxH3SPEEDSamplerManual,
+}
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MiniMaxH3SPEEDSamplerManual": "MiniMax H3 SPEED — Sampler (Manual Step-Through)"
+    "SPEEDSamplerManual": "SPEED — Sampler Advanced (Manual)",
+    "MiniMaxH3SPEEDSamplerManual": "MiniMax H3 SPEED — Sampler (Manual Step-Through) (deprecated)",
 }
 
 __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
+    "SPEEDSamplerManual",
     "MiniMaxH3SPEEDSamplerManual",
 ]

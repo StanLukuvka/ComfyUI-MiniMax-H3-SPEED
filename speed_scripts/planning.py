@@ -1,8 +1,14 @@
-"""Build SPEED stage sizes, transition points, and node configs."""
+"""Build SPEED stage sizes, transition points, and node configs.
+
+``plan_stages`` turns a ``SpeedConfig``, the sigma schedule, and the full main
+stream's shape into one ``StagePlan``. It runs after ``prepare_family`` and
+before the runtime's stage loop.
+"""
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from .config import RATIO_MODES, SpeedConfig
 
@@ -77,6 +83,46 @@ def resolve_transition_steps(
         threshold = activation_threshold(power, config.delta)
         steps.append(find_first_step_below(sigmas, threshold))
     return tuple(steps)
+
+
+@dataclass(frozen=True)
+class StagePlan:
+    """One scale and ``(h, w, t)`` per stage, and the sigma-schedule index of each resolution change.
+
+    ``scales`` is ``config.scales`` less any coarse stages the schedule starts below.
+    """
+
+    scales: tuple[float, ...]
+    stage_shapes: tuple[tuple[int, int, int], ...]
+    transition_steps: tuple[int, ...]
+
+
+def plan_stages(config: SpeedConfig, sigmas, full_shape) -> StagePlan:
+    """Plan every stage's ``(h, w, t)`` and the transition steps.
+
+    ``T, H, W`` come from the last three axes of the main stream's ``full_shape``.
+    """
+    if sigmas.ndim != 1 or len(sigmas) < 3:
+        raise ValueError("sigmas must be a one-dimensional schedule")
+
+    scales = config.scales
+    full_t, full_h, full_w = full_shape[-3:]
+    stage_shapes = tuple(
+        stage_resolution(config, index, full_h, full_w, full_t)
+        for index in range(len(scales))
+    )
+    transition_steps = resolve_transition_steps(config, sigmas, full_h, full_w)
+    if len(transition_steps) != len(scales) - 1:
+        raise ValueError("transition steps count must be n_scales - 1")
+    if config.transition_mode != "explicit":
+        # A schedule that starts below a stage's threshold (denoise < 1) has that
+        # stage's band active from the first step: skip the stage.
+        skip = sum(1 for step in transition_steps if step == 0)
+        scales, stage_shapes = scales[skip:], stage_shapes[skip:]
+        transition_steps = transition_steps[skip:]
+    if any(not 0 < step < len(sigmas) - 1 for step in transition_steps):
+        raise ValueError("transition step must be inside the sigma schedule")
+    return StagePlan(scales=tuple(scales), stage_shapes=stage_shapes, transition_steps=transition_steps)
 
 
 def validate_transition_steps(transition_steps, n_sigmas: int) -> None:
@@ -168,14 +214,15 @@ def build_manual_speed_config(
         transition_steps=transition_steps,
         transition_mode="explicit",
         noise_policy=noise_policy,
-        delta=0.01,
         transition_seed_offset=int(seed_offset),
     )
 
 
 __all__ = [
     "STAGES_TO_SCALES",
+    "StagePlan",
     "stage_resolution",
+    "plan_stages",
     "power_at_frequency",
     "activation_threshold",
     "find_first_step_below",

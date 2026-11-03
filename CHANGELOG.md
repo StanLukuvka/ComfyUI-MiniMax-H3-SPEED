@@ -4,18 +4,46 @@ All notable changes to this project are documented here. New releases should be 
 
 ## [2.0.0] - Unreleased
 
+### Highlights
+
+V2 updates the SPEED nodes and reworks several parts of the implementation.
+
+- **Sampler support:** SPEED is no longer tied to Euler. See the README's Samplers section.
+- **Six nodes in two families**; see the README's "Which node do I need?".
+- **Sigma Harvest is sampler-aware**, so its calibration reflects the sampler you are actually using.
+- **Automatic planning path rewritten:** stale code removed, and stage transitions are simpler to calculate. Automatic and Manual now share the same planning code instead of maintaining separate versions of the same logic.
+- **Tighter I2V handling:** keyframe latents are always resized from their original full-resolution copy instead of repeatedly resizing an already-resized tensor. TL;DR: I2V probably no longer gets progressively blurrier every time SPEED changes resolution.
+- **One generation:** progress and previews now behave like one generation instead of several unrelated sampler calls.
+- **Sigma Harvest uses much less memory.** V1 kept every full-resolution residual tensor until the native pass finished and only analysed them afterwards. V2 converts each residual into a small radial power profile as soon as the callback receives it, then discards the large tensor.
+- **Both noise policies kept:** `direct_coarse` is still the default. I am not convinced `coupled_full_grid` is doing anything useful anymore, but I also cannot confirm that removing it would not make some cases worse, so I left it in. V2 at least avoids recomputing the same full-grid DCT at every transition.
+
 ### Added
 
-- Added sampler selection to Automatic, Manual, and Sigma Harvest.
-- Added support for Euler, Heun, DPM2, Exp Heun 2 X0, and RES Multistep.
-- Added a run-scoped RES Multistep adapter.
+- Added three KSampler-style nodes: `SPEEDKSampler` (`SPEED — KSampler`), `SPEEDKSamplerManual` (`SPEED — KSampler (Manual)`) and `SPEEDKSamplerHarvest` (`SPEED — KSampler Sigma Harvest`). They take `model`, conditioning and a `latent_image` like ComfyUI's KSampler and build the noise, CFG guider, sampler and sigma schedule internally (`speed_scripts/ksampler_inputs.build_ksampler_inputs`), with KSampler's penultimate-sigma discard and denoise slicing, then run the same SPEED pipeline as the Advanced nodes. `SPEEDKSampler` and `SPEEDKSamplerManual` return the latent unchanged when `denoise` leaves fewer than two sigmas, as KSampler does. `SPEEDKSamplerHarvest` has no `denoise` widget: it always calibrates on the full schedule (`denoise` 1.0).
+- Added `run_harvest` in `speed_scripts/harvest.py`, the Harvest execution core extracted from the node; `SPEEDSigmaHarvest` and `SPEEDKSamplerHarvest` are both thin wrappers over it. No behaviour change.
+- Added image-to-image for flow image models: a VAE-encoded `latent_image` with BasicScheduler's `denoise` below 1 (KSampler's `denoise`) seeds the first stage with the image shrunk to that stage's size. Automatic skips coarse stages whose boundary the shortened schedule has already passed. MiniMax-H3 still requires an empty latent. `StagePlan` gained a `scales` field for the stages that run.
+- Added a `sampler` (SAMPLER) input to the Advanced Automatic, Manual, and Sigma Harvest nodes, fed by KSamplerSelect or any other SAMPLER node. The KSampler nodes pick the sampler by name with `sampler_name`.
+- Added flow image models such as MOSS Image and Krea 2, run by the KSampler nodes. Sampler and Harvest both reject non-flow models.
+- Added example workflows `workflows/image_moss_SPEED.json` and `workflows/image_krea2_SPEED.json`, and image-model timings (MOSS Image and Krea 2, `coupled_full_grid`, RTX 5070 Laptop) to `evidence/image_evidence/README.md`; split `evidence/` into `h3_evidence/` and `image_evidence/`. The image evidence page uses the H3 page's layout, with one row and image per run (native, 2-stage at Δ 0.005 and 0.05, 3- and 4-stage at Δ 0.05, and Manual). The README lists the three example workflows in one table, and the image workflows' Harvest nodes use Δ 0.05 like their Automatic nodes.
 - Added continuous progress and preview reporting across the full SPEED run.
-- Added broader regression coverage for sampler selection, RES state, I2V, transitions, Harvest, workflows, and noise policies.
+- Replaced the three H3 example workflows (`video_minimax_h3_SPEED_SIGMA.json`, `_Sigma_Calculated.json`, `_Sigma_Manual.json`) with one flat `workflows/video_h3_SPEED.json`, laid out like the image examples: Harvest, Automatic and Manual on one set of loaders, with only Automatic active.
+- Added a ComfyUI tooltip to every input and output of Automatic, Manual, and Sigma Harvest.
+- Added broader regression coverage for the sampler input, I2V, transitions, Harvest, workflows, and noise policies.
 
 ### Changed
 
+- Renamed the display names of the three existing nodes: `SPEEDSampler` → `SPEED — Sampler Advanced`, `SPEEDSamplerManual` → `SPEED — Sampler Advanced (Manual)`, `SPEEDSigmaHarvest` → `SPEED — Sigma Harvest Advanced`. The node IDs are unchanged, so saved workflows still load; the deprecated `MiniMaxH3*` IDs and their replacements are unaffected. Their widget definitions moved to the shared `speed_scripts/node_widgets.py` with byte-identical `INPUT_TYPES` key order.
+- The image example workflows (`workflows/image_moss_SPEED.json`, `workflows/image_krea2_SPEED.json`) now use `SPEEDKSampler` / `SPEEDKSamplerManual` / `SPEEDKSamplerHarvest` instead of the Advanced nodes, dropping the standalone `RandomNoise`, `CFGGuider`, `KSamplerSelect` and `BasicScheduler` nodes that only fed SPEED; the harvested A/beta values are unchanged. `workflows/video_h3_SPEED.json` keeps the Advanced nodes.
+- Rewrote the README's opening as a Quick start: when `noise_amplitude` and `noise_decay_exponent` are needed, the H3 Euler reference values, and how to read Harvest's text output (Preview Any). Explained Δ, `noise_policy`, Harvest's `r²` and `health`, Manual's goal units and the `output`/`denoised_output` outputs. Manual is now described as the node for experimenting. Fixed the stale β (0.77 → about 1.01) and step count (28–32 → 20) in the Advanced notes. The sampler tooltips no longer mention baked numbers, Harvest's paste line drops the non-existent `transition_mode=delta_custom`, and the H3 workflow's notes no longer say the calibration is baked in and send issue reports to the SPEED repo.
+- Replaced the H3 evidence (`evidence/h3_evidence/`) with a 5 s night barista clip at 960x544 on a Modal L40S: native against 2-, 3- and 4-stage SPEED at Δ 0.005, 0.01 and 0.05, all with one Harvest calibration (A 35.4213, β 1.0126). The original MP4s are on the `evidence-h3-2026-10` release. `workflows/video_h3_SPEED.json` now uses the barista prompt, a 5 s duration and this calibration, and the README speed table and reference values follow the new evidence.
+- Harvest now picks its family with `families.get_family` like the samplers, instead of its own `check_model_type` + flow-sampling branch. `main_stream` moved from a `families` free function to a family method (`family.main_stream`), and `harvest.compute_residual` takes the family. An image model with EPS/v-prediction still errors the same way, now raised by `FlowImageFamily`'s constructor.
+- `run_speed_pipeline` now runs family first, then one plan: `families.prepare_family` (new `prepare_family` / `PreparedLatent`) splits the latent, `planning.plan_stages` (new `plan_stages` / `StagePlan`) computes the stage shapes and transition points, and the new `runtime.run_stages` runs the stage loop. No behaviour change (internal: pipeline runs family -> plan -> stages).
+- Renamed the image family to `flow_image`, because only flow (CONST) image models are supported; its class is now `FlowImageFamily` in `families/flow_image.py`. In the same change, `speed_scripts/families.py` became the `speed_scripts/families/` package with one file per family and the registry in `families/__init__.py`.
+- Renamed the nodes for the model-agnostic pack: `MiniMaxH3SPEEDSampler` → `SPEEDSampler`, `MiniMaxH3SPEEDSamplerManual` → `SPEEDSamplerManual`, `MiniMaxH3HarvestToConfig` → `SPEEDSigmaHarvest`, display names `SPEED — …`, category `sampling/speed`. The old IDs stay registered as deprecated subclasses and as node replacements, so saved workflows still load and can be swapped in one step. The example workflows use the new IDs.
+- Automatic's `noise_amplitude` and `noise_decay_exponent` no longer default to H3's Euler fit (12.105 / 0.773). They start at 0, which stops with an error asking for a Harvest calibration. The H3 example workflow sets the H3 values explicitly.
+- `SpeedConfig` no longer bakes in H3 numbers: `scales` is required, and `delta` / `noise_amplitude` / `noise_decay_exponent` default to `None` and are required only for `delta_custom`.
 - Sigma Harvest now defaults to the same 0.005 tolerance as Automatic.
-- Sigma Harvest now calibrates the selected native sampler instead of assuming Euler.
+- Sigma Harvest now calibrates the connected sampler instead of assuming Euler.
 - Sigma Harvest now reports that its calibration is based on the empirical `x - denoised` residual spectrum.
 - Automatic transition planning now uses the live sigma schedule and current latent dimensions.
 - Automatic and Manual now share the same planning and validation code.
@@ -23,10 +51,14 @@ All notable changes to this project are documented here. New releases should be 
 - I2V keyframes are restored before the final stage and after failed runs.
 - Harvest now reduces residuals to radial DCT power profiles during sampling instead of keeping every full-resolution residual in memory.
 - `coupled_full_grid` now computes the full-grid DCT once per generation and reuses it across transitions.
-- The runtime and sampler-specific behavior are now separated into dedicated planning, sampler-support, and RES adapter modules.
+- The runtime is now separated into dedicated planning and execution modules, with per-model latent handling in `speed_scripts/families.py`. `h3_runtime.py` is now `runtime.py`; `unpack_latent` / `pack_latent` / `resolve_sigma_shifts` moved to `families.py` (`unpack_h3` / `pack_h3`). Harvest's `compute_video_residual` / `extract_video_stream` became `compute_residual` and `families.main_stream`.
+- Automatic, Manual, and Harvest now fit a generic empty latent (e.g. `EmptyLatentImage`) to the model's channels before sampling, as SamplerCustomAdvanced does. H3 nested latents are unchanged.
+- Harvest calibration JSON now reports `calibration_kind: empirical_residual_fit` and the `model_type`. The Harvest report text now starts with `Empirical <model_type> residual calibration` (for example `Empirical h3_video residual calibration`) instead of `Empirical H3 residual calibration`.
 
 ### Fixed
 
+- Sigma Harvest Advanced on a plain 5-D image latent (such as Krea 2's `[B,C,1,H,W]`) no longer calibrates silently; it returns the `no_captures` error that points at the KSampler nodes.
+- `direct_coarse` now draws its transition fill noise on the CPU, as ComfyUI draws its own noise, so a seed gives the same image on every device. Before, it was drawn on the latent's device, so CPU and GPU (and possibly different GPUs) gave different images. This changes `direct_coarse` images for the same seed, often the whole composition, because the fill seeds detail the model builds on; speed is unchanged.
 - Fixed Automatic silently coercing invalid stage counts; only 2, 3, or 4 are accepted.
 - Fixed non-finite calibration A/beta values passing `SpeedConfig` validation.
 - Fixed temporal schedules being able to finish below full temporal resolution.
@@ -34,7 +66,6 @@ All notable changes to this project are documented here. New releases should be 
 - Fixed committed Sigma Harvest workflow metadata to match the current two-output node contract.
 - Fixed preview callbacks continuing to run after the runtime had logged that preview updates were disabled.
 - Fixed unusable Harvest fits being presented as paste-ready Automatic calibration values.
-- Fixed RES history being unsafe to carry across resolution changes by resetting it at every SPEED transition.
 - Fixed repeated I2V resizing accumulating interpolation loss.
 - Fixed I2V conditioning remaining modified after some failed runs.
 - Fixed progress and previews behaving like separate runs for each SPEED stage.
@@ -42,7 +73,8 @@ All notable changes to this project are documented here. New releases should be 
 
 ### Removed
 
-- Removed legacy planner/walker shims, alternate Tolerance aliases, Harvest compatibility paths, and programmatic sampler-name fallbacks.
+- Removed the `model_type` widget. The Advanced nodes (and the deprecated `MiniMaxH3*` IDs) run MiniMax-H3 only; the KSampler nodes run flow image models only. **Breaking for saved workflows:** workflows saved with the widget load with every later widget value shifted by one; re-enter the SPEED widgets or load the updated example workflows.
+- Removed legacy planner/walker shims, alternate Tolerance aliases, and Harvest compatibility paths.
 - Removed V1 Automatic preset names; Automatic now uses only the explicit `stages` selector.
 - Removed the old `nodes_common.py` helper layer.
 - Removed cached full latent width and height from `SpeedConfig`.
