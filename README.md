@@ -98,7 +98,9 @@ See the [evidence section](evidence/h3_evidence/README.md) for examples of how t
 
 ## Samplers
 
-The Advanced nodes take a normal ComfyUI `SAMPLER` input, so connect **KSamplerSelect** (or any other SAMPLER node); the KSampler nodes pick the sampler by name, as KSampler does. Each SPEED stage is its own sampler call, so multistep samplers start their history fresh at every resolution change. Euler is the reference: the shipped calibration and benchmark evidence are Euler-derived, so re-run Harvest with the sampler you use.
+- The Advanced nodes take a normal ComfyUI `SAMPLER` input, so connect **KSamplerSelect** (or any other SAMPLER node); the KSampler nodes pick the sampler by name, as KSampler does.
+- Each SPEED stage is its own sampler call, so multistep samplers start their history fresh at every resolution change.
+- Euler is the reference: the shipped calibration and benchmark evidence are Euler-derived, so re-run Harvest with the sampler you use.
 
 Most samplers work. The ones that don't, on H3:
 
@@ -107,9 +109,8 @@ Most samplers work. The ones that don't, on H3:
 - `uni_pc`, `uni_pc_bh2`: break when a stage gets only one step. Use 2 stages, or more steps.
 - SDE samplers work but give a different shot from Euler at the same seed.
 
-Give every stage at least 2 steps. The full list is in [docs/samplers.md](docs/samplers.md). `heun`, `dpm_2` and `dpmpp_sde` run two model evaluations per step, so they take about 1.6× as long.
-
-Automatic and Manual return two LATENTs: use `output`. `denoised_output` is the model's last clean-image estimate, for debugging. Harvest returns its calibration text plus a diagnostic LATENT.
+> [!TIP]
+> Give every stage at least 2 steps. `heun`, `dpm_2` and `dpmpp_sde` run two model evaluations per step, so they take about 1.6× as long. The full list is in [docs/samplers.md](docs/samplers.md).
 
 ## Example workflows
 
