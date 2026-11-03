@@ -6,14 +6,13 @@
 
 > *"Why make big noise when little noise do trick?"*
 
-Make MiniMax-H3 video generation faster without retraining.
+Make video and image generation faster without retraining.
 
 - SPEED starts denoising on a cheaper low-resolution grid, then increases the resolution as finer detail becomes useful.
 - This avoids paying for full-resolution compute during the noisiest early steps.
 - **Runs on:** MiniMax-H3 video (Advanced nodes) and flow image models such as MOSS Image and Krea 2 (KSampler nodes).
 - H3 audio always stays at full resolution.
 
-**Contents:** [Installation](#installation) · [Quick start](#quick-start) · [Which node do I need?](#which-node-do-i-need) · [Samplers](#samplers) · [Example workflows](#example-workflows) · [Image models](#image-models) · [Speed improvements](#speed-improvements) · [Troubleshooting](#troubleshooting) · [Limitations](#current-limitations) · [V2](#v2-major-release)
 
 ## Installation
 
@@ -189,7 +188,7 @@ RTX 5070 Laptop, a ramen stall at night as a still ([evidence](evidence/image_ev
 - On the Advanced nodes the `latent_image` must start empty (both the video and audio streams). SPEED's I2V support comes through MiniMax-H3 keyframe conditioning, which is resized and restored separately.
 - The Advanced nodes expect the MiniMax-H3 nested latent layout: one video stream plus one audio stream.
 
-## Advanced — you don't need this to use it
+## Advanced (Optional Reading)
 
 <details>
 <summary>How Automatic picks the steps (click to expand)</summary>
@@ -212,21 +211,6 @@ For base H3, the reference values were harvested at 20 steps with the `simple` s
 - Leave `seed_offset` at 10000 unless you specifically want a different `direct_coarse` fill pattern for the same seed.
 
 </details>
-
-## V2 major release
-
-V2 updates the SPEED nodes and reworks several parts of the implementation.
-
-- **Sampler support:** SPEED is no longer tied to Euler. See [Samplers](#samplers).
-- **Six nodes in two families**; see [Which node do I need?](#which-node-do-i-need).
-- **Sigma Harvest is sampler-aware**, so its calibration reflects the sampler you are actually using.
-- **Automatic planning path rewritten:** stale code removed, and stage transitions are simpler to calculate. Automatic and Manual now share the same planning code instead of maintaining separate versions of the same logic.
-- **Tighter I2V handling:** keyframe latents are always resized from their original full-resolution copy instead of repeatedly resizing an already-resized tensor. TL;DR: I2V probably no longer gets progressively blurrier every time SPEED changes resolution.
-- **One generation:** progress and previews now behave like one generation instead of several unrelated sampler calls.
-- **Sigma Harvest uses much less memory.** V1 kept every full-resolution residual tensor until the native pass finished and only analysed them afterwards. V2 converts each residual into a small radial power profile as soon as the callback receives it, then discards the large tensor.
-- **Both noise policies kept:** `direct_coarse` is still the default. I am not convinced `coupled_full_grid` is doing anything useful anymore, but I also cannot confirm that removing it would not make some cases worse, so I left it in. V2 at least avoids recomputing the same full-grid DCT at every transition.
-
-See **[CHANGELOG.md](CHANGELOG.md)** for the detailed API-level changes from the point where I started tracking them.
 
 ## License
 
