@@ -1,5 +1,7 @@
 # ComfyUI SPEED Sampler
 
+A ComfyUI implementation of **SPEED** from [*Spectral Progressive Diffusion for Efficient Image and Video Generation*](https://arxiv.org/abs/2605.18736) by Howard Xiao, Brian Chao, Lior Yariv and Gordon Wetzstein (Stanford, 2026). The method is theirs; this pack brings it to ComfyUI's samplers and adds calibration for each model.
+
 > [!WARNING]
 > **Noncommercial** — [LICENSE.md](LICENSE.md) (PolyForm Noncommercial 1.0.0).
 > I don't expect this to be used commercially. If it genuinely will be, message me.
@@ -8,7 +10,7 @@
 
 Make video and image generation faster without retraining.
 
-- SPEED starts denoising on a cheaper low-resolution grid, then increases the resolution as finer detail becomes useful.
+- The paper's idea: start denoising on a cheaper low-resolution grid, then increase the resolution as finer detail becomes useful.
 - This avoids paying for full-resolution compute during the noisiest early steps.
 - **Runs on:** MiniMax-H3 video and flow image models (MOSS Image, Krea 2).
 - H3 audio always stays at full resolution.
@@ -208,6 +210,19 @@ For each stage scale `s`, Automatic uses `ω = s·min(H,W)/2`, evaluates `P = A�
 - Leave `seed_offset` at 10000 unless you specifically want a different `direct_coarse` fill pattern for the same seed.
 
 </details>
+
+## Citation
+
+If you use SPEED in research, cite the original paper:
+
+```bibtex
+@article{xiao2026speed,
+  title   = {Spectral Progressive Diffusion for Efficient Image and Video Generation},
+  author  = {Xiao, Howard and Chao, Brian and Yariv, Lior and Wetzstein, Gordon},
+  journal = {arXiv preprint arXiv:2605.18736},
+  year    = {2026}
+}
+```
 
 ## Changelog
 
