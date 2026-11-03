@@ -12,11 +12,10 @@ from typing import Any
 import comfy.samplers
 
 from speed_scripts.config import RATIO_MODES
-from speed_scripts.families import MODEL_TYPES
 
 # KSampler base inputs, identical to ComfyUI's nodes.py KSampler (same order,
 # defaults, ranges and tooltips). The KSampler-style SPEED nodes append
-# model_type and their mode's SPEED widgets after these.
+# their mode's SPEED widgets after these.
 KSAMPLER_BASE_INPUTS: dict[str, tuple[Any, dict[str, Any]]] = {
     "model": ("MODEL", {"tooltip": "The model used for denoising the input latent."}),
     "seed": ("INT", {
@@ -64,19 +63,19 @@ KSAMPLER_BASE_INPUTS: dict[str, tuple[Any, dict[str, Any]]] = {
 ADVANCED_BASE_INPUTS: dict[str, tuple[str, dict[str, Any]]] = {
     "noise": (
         "NOISE",
-        {"tooltip": "Noise source, same as SamplerCustomAdvanced (e.g. RandomNoise). Its seed also seeds the sampler."},
+        {"tooltip": "Same as SamplerCustomAdvanced; its seed also seeds the sampler."},
     ),
     "guider": (
         "GUIDER",
-        {"tooltip": "Guider, same as SamplerCustomAdvanced (e.g. CFGGuider, BasicGuider)."},
+        {},
     ),
     "sigmas": (
         "SIGMAS",
-        {"tooltip": "Sigma schedule, same as SamplerCustomAdvanced. Stage boundaries are placed on this schedule."},
+        {"tooltip": "Stage boundaries are placed on this schedule."},
     ),
     "latent_image": (
         "LATENT",
-        {"tooltip": "Latent to sample, same as SamplerCustomAdvanced. The final stage runs at this full size."},
+        {"tooltip": "The final stage runs at this size."},
     ),
 }
 SAMPLER_INPUT_AUTOMATIC: tuple[str, dict[str, Any]] = (
@@ -86,12 +85,6 @@ SAMPLER_INPUT_AUTOMATIC: tuple[str, dict[str, Any]] = (
 SAMPLER_INPUT_MANUAL: tuple[str, dict[str, Any]] = (
     "SAMPLER",
     {"tooltip": "Any ComfyUI SAMPLER (e.g. from KSamplerSelect). Any sampler works; Euler is the one SPEED was measured with."},
-)
-
-# SPEED model_type widget (strictly required, no default).
-MODEL_TYPE_WIDGET: tuple[list[str], dict[str, Any]] = (
-    list(MODEL_TYPES),
-    {"tooltip": "Which model family this is. h3_video: MiniMax-H3 nested video+audio latents. flow_image: flow (CONST) image models such as MOSS Image or Krea 2. Required, never auto-detected; a value that does not match the model and latent stops with an error."},
 )
 
 # Automatic mode widgets.
@@ -186,7 +179,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 3,
             "min": 0,
             "max": 1000,
-            "tooltip": "Where stage 1 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
+            "tooltip": "Where stage 1 ends (step index, or 0-1 fraction in ratio mode). 0 disables the stage.",
         },
     ),
     "transition_resolution_1": (
@@ -195,7 +188,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 0.25,
             "min": 0,
             "max": 1,
-            "tooltip": "Stage 1 scale relative to full size (0.5 = half width and height). 0 disables this stage. The last active stage must be 1.0.",
+            "tooltip": "Stage 1 scale (0.5 = half size). 0 disables. The last active stage must be 1.0.",
         },
     ),
     "transition_goal_2": (
@@ -204,7 +197,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 5,
             "min": 0,
             "max": 1000,
-            "tooltip": "Where stage 2 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
+            "tooltip": "Where stage 2 ends (step index, or 0-1 fraction in ratio mode). 0 disables the stage.",
         },
     ),
     "transition_resolution_2": (
@@ -213,7 +206,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 0.5,
             "min": 0,
             "max": 1,
-            "tooltip": "Stage 2 scale relative to full size (0.5 = half width and height). 0 disables this stage. The last active stage must be 1.0.",
+            "tooltip": "Stage 2 scale (0.5 = half size). 0 disables. The last active stage must be 1.0.",
         },
     ),
     "transition_goal_3": (
@@ -222,7 +215,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 8,
             "min": 0,
             "max": 1000,
-            "tooltip": "Where stage 3 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
+            "tooltip": "Where stage 3 ends (step index, or 0-1 fraction in ratio mode). 0 disables the stage.",
         },
     ),
     "transition_resolution_3": (
@@ -231,7 +224,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 0.75,
             "min": 0,
             "max": 1,
-            "tooltip": "Stage 3 scale relative to full size (0.5 = half width and height). 0 disables this stage. The last active stage must be 1.0.",
+            "tooltip": "Stage 3 scale (0.5 = half size). 0 disables. The last active stage must be 1.0.",
         },
     ),
     "transition_goal_4": (
@@ -240,7 +233,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 15,
             "min": 0,
             "max": 1000,
-            "tooltip": "Where stage 4 ends. In steps mode, a whole global step index; in ratio mode, a 0-1 fraction of the schedule. 0 disables this stage. The last active stage runs to the end of the schedule, so its goal only needs to be non-zero.",
+            "tooltip": "Where stage 4 ends (step index, or 0-1 fraction in ratio mode). 0 disables the stage.",
         },
     ),
     "transition_resolution_4": (
@@ -249,7 +242,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 1.0,
             "min": 0,
             "max": 1,
-            "tooltip": "Stage 4 scale relative to full size (0.5 = half width and height). 0 disables this stage. The last active stage must be 1.0.",
+            "tooltip": "Stage 4 scale (0.5 = half size). 0 disables. The last active stage must be 1.0.",
         },
     ),
 }

@@ -117,7 +117,7 @@ SIGMA_ONE_BOUNDARY = torch.tensor([1.0, 1.0, .5, 0.0])
     [
         ({**make_latent(), "noise_mask": torch.ones(1)}, _cfg(), SIGMAS, False, "noise masks"),
         ({"samples": NestedTensor([torch.ones(1, 1, 2, 8, 8), torch.zeros(1, 1, 2, 44)])},
-         _cfg(), SIGMAS, False, "h3_video requires an empty input latent"),
+         _cfg(), SIGMAS, False, "SPEED Advanced nodes require an empty input latent"),
         (make_latent(), _cfg(), SIGMAS[:2], False, "one-dimensional schedule"),
         (make_latent(), _cfg((.5, 1.0), (10,)), SIGMAS, False, "inside the sigma schedule"),
         # A boundary at sigma 1 cannot be carried into the next stage.

@@ -2,15 +2,15 @@
 
 Same seed, same prompt (a latte-art pour under a spotlight in a dark café, in [prompt.txt](prompt.txt)), on one Modal L40S (48 GB). All at `960×544`, 24 fps, 124 frames (5.17 s), with audio. GIFs are the full clip at 640 px and 12 fps; the MP4 links are the original renders, attached to the [evidence-h3-2026-10](https://github.com/StanLukuvka/ComfyUI-MiniMax-H3-SPEED/releases/tag/evidence-h3-2026-10) release, which also has `compare_all.mp4`, a grid of all ten.
 
-The prompt is built to show sampler damage: a dark scene for tint pulses, small printed lettering ("NOCTURNE") and a latte-art pattern for fine detail, a speckled stone counter for texture, and a slow push-in so any detail drift is visible.
+Dark scene, small lettering and fine texture, to expose artefacts.
 
 Settings: `minimax_h3_fl2va_pruned_int8_convrot`, euler, simple scheduler, 20 steps, BasicGuider, seed 960012452433733. SPEED runs use `direct_coarse` and seed_offset 10000.
 
-Timing: an untimed Sigma Harvest run first loaded the models and cached the prompt encoding, so each time below is a warm ComfyUI queue-to-finish time, including the VAE decode. The runs used two container sessions: Δ 0.005 in the first, Δ 0.01 and 0.05 in the second. Native was timed in both (276.2 s and 288.2 s; the two renders are identical), and each speedup is against the native time from its own session.
+Timing: warm queue-to-finish times, including VAE decode; each speedup is against the native time from the same session.
 
 Native is full-resolution Euler (SamplerCustomAdvanced, no SPEED): **276.2 s** and **288.2 s** in the two sessions.
 
-> **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other supported samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
+> **Scope:** Euler only. Re-harvest and benchmark for your sampler.
 
 All three groups use one calibration from a Sigma Harvest run on this prompt and seed: noise_amplitude 35.4213, noise_decay_exponent 1.0126 (r² 0.83, health good).
 

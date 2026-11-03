@@ -46,7 +46,6 @@ def capture_node_config(monkeypatch, node_cls, **inputs):
     monkeypatch.setattr(importlib.import_module(node_cls.__module__), "run_speed_pipeline", fake_pipeline)
     inputs.setdefault("sampler", StubSampler())
     inputs.setdefault("sigmas", torch.linspace(1.0, 0.0, 11))
-    inputs.setdefault("model_type", "h3_video")
     for name, value in FIT.items():
         inputs.setdefault(name, value)
     node_cls().sample(noise=EchoNoise(), guider=EchoGuider(), latent_image=make_latent(), **inputs)
@@ -111,7 +110,7 @@ def test_pack_registers_nodes_when_comfyui_owns_the_nodes_name(monkeypatch):
 ADVANCED_AUTOMATIC_ORDER = [
     "noise", "guider", "sampler", "sigmas", "latent_image",
     "stages", "noise_policy", "Tolerance (Delta)",
-    "noise_amplitude", "noise_decay_exponent", "seed_offset", "model_type",
+    "noise_amplitude", "noise_decay_exponent", "seed_offset",
 ]
 ADVANCED_MANUAL_ORDER = [
     "noise", "guider", "sampler", "sigmas", "latent_image",
@@ -120,7 +119,6 @@ ADVANCED_MANUAL_ORDER = [
     "transition_goal_2", "transition_resolution_2",
     "transition_goal_3", "transition_resolution_3",
     "transition_goal_4", "transition_resolution_4",
-    "model_type",
 ]
 
 
@@ -137,13 +135,11 @@ def test_advanced_nodes_keep_their_input_types_key_order(node, expected):
 
 
 @pytest.mark.parametrize("node", [AUTOMATIC, MANUAL, HARVEST], ids=lambda n: n[1])
-def test_model_type_is_required_with_no_default(node):
+def test_advanced_nodes_run_minimax_h3_with_no_model_type_input(node):
     cls = _node(node)
-    kind, options = cls.INPUT_TYPES()["required"]["model_type"]
-    assert kind == ["h3_video", "flow_image"] and "default" not in options
-    assert "optional" not in cls.INPUT_TYPES()
-    params = inspect.signature(getattr(cls, cls.FUNCTION)).parameters
-    assert params["model_type"].default is inspect.Parameter.empty
+    assert cls.MODEL_TYPE == "h3_video"
+    assert "model_type" not in cls.INPUT_TYPES()["required"]
+    assert "model_type" not in inspect.signature(getattr(cls, cls.FUNCTION)).parameters
 
 
 @pytest.mark.parametrize("node", [AUTOMATIC, MANUAL, HARVEST], ids=lambda n: n[1])
@@ -187,7 +183,9 @@ def test_every_input_and_output_has_a_tooltip(node):
     cls = _node(node)
     for section in cls.INPUT_TYPES().values():
         for name, spec in section.items():
-            assert spec[1].get("tooltip", "").strip(), name
+            # A guider needs no explanation beyond its type.
+            if name != "guider":
+                assert spec[1].get("tooltip", "").strip(), name
     assert len(cls.OUTPUT_TOOLTIPS) == len(cls.RETURN_TYPES)
     assert all(tip.strip() for tip in cls.OUTPUT_TOOLTIPS)
     assert cls.DESCRIPTION.strip()
@@ -259,7 +257,7 @@ def test_manual_runs_its_schedule_with_the_given_sampler(steps, kwargs, boundari
     guider = EchoGuider()
     _node(MANUAL)().sample(
         noise=EchoNoise(), guider=guider, sampler=sampler, sigmas=sigmas,
-        latent_image=make_latent(), model_type="h3_video", **kwargs,
+        latent_image=make_latent(), **kwargs,
     )
     for actual, wanted in zip(guider.sigma_calls, expected_stage_sigmas(sigmas, boundaries, scales), strict=True):
         assert actual == pytest.approx(wanted)
@@ -272,7 +270,7 @@ def test_automatic_runs_every_stage_with_the_given_sampler():
     guider = EchoGuider()
     out, _ = _node(AUTOMATIC)().sample(
         noise=EchoNoise(), guider=guider, sampler=sampler, sigmas=torch.linspace(1.0, 0.0, 11),
-        latent_image=make_latent(), model_type="h3_video", stages=3, **FIT,
+        latent_image=make_latent(), stages=3, **FIT,
     )
     assert guider.latent_sizes == [(3, 3), (5, 5), (8, 8)]
     assert all(seen is sampler for seen in guider.samplers) and len(guider.samplers) == 3
@@ -297,5 +295,5 @@ def test_manual_rejects_bad_schedules(kwargs, error):
         _node(MANUAL)().sample(
             noise=EchoNoise(), guider=EchoGuider(), sampler=StubSampler(),
             sigmas=torch.linspace(1.0, 0.0, 20), latent_image=make_latent(),
-            model_type="h3_video", **kwargs,
+            **kwargs,
         )

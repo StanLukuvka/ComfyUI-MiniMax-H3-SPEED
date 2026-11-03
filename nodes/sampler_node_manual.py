@@ -6,7 +6,6 @@ import comfy.utils
 
 from speed_scripts.node_widgets import (
     ADVANCED_BASE_INPUTS,
-    MODEL_TYPE_WIDGET,
     SAMPLER_INPUT_MANUAL,
     SPEED_MANUAL_WIDGETS,
 )
@@ -18,11 +17,8 @@ class SPEEDSamplerManual:
     """Progressive-resolution SPEED sampling with user-defined stage boundaries."""
 
     DESCRIPTION = (
-        "Manual SPEED sampler — set up to four (goal, resolution) pairs by hand. "
-        "For every stage except the last active one, goal marks where that stage "
-        "ends and resolution is its scale (0.25 = quarter). The final active stage "
-        "always runs to the end of the sigma schedule. Set goal or resolution to 0 "
-        "to skip a stage. Use this to copy known schedules or test custom ladders."
+        "Manual SPEED sampler. The last active stage runs to the end of the "
+        "schedule; set goal or resolution to 0 to skip a stage."
     )
     RETURN_TYPES = ("LATENT", "LATENT")
     RETURN_NAMES = ("output", "denoised_output")
@@ -32,6 +28,8 @@ class SPEEDSamplerManual:
     )
     FUNCTION = "sample"
     CATEGORY = "sampling/speed"
+    # The node decides the model family: the Advanced nodes run MiniMax-H3.
+    MODEL_TYPE = "h3_video"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -45,7 +43,6 @@ class SPEEDSamplerManual:
             "latent_image": ADVANCED_BASE_INPUTS["latent_image"],
         }
         required.update(SPEED_MANUAL_WIDGETS)
-        required["model_type"] = MODEL_TYPE_WIDGET
         return {"required": required}
 
     def sample(
@@ -55,7 +52,6 @@ class SPEEDSamplerManual:
         sampler,
         sigmas,
         latent_image,
-        model_type,
         noise_policy="direct_coarse",
         seed_offset=10000,
         ratio_mode="steps",
@@ -88,7 +84,7 @@ class SPEEDSamplerManual:
             latent_image,
             config,
             sampler=sampler,
-            model_type=model_type,
+            model_type=self.MODEL_TYPE,
             disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
         )
 

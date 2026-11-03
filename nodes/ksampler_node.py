@@ -6,7 +6,6 @@ from sampler_node import SPEEDSampler
 from speed_scripts.ksampler_inputs import build_ksampler_inputs
 from speed_scripts.node_widgets import (
     KSAMPLER_BASE_INPUTS,
-    MODEL_TYPE_WIDGET,
     SPEED_AUTOMATIC_WIDGETS,
 )
 
@@ -20,13 +19,14 @@ class SPEEDKSampler:
     OUTPUT_TOOLTIPS = SPEEDSampler.OUTPUT_TOOLTIPS
     FUNCTION = "sample"
     CATEGORY = "sampling/speed"
+    # The node decides the model family: the KSampler nodes run flow image models.
+    MODEL_TYPE = "flow_image"
 
     @classmethod
     def INPUT_TYPES(cls):
-        # KSampler base inputs, then model_type right after denoise, then the
-        # Automatic SPEED widgets; key order is the public contract.
+        # KSampler base inputs, then the Automatic SPEED widgets; key order is
+        # the public contract.
         required = dict(KSAMPLER_BASE_INPUTS)
-        required["model_type"] = MODEL_TYPE_WIDGET
         required.update(SPEED_AUTOMATIC_WIDGETS)
         return {"required": required}
 
@@ -42,7 +42,6 @@ class SPEEDKSampler:
         negative,
         latent_image,
         denoise,
-        model_type,
         **speed_options,
     ):
         # Build exactly what KSampler builds internally, then run the Advanced
@@ -54,9 +53,8 @@ class SPEEDKSampler:
             # denoise <= 0 leaves no sampling steps; ComfyUI's KSampler returns
             # the latent unchanged, so no SPEED validation or pipeline runs.
             return latent_image, latent_image
-        return SPEEDSampler().sample(
-            noise, guider, sampler, sigmas, latent_image, model_type=model_type, **speed_options
-        )
+        # Unbound call so the Advanced body runs with this node's MODEL_TYPE.
+        return SPEEDSampler.sample(self, noise, guider, sampler, sigmas, latent_image, **speed_options)
 
 
 NODE_CLASS_MAPPINGS = {

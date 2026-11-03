@@ -2,13 +2,13 @@
 
 Same prompt per model (a ramen stall on a Tokyo side street at night, in [prompt_moss.txt](prompt_moss.txt) and [prompt_krea2.txt](prompt_krea2.txt)), same seed per model, on one RTX 5070 Laptop (8 GB) with 30 GB RAM and ComfyUI 0.41.0. Images are shown at 768 px wide. The workflows are [`workflows/image_moss_SPEED.json`](../../workflows/image_moss_SPEED.json) and [`workflows/image_krea2_SPEED.json`](../../workflows/image_krea2_SPEED.json).
 
-The prompt is built to show sampler damage: a dark street for colour shifts, a readable "RAMEN 400" sign for fine detail, and a row of lanterns, a cook and two customers, so composition changes are easy to see.
+Dark street, a readable sign and a busy scene, to expose artefacts and composition changes.
 
-Settings: euler, CFGGuider, `model_type = flow_image`, SPEED runs with `noise_policy = coupled_full_grid` and seed_offset 10000. The model, size, steps, CFG, scheduler and seed are under each model. `coupled_full_grid` uses the same seed noise as a native run, so the native image at the same seed is the reference. The Δ is part of each mode, because each model has one table.
+Settings: euler, CFGGuider, the flow image family (now the KSampler nodes), SPEED runs with `noise_policy = coupled_full_grid` and seed_offset 10000. The model, size, steps, CFG, scheduler and seed are under each model. `coupled_full_grid` uses the same seed noise as a native run, so the native image at the same seed is the reference. The Δ is part of each mode, because each model has one table.
 
 Timing: each time is a ComfyUI queue-to-finish time with the models already loaded and the prompt encoded, including the VAE decode. Times are rounded to whole seconds; each speedup is computed from the unrounded times, so two rows can show the same time with different speedups. These times are not comparable to the Modal L40S numbers in [h3_evidence](../h3_evidence/README.md). Krea 2's 13 GB model does not fit in 8 GB of VRAM, so its times vary by tens of seconds between runs.
 
-> **Scope:** this is an Euler reference set. It does not establish speed or quality parity for the other supported samplers. Re-harvest and benchmark the sampler, model and scheduler you actually use. It also does not show a quality advantage for one noise policy over another.
+> **Scope:** Euler only. Re-harvest and benchmark for your sampler.
 
 Native is full-resolution Euler (SamplerCustomAdvanced, no SPEED). Each model has its own calibration from one Sigma Harvest run on its prompt and seed. The SPEED runs used the Advanced nodes. The linked workflows now use the KSampler nodes, which give pixel-identical images with the same values (checked on MOSS Image and on a Krea 2 fine-tune).
 

@@ -45,7 +45,7 @@ def patch_pipeline(monkeypatch, advanced_module, result):
 def automatic_inputs(**overrides):
     base = dict(
         seed=7, steps=20, cfg=4.5, sampler_name="dpm_2", scheduler="karras",
-        denoise=0.75, model_type="flow_image", stages=4,
+        denoise=0.75, stages=4,
         noise_policy="coupled_full_grid", noise_amplitude=12.105,
         noise_decay_exponent=0.773, seed_offset=777,
     )
@@ -56,7 +56,7 @@ def automatic_inputs(**overrides):
 def manual_inputs(**overrides):
     base = dict(
         seed=9, steps=10, cfg=8.0, sampler_name="euler", scheduler="normal",
-        denoise=1.0, model_type="h3_video", noise_policy="coupled_full_grid",
+        denoise=1.0, noise_policy="coupled_full_grid",
         seed_offset=55, ratio_mode="steps",
         transition_goal_1=3, transition_resolution_1=0.25,
         transition_goal_2=5, transition_resolution_2=0.5,
@@ -160,7 +160,7 @@ def test_ksampler_manual_builds_inputs_and_runs_the_advanced_manual_body(monkeyp
     assert captured["sigmas"] is recorder.sigmas
     assert captured["kwargs"]["sampler"] is recorder.sampler
     assert captured["latent_image"] is latent
-    assert captured["kwargs"]["model_type"] == "h3_video"
+    assert captured["kwargs"]["model_type"] == "flow_image"
     # The SPEED schedule widgets reach the config exactly as in the Advanced node.
     config = captured["config"]
     assert config.scales == pytest.approx((0.25, 0.5, 1.0))
