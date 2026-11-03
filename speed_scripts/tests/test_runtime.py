@@ -18,7 +18,7 @@ from conftest import (
     make_latent,
 )
 from speed_scripts import runtime, spectral
-from speed_scripts.config import SpeedConfig
+from speed_scripts.config import NOISE_POLICIES, SpeedConfig
 from speed_scripts.planning import plan_stages
 from speed_scripts.runtime import run_speed_pipeline
 
@@ -48,7 +48,7 @@ def _assert_full_res_nested(latent):
     assert video.shape == (1, 1, 2, 8, 8) and audio.shape == (1, 1, 2, 44)
 
 
-@pytest.mark.parametrize("noise_policy", ["direct_coarse", "coupled_full_grid"])
+@pytest.mark.parametrize("noise_policy", sorted(NOISE_POLICIES))
 def test_run_follows_the_stage_ladder_on_one_global_timeline(noise_policy):
     sampler = StubSampler("heun")
     guider = EchoGuider(video_offset=.5)
@@ -276,7 +276,7 @@ def test_failures_stop_cleanly_and_the_next_generation_starts_clean():
         assert torch.equal(a, b)
 
 
-@pytest.mark.parametrize("noise_policy", ["direct_coarse", "coupled_full_grid"])
+@pytest.mark.parametrize("noise_policy", sorted(NOISE_POLICIES))
 @pytest.mark.parametrize("shape", [(2, 4, 8, 8), (1, 4, 1, 8, 8)])
 def test_image_run_carries_state_across_the_affine_latent_format(shape, noise_policy):
     clean = torch.randn((shape[0], 4, 8, 8), generator=torch.Generator().manual_seed(1))
@@ -338,7 +338,7 @@ def test_edit_model_reference_latents_scale_with_each_stage_and_are_restored():
 _I2I_FIT = dict(delta=.05, noise_amplitude=2.0, noise_decay_exponent=1.0)
 
 
-@pytest.mark.parametrize("noise_policy", ["direct_coarse", "coupled_full_grid"])
+@pytest.mark.parametrize("noise_policy", sorted(NOISE_POLICIES))
 def test_image_to_image_seeds_the_first_stage_with_the_coarse_source(noise_policy):
     source = 1.5 + torch.randn((1, 4, 8, 8), generator=torch.Generator().manual_seed(3))
     guider = OracleFlowGuider(torch.zeros(1, 4, 8, 8))

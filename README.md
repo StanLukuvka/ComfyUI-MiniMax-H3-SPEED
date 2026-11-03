@@ -157,7 +157,7 @@ Most samplers work. The ones that don't, on H3:
 | [`image_krea2_SPEED.json`](workflows/image_krea2_SPEED.json) | Krea 2 | KSampler | `coupled_full_grid` | euler, simple, 52 steps | 3 stages, Δ 0.05, A 9.7616, β 0.6308 |
 
 > [!NOTE]
-> `noise_policy` decides where the extra detail comes from at each switch. `coupled_full_grid` takes it from the same seeded noise a plain SamplerCustomAdvanced run uses, so it keeps that run's composition at the same seed. `direct_coarse` (the default) draws its own, so the picture differs from a plain run. On H3 video `coupled_full_grid` saved only 5–10 %, against 15–30 % for `direct_coarse`.
+> `noise_policy` decides where the extra detail comes from at each switch. `coupled_full_grid` takes it from the same seeded noise a plain SamplerCustomAdvanced run uses, so it keeps that run's composition at the same seed. `direct_coarse` (the default) draws its own, so the picture differs from a plain run. On H3 video `coupled_full_grid` saved only 5–10 %, against 15–30 % for `direct_coarse`. `portable_spectrum` keys its noise by frequency instead of by grid size, so one prompt and seed keep their composition, motion and H3 audio across output resolutions (blurred SSIM about 0.57 between 448×256 and 896×512 on H3, against 0.36 for `direct_coarse`), at the cost of `direct_coarse`; it differs from `direct_coarse` at a given seed. `direct_coarse_split_audio` is `direct_coarse` with H3's audio noise on its own seed, so the audio no longer changes when the first stage's grid does.
 
 ## Image models
 

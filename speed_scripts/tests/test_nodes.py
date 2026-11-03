@@ -32,7 +32,7 @@ DISPLAY_NAMES = {
 }
 # A test calibration (H3's Euler fit); the node itself has no default.
 FIT = {"noise_amplitude": 12.105, "noise_decay_exponent": 0.773}
-POLICIES = ["direct_coarse", "coupled_full_grid"]
+POLICIES = ["direct_coarse", "coupled_full_grid", "direct_coarse_split_audio", "portable_spectrum"]
 
 
 def capture_node_config(monkeypatch, node_cls, **inputs):

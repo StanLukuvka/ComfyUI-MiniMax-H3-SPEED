@@ -28,6 +28,53 @@ from .spectral import (
 
 log = logging.getLogger(__name__)
 
+# The extra stream (H3's audio) draws its noise from its own seed under the new policies, so a change
+# of the first stage's spatial grid no longer reshuffles it.
+EXTRA_SEED_OFFSET = 7919
+# Side of the canonical coefficient draw behind portable_spectrum: the largest latent height or width it
+# covers (4096 px at 16 px per latent cell, 2048 px at 8).
+PORTABLE_MAX_HW = 256
+
+
+def _seeded_randn(shape, seed: int) -> torch.Tensor:
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(int(seed))
+    return torch.randn(shape, generator=generator, dtype=torch.float32)
+
+
+def split_extra_noise(extra, seed: int):
+    """Noise for the extra stream from its own generator, independent of the main stream's shape."""
+    if extra is None:
+        return None
+    return _seeded_randn(extra.shape, int(seed) + EXTRA_SEED_OFFSET).to(dtype=extra.dtype)
+
+
+def portable_coefficients(main_shape, seed: int) -> torch.Tensor:
+    """Main-stream noise as DCT coefficients keyed by frequency index, not by tensor shape.
+
+    Each ``[H, W]`` plane is the top-left corner of a fixed ``PORTABLE_MAX_HW`` square draw. Index k is
+    k half-cycles across the frame at any grid size, so grids of different sizes share their common low
+    frequencies. The coefficients are i.i.d. N(0, 1), and with the orthonormal DCT so is the noise.
+    """
+    *_, height, width = main_shape
+    if height > PORTABLE_MAX_HW or width > PORTABLE_MAX_HW:
+        raise ValueError(
+            f"portable_spectrum covers latents up to {PORTABLE_MAX_HW}x{PORTABLE_MAX_HW}; got {height}x{width}"
+        )
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(int(seed))
+    out = torch.empty(main_shape, dtype=torch.float32)
+    planes = out.view(-1, height, width)
+    for index in range(planes.shape[0]):
+        square = torch.randn((PORTABLE_MAX_HW, PORTABLE_MAX_HW), generator=generator, dtype=torch.float32)
+        planes[index] = square[:height, :width]
+    return out
+
+
+def portable_noise(coefficients, thw) -> torch.Tensor:
+    frames, height, width = thw
+    return idct_temporal(idct2(coefficients[..., :frames, :height, :width].contiguous()))
+
 
 def _build_preview_callback(guider, total_steps, x0_output):
     """Build ComfyUI's preview callback."""
@@ -230,6 +277,17 @@ def run_stages(
         full_noise_coefficients = dct2(dct_temporal(full_noise_main))
         stage_start_pub = family.join(coarse_noise_main, full_noise_extra)
         del full_noise_main
+    elif config.noise_policy == "direct_coarse_split_audio":
+        stage_start_pub = family.join(
+            _seeded_randn(coarse_main.shape, noise.seed).to(dtype=full_main.dtype),
+            split_extra_noise(full_extra, noise.seed),
+        )
+    elif config.noise_policy == "portable_spectrum":
+        full_noise_coefficients = portable_coefficients(full_main.shape, noise.seed)
+        stage_start_pub = family.join(
+            portable_noise(full_noise_coefficients, (stage_t, stage_h, stage_w)).to(dtype=full_main.dtype),
+            split_extra_noise(full_extra, noise.seed),
+        )
     else:
         coarse_latent = latent.copy()
         coarse_latent["samples"] = stage_start_latent

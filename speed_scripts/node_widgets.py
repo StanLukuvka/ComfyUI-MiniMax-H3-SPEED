@@ -99,10 +99,10 @@ SPEED_AUTOMATIC_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
         },
     ),
     "noise_policy": (
-        ["direct_coarse", "coupled_full_grid"],
+        ["direct_coarse", "coupled_full_grid", "direct_coarse_split_audio", "portable_spectrum"],
         {
             "default": "direct_coarse",
-            "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed. On H3 video it saved only 5-10%, against 15-30% for direct_coarse.",
+            "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed. On H3 video it saved only 5-10%, against 15-30% for direct_coarse. direct_coarse_split_audio: direct_coarse with the audio noise on its own seed, so it no longer changes with the video grid (no effect on images). portable_spectrum: noise keyed by frequency, so the same seed keeps its composition and audio across output sizes and stage scales; costs the same as direct_coarse.",
         },
     ),
     "Tolerance (Delta)": (
@@ -143,7 +143,7 @@ SPEED_AUTOMATIC_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 10000,
             "min": 0,
             "max": 2**31 - 1,
-            "tooltip": "direct_coarse only: salts the seed of the high-frequency fill drawn at each resolution transition (seed + seed_offset + stage index). Ignored by coupled_full_grid. Does not change the first stage's noise or the sampler seed. Leave at 10000 unless you want a different fill pattern for the same seed.",
+            "tooltip": "direct_coarse and direct_coarse_split_audio only: salts the seed of the high-frequency fill drawn at each resolution transition (seed + seed_offset + stage index). Ignored by coupled_full_grid and portable_spectrum. Does not change the first stage's noise or the sampler seed. Leave at 10000 unless you want a different fill pattern for the same seed.",
         },
     ),
 }
@@ -151,10 +151,10 @@ SPEED_AUTOMATIC_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
 # Manual mode widgets.
 SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
     "noise_policy": (
-        ["direct_coarse", "coupled_full_grid"],
+        ["direct_coarse", "coupled_full_grid", "direct_coarse_split_audio", "portable_spectrum"],
         {
             "default": "direct_coarse",
-            "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed. On H3 video it saved only 5-10%, against 15-30% for direct_coarse.",
+            "tooltip": "direct_coarse: start on coarse-size noise and fill each new frequency band from seeded noise at every transition. coupled_full_grid: take all bands from one full-resolution noise field drawn like SamplerCustomAdvanced, so it matches a plain run at the same seed. On H3 video it saved only 5-10%, against 15-30% for direct_coarse. direct_coarse_split_audio: direct_coarse with the audio noise on its own seed, so it no longer changes with the video grid (no effect on images). portable_spectrum: noise keyed by frequency, so the same seed keeps its composition and audio across output sizes and stage scales; costs the same as direct_coarse.",
         },
     ),
     "seed_offset": (
@@ -163,7 +163,7 @@ SPEED_MANUAL_WIDGETS: dict[str, tuple[Any, dict[str, Any]]] = {
             "default": 10000,
             "min": 0,
             "max": 2**31 - 1,
-            "tooltip": "direct_coarse only: salts the seed of the high-frequency fill drawn at each resolution transition (seed + seed_offset + stage index). Ignored by coupled_full_grid. Does not change the first stage's noise or the sampler seed. Leave at 10000 unless you want a different fill pattern for the same seed.",
+            "tooltip": "direct_coarse and direct_coarse_split_audio only: salts the seed of the high-frequency fill drawn at each resolution transition (seed + seed_offset + stage index). Ignored by coupled_full_grid and portable_spectrum. Does not change the first stage's noise or the sampler seed. Leave at 10000 unless you want a different fill pattern for the same seed.",
         },
     ),
     "ratio_mode": (

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import math
 
 
-NOISE_POLICIES = {"direct_coarse", "coupled_full_grid"}
+NOISE_POLICIES = {"direct_coarse", "coupled_full_grid", "direct_coarse_split_audio", "portable_spectrum"}
 AUDIO_POLICIES = {"clock_reindex", "carry_preserve", "untouched"}
 SIGMA_POLICIES = {"canonical", "no_alignment"}
 RATIO_MODES = ("steps", "ratio")
